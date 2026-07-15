@@ -237,6 +237,17 @@ as tres leituras individuais da mesma porta: fechada, aberta e fechada. O perfil
 de campo `zeroOpen` usa `0x00` aberta/`0x11` fechada; o perfil de manual
 `zeroClosed` usa o inverso. Nao publique o APK no armario sem repetir esse teste.
 
+No modo tecnico, abra a aba **Comissionamento** e execute o assistente completo:
+
+1. Configure board, quantidade de portas e tempo de acionamento.
+2. Escolha o tamanho fisico `P`, `M` ou `G` de cada canal.
+3. Com a porta indicada fechada, toque em **Identificar e testar**.
+4. Confirme que somente o canal indicado abriu e feche a porta.
+5. Conclua apenas depois que todos os sensores estiverem validados.
+
+O mapa salvo passa a controlar a selecao de portas do kiosk e o painel remoto.
+Qualquer mudanca fisica critica reinicia as provas e exige novo comissionamento.
+
 ---
 
 ## COMANDOS ADB ÚTEIS

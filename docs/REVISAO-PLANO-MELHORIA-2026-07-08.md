@@ -153,6 +153,19 @@ Validacao do segundo lote:
   resolver a divergencia entre o manual e a placa observada em campo.
 - Versao atualizada para `2.0.14-lab` e `versionCode 14`.
 
+### Assistente de comissionamento em 2026-07-15
+
+- O modo tecnico ganhou fluxo guiado por canal, com leitura fechada inicial,
+  deteccao de polaridade, configuracao do tempo de acionamento, abertura e prova
+  final de fechamento.
+- O mapa fisico agora aceita portas pequenas, medias e grandes e e usado pelo
+  kiosk e pelo Admin Online, sem depender do perfil fixo de canais.
+- A conclusao exige provas validas de todos os canais; mudar board, quantidade,
+  polaridade, tempo ou tamanhos invalida o registro anterior.
+- O status, data e tempo configurado passam a compor o heartbeat e a visao
+  operacional remota.
+- Versao atualizada para `2.0.15-lab` e `versionCode 15`.
+
 Primeiro pacote de Fase 0 aplicado apos esta revisao:
 
 - `admin-online`: `nodemailer` atualizado para versao sem vulnerabilidades no
@@ -414,8 +427,8 @@ Prazo sugerido: 2 a 4 semanas em paralelo.
 - Implementar parser de frames RS-485 no Android.
 - Correlacionar respostas por board/canal/comando.
 - Criar tela local de diagnostico tecnico protegida.
-- Criar modo comissionamento: quantidade de portas, tamanhos, board, sensor
-  invertido, tempo de pulso e porta serial.
+- Validar em campo o assistente de comissionamento em cada modelo de placa e
+  documentar eventuais diferencas de firmware e porta serial.
 - Habilitar boot/kiosk de forma controlada: BootReceiver, Device Owner/Lock Task
   ou launcher dedicado, conforme politica do equipamento.
 - Melhorar camera: permissao pre-concedida no deploy, reabrir scanner apos grant,

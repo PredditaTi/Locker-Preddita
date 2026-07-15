@@ -9,6 +9,7 @@ import Serial, {
 } from './serial.js';
 import {
   PACKAGE_SIZES,
+  applyDeviceCommissioning,
   buildNotificationPreview,
   cancelDelivery,
   completePickup,
@@ -95,7 +96,7 @@ const COMMANDS = createCommandSet(LOCKER_PROFILE);
 const DOORS_PER_PAGE = 8;
 const DOOR_COUNT_PRESETS = [8, 12, 16, 20, 24];
 const ADMIN_VIEWS = new Set(['admin', 'adminDeposit', 'adminPickup', 'doors', 'system']);
-const APP_VERSION = '2.0.14-lab';
+const APP_VERSION = '2.0.15-lab';
 const POPUP_BANNER_TITLES = new Set([
   'Porta pequena ainda aberta',
   'Sem porta grande disponivel',
@@ -614,7 +615,10 @@ export default function App() {
     isBusy,
   ]);
 
-  const doorCatalog = createDoorCatalog(lockerState.deviceConfig.doorCount);
+  const doorCatalog = createDoorCatalog(
+    lockerState.deviceConfig.doorCount,
+    lockerState.deviceConfig.doorSizes,
+  );
   const availableDoorCatalog = filterDoorCatalogByPhysicalAvailability(doorCatalog, doorStates);
   const smallDoorCatalog = doorCatalog.filter((door) => door.size === 'P');
   const largeDoorCatalog = doorCatalog.filter((door) => door.size === 'G');
@@ -820,6 +824,27 @@ export default function App() {
           tone: 'danger',
           title: `Porta ${channel} indisponivel`,
           text: 'A leitura individual nao confirmou que a porta esta fechada. Verifique o sensor e tente novamente.',
+        });
+        return rememberOpened(outcome);
+      }
+
+      const timeoutResult = await Serial.setTimeout(
+        board,
+        channel,
+        lockerStateRef.current.deviceConfig.unlockTimeoutSeconds,
+        LOCKER_PROFILE,
+      );
+      if (!timeoutResult.ok) {
+        const outcome = {
+          ok: false,
+          confirmed: false,
+          reason: `unlock-timeout-config:${String(timeoutResult.error || 'error').toLowerCase()}`,
+          error: 'A placa nao confirmou o tempo de acionamento configurado.',
+        };
+        setBanner({
+          tone: 'danger',
+          title: `Porta ${channel} indisponivel`,
+          text: 'O tempo de acionamento nao foi aceito pela placa. Rode o comissionamento antes de tentar novamente.',
         });
         return rememberOpened(outcome);
       }
@@ -1753,6 +1778,18 @@ export default function App() {
     });
   }
 
+  function handleCommissioningComplete(payload) {
+    const nextState = applyDeviceCommissioning(lockerStateRef.current, payload);
+    commitState(nextState);
+    setDoorPage(0);
+    setBanner({
+      tone: 'success',
+      title: 'Comissionamento concluido',
+      text: `${nextState.deviceConfig.doorCount} portas foram mapeadas e validadas fisicamente.`,
+    });
+    return nextState.deviceConfig;
+  }
+
   function resetCourierFlow() {
     smallCloseCancelRef.current = true;
     setCourierStep('recipient');
@@ -2048,6 +2085,10 @@ export default function App() {
         board: lockerState.deviceConfig.board,
         doorCount: lockerState.deviceConfig.doorCount,
         sensorPolarity: lockerState.deviceConfig.sensorPolarity,
+        unlockTimeoutSeconds: lockerState.deviceConfig.unlockTimeoutSeconds,
+        doorSizes: lockerState.deviceConfig.doorSizes,
+        commissioningStatus: lockerState.deviceConfig.commissioning?.status || 'pending',
+        commissionedAt: lockerState.deviceConfig.commissioning?.completedAt || '',
         residentCount: lockerState.recipients.length,
         residentsSyncedAt: lockerState.residentsSyncedAt || '',
         remoteResidentsRevision: lockerState.remoteResidentsRevision || '',
@@ -3203,6 +3244,8 @@ export default function App() {
                     <StatCard label="Bridge" value={trimCode(hardwareInfo.bridgeVersion)} hint="Camada nativa ativa." />
                     <StatCard label="Portas" value={lockerState.deviceConfig.doorCount} hint="Quantidade configurada." />
                     <StatCard label="Sensor" value={lockerState.deviceConfig.sensorPolarity === 'zeroClosed' ? '0x00 fechada' : '0x00 aberta'} hint="Perfil individual ativo." />
+                    <StatCard label="Acionamento" value={`${lockerState.deviceConfig.unlockTimeoutSeconds}s`} hint="Tempo aplicado antes de abrir." />
+                    <StatCard label="Comissionamento" value={lockerState.deviceConfig.commissioning?.status === 'complete' ? 'Concluido' : 'Pendente'} hint={lockerState.deviceConfig.commissioning?.completedAt ? formatDateTime(lockerState.deviceConfig.commissioning.completedAt) : 'Abra o modo tecnico para mapear.'} />
                   </div>
                   <div className="preview-shell">Ultimo frame: {lastPreview || 'Nenhum frame enviado nesta sessao.'}</div>
                 </section>
@@ -3225,7 +3268,11 @@ export default function App() {
         </section>
       </div>
         {diagnosticGate.open ? (
-          <DiagnosticsView lockerState={lockerState} onClose={diagnosticGate.close} />
+          <DiagnosticsView
+            lockerState={lockerState}
+            onClose={diagnosticGate.close}
+            onCommissioningComplete={handleCommissioningComplete}
+          />
         ) : null}
         {showBannerPopup ? (
           <section className="alert-popup-backdrop" role="presentation">

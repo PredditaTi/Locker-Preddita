@@ -69,6 +69,12 @@ Solucoes maduras de smart lockers se posicionam como plataformas completas, nao 
   fechada-aberta-fechada; leituras em bloco nao liberam ocupacao.
 - Perfil de polaridade individual (`zeroOpen`/`zeroClosed`) configuravel por
   armario, com regressao automatizada para os dois formatos.
+- Assistente de comissionamento protegido para identificar cada canal, inferir
+  a polaridade, aplicar o tempo de acionamento, registrar o ciclo
+  fechada-aberta-fechada e mapear portas `P`, `M` e `G`.
+- Configuracao comissionada persistida no locker e enviada ao Admin Online;
+  qualquer mudanca de board, quantidade, tempo, polaridade ou mapa invalida as
+  provas anteriores.
 
 ## Proximas melhorias recomendadas
 
@@ -80,10 +86,7 @@ Solucoes maduras de smart lockers se posicionam como plataformas completas, nao 
 6. Criar fluxo de atualizacao remota do APK.
 7. Trocar polling por AWS IoT Core/MQTT.
 8. Adicionar testes de contrato da API e testes de fluxo do kiosk.
-9. Completar o modo de comissionamento: o perfil de sensor e board ja podem ser
-   configurados; faltam o assistente de mapeamento, tempo de pulso e tamanho
-   fisico por porta.
-10. Criar LGPD/data-retention: CPF, telefone, e-mail, auditoria e expiracao de entregas.
+9. Criar LGPD/data-retention: CPF, telefone, e-mail, auditoria e expiracao de entregas.
 
 ## Criterio de produto para ficar competitivo
 

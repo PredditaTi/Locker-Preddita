@@ -2802,7 +2802,7 @@ button {
   position: fixed;
   inset: 0;
   z-index: 9999;
-  background: linear-gradient(180deg, #061b31 0%, #0a2944 100%);
+  background: #061b31;
   color: #eef6ff;
   font-family: 'Segoe UI', Arial, sans-serif;
   overflow-y: auto;
@@ -2819,7 +2819,7 @@ button {
 }
 .diagnostic-eyebrow {
   margin: 0 0 6px;
-  letter-spacing: 0.18em;
+  letter-spacing: 0;
   text-transform: uppercase;
   font-size: 11px;
   color: #9ee8ff;
@@ -2840,7 +2840,7 @@ button {
   border: 1px solid rgba(238, 246, 255, 0.3);
   background: transparent;
   color: #eef6ff;
-  border-radius: 12px;
+  border-radius: 8px;
   padding: 10px 18px;
   font-size: 14px;
   font-weight: 700;
@@ -2854,7 +2854,7 @@ button {
   align-items: center;
   gap: 16px;
   padding: 18px 22px;
-  border-radius: 18px;
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.06);
   border: 2px solid rgba(255, 255, 255, 0.1);
 }
@@ -2872,7 +2872,7 @@ button {
 .diagnostic-run, .diagnostic-copy {
   appearance: none;
   border: none;
-  border-radius: 12px;
+  border-radius: 8px;
   padding: 12px 22px;
   font-size: 14px;
   font-weight: 700;
@@ -2934,7 +2934,7 @@ button {
   padding: 40px 20px;
   text-align: center;
   background: rgba(255, 255, 255, 0.04);
-  border-radius: 18px;
+  border-radius: 8px;
   border: 1px dashed rgba(238, 246, 255, 0.2);
 }
 .diagnostic-empty p { margin: 0 0 10px; font-size: 16px; }
@@ -2942,7 +2942,7 @@ button {
 
 .diagnostic-suite {
   background: rgba(255, 255, 255, 0.06);
-  border-radius: 18px;
+  border-radius: 8px;
   padding: 16px 20px;
   border: 2px solid transparent;
 }
@@ -2961,7 +2961,7 @@ button {
   border-radius: 999px;
   font-size: 11px;
   font-weight: 800;
-  letter-spacing: 0.1em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 .diagnostic-pill--pass    { background: rgba(81, 207, 102, 0.25); color: #b3f0c0; }
@@ -2987,7 +2987,7 @@ button {
   border-radius: 8px;
   font-size: 11px;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
 }
 .diagnostic-tag--pass { background: #2c8a3f; color: #fff; }
 .diagnostic-tag--fail { background: #cc3a3a; color: #fff; }
@@ -3008,4 +3008,314 @@ button {
   opacity: 0;
   pointer-events: none;
   left: -9999px;
+}
+
+.diagnostic-mode-tabs {
+  align-self: flex-start;
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid rgba(238, 246, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.diagnostic-mode-tabs button {
+  min-width: 150px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(238, 246, 255, 0.68);
+  padding: 10px 16px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.diagnostic-mode-tabs button.is-active {
+  background: #eef6ff;
+  color: #061b31;
+}
+
+.commissioning-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.commissioning-intro {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 4px 0 18px;
+  border-bottom: 1px solid rgba(238, 246, 255, 0.16);
+}
+
+.commissioning-intro h2 {
+  margin: 0 0 6px;
+  font-size: 22px;
+}
+
+.commissioning-intro p {
+  max-width: 760px;
+  margin: 0;
+  color: rgba(238, 246, 255, 0.7);
+  line-height: 1.5;
+}
+
+.commissioning-progress {
+  width: 190px;
+  flex: 0 0 190px;
+}
+
+.commissioning-progress strong,
+.commissioning-progress span {
+  display: block;
+}
+
+.commissioning-progress strong {
+  font-size: 24px;
+}
+
+.commissioning-progress span {
+  margin: 2px 0 8px;
+  color: rgba(238, 246, 255, 0.65);
+  font-size: 12px;
+}
+
+.commissioning-progress div {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: rgba(238, 246, 255, 0.12);
+}
+
+.commissioning-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #51cf66;
+  transition: width 180ms ease;
+}
+
+.commissioning-config {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 1fr)) minmax(240px, 1.4fr);
+  gap: 12px;
+  align-items: end;
+}
+
+.commissioning-config label,
+.commissioning-door label,
+.commissioning-polarity,
+.commissioning-door-status {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.commissioning-config label > span,
+.commissioning-door label > span,
+.commissioning-polarity > span,
+.commissioning-door-status > span {
+  color: rgba(238, 246, 255, 0.62);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.commissioning-config input,
+.commissioning-config select,
+.commissioning-door select {
+  width: 100%;
+  height: 42px;
+  border: 1px solid rgba(238, 246, 255, 0.25);
+  border-radius: 6px;
+  background: #0b2944;
+  color: #eef6ff;
+  padding: 0 11px;
+  font: inherit;
+}
+
+.commissioning-polarity {
+  min-height: 42px;
+  justify-content: center;
+  border-left: 3px solid #9ee8ff;
+  padding-left: 12px;
+}
+
+.commissioning-polarity strong {
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+
+.commissioning-stage,
+.commissioning-notice {
+  min-height: 48px;
+  border: 1px solid rgba(158, 232, 255, 0.5);
+  border-radius: 8px;
+  background: rgba(158, 232, 255, 0.1);
+  padding: 13px 16px;
+  color: #dff8ff;
+  font-weight: 700;
+}
+
+.commissioning-notice.is-success {
+  border-color: rgba(81, 207, 102, 0.65);
+  background: rgba(81, 207, 102, 0.12);
+  color: #c7f5d0;
+}
+
+.commissioning-notice.is-warn {
+  border-color: rgba(255, 212, 59, 0.65);
+  background: rgba(255, 212, 59, 0.1);
+  color: #fff0ad;
+}
+
+.commissioning-notice.is-danger {
+  border-color: rgba(255, 107, 107, 0.7);
+  background: rgba(255, 107, 107, 0.12);
+  color: #ffd0d0;
+}
+
+.commissioning-door-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+  gap: 10px;
+}
+
+.commissioning-door {
+  display: grid;
+  grid-template-columns: 62px minmax(110px, 1fr) minmax(90px, 0.8fr) minmax(138px, auto);
+  align-items: end;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid rgba(238, 246, 255, 0.15);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 13px;
+}
+
+.commissioning-door.is-passed {
+  border-color: rgba(81, 207, 102, 0.55);
+}
+
+.commissioning-door-number span,
+.commissioning-door-number strong {
+  display: block;
+}
+
+.commissioning-door-number span {
+  color: rgba(238, 246, 255, 0.62);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.commissioning-door-number strong {
+  font-size: 25px;
+}
+
+.commissioning-door-status strong {
+  color: #ffd43b;
+}
+
+.commissioning-door.is-passed .commissioning-door-status strong {
+  color: #85e698;
+}
+
+.commissioning-door button,
+.commissioning-footer button {
+  min-height: 42px;
+  border: 0;
+  border-radius: 6px;
+  background: #0587ff;
+  color: #fff;
+  padding: 0 15px;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.commissioning-door button:disabled,
+.commissioning-footer button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.commissioning-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(238, 246, 255, 0.16);
+}
+
+.commissioning-footer p {
+  margin: 0;
+  color: rgba(238, 246, 255, 0.68);
+}
+
+.commissioning-footer button {
+  min-width: 230px;
+  background: #2c8a3f;
+}
+
+@media (max-width: 900px) {
+  .diagnostic-overlay {
+    padding: 18px 16px 32px;
+  }
+
+  .commissioning-config {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .commissioning-door {
+    grid-template-columns: 54px minmax(110px, 1fr) minmax(90px, 1fr);
+  }
+
+  .commissioning-door button {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 600px) {
+  .diagnostic-header,
+  .diagnostic-summary,
+  .diagnostic-device-auth,
+  .commissioning-intro,
+  .commissioning-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .diagnostic-mode-tabs {
+    align-self: stretch;
+  }
+
+  .diagnostic-mode-tabs button {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .commissioning-progress {
+    width: 100%;
+    flex-basis: auto;
+  }
+
+  .commissioning-config,
+  .commissioning-door {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .commissioning-door-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .commissioning-door button,
+  .commissioning-footer button {
+    width: 100%;
+    grid-column: auto;
+  }
 }

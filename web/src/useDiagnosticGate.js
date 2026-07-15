@@ -33,7 +33,13 @@ function isInZone(event) {
 }
 
 export default function useDiagnosticGate() {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(() =>
+    Boolean(
+      import.meta.env?.DEV &&
+      typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).get('diagnostics') === '1'
+    )
+  );
   const tapsRef = useRef([]);
 
   useEffect(() => {

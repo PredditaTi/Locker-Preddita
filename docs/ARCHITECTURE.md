@@ -121,18 +121,25 @@ Garantia pratica:
 
 ## Modelo de portas
 
-Neste armario atual:
+O mapa fisico pertence a configuracao comissionada do locker. Cada canal guarda
+um tamanho `P`, `M` ou `G`; o perfil inicial continua usando portas `1` e `2`
+grandes e as demais pequenas somente como fallback para instalacoes antigas.
 
-- Portas `1` e `2`: grandes (`G`).
-- Todas as outras: pequenas (`P`).
+O app operacional usa `deviceConfig.doorSizes` ao reservar uma entrega e envia o
+mesmo mapa ao Admin Online. O servidor preserva os tamanhos reportados e calcula
+as quantidades livres separadamente para pequenas, medias e grandes.
 
-Essa regra aparece em dois lugares e deve continuar alinhada:
+## Comissionamento fisico
 
-- `web/src/lockerWorkflow.js` em `createDoorCatalog`.
-- `admin-online/server.mjs` em `doorSizeForChannel`.
+O modo tecnico possui um assistente que testa somente um canal por vez. Para
+cada porta ele exige leitura individual fechada, aplica o tempo de acionamento,
+abre a trava, confirma a transicao para aberta e espera a leitura fechada. O
+primeiro canal conhecido como fechado determina a polaridade usada pelos demais.
 
-Sempre que mudar o perfil fisico do armario, atualize os dois lados e rode os
-smoke tests.
+Board, quantidade de portas, polaridade, tempo de acionamento, mapa de tamanhos e
+as provas ficam em `deviceConfig.commissioning`. O registro so recebe status
+`complete` quando todos os canais possuem ciclo e fechamento validos. Alterar
+qualquer campo critico invalida o registro e exige novo comissionamento.
 
 ## Estados de entrega
 

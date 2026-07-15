@@ -61,6 +61,7 @@ node scripts\v2-remote-command-journal-test.mjs
 node scripts\v2-device-event-journal-test.mjs
 node scripts\v2-serial-protocol-test.mjs
 node scripts\v2-door-safety-test.mjs
+node scripts\v2-commissioning-test.mjs
 ```
 
 O teste nativo `scripts\Rs485FrameParserTest.java` tambem roda dentro de
@@ -118,6 +119,21 @@ Se quiser pular o build web na verificacao completa:
 powershell -ExecutionPolicy Bypass -File .\scripts\v2-verify.ps1 -SkipBuild
 ```
 
+## Comissionar um locker
+
+No equipamento, toque sete vezes no canto superior direito em menos de cinco
+segundos e informe `VITE_PREDDITA_DIAGNOSTIC_PIN`. Abra a aba
+`Comissionamento`, configure board, quantidade de portas e tempo de acionamento,
+e teste cada canal com a porta inicialmente fechada.
+
+O primeiro teste detecta a polaridade. Em cada canal, confirme visualmente que
+somente a porta indicada abriu, escolha o tamanho fisico `P`, `M` ou `G` e feche
+a porta. O botao de conclusao so e liberado depois da prova
+fechada-aberta-fechada em todos os canais.
+
+Durante desenvolvimento, `http://127.0.0.1:5174/?diagnostics=1` abre o modo
+tecnico diretamente. Esse atalho existe apenas no build de desenvolvimento.
+
 ## CI e release no GitHub
 
 O workflow `CI` executa testes, smoke Postgres, auditorias, build web e gera um
@@ -154,7 +170,7 @@ cd web
 $env:VITE_PREDDITA_REMOTE_URL="https://locker.example.com"
 $env:VITE_PREDDITA_LOCKER_ID="ks1062-aurora"
 $env:VITE_PREDDITA_DEVICE_AUTH_MODE="hmac"
-$env:VITE_PREDDITA_EDGE_APP_VERSION="2.0.14-lab"
+$env:VITE_PREDDITA_EDGE_APP_VERSION="2.0.15-lab"
 npm run build
 Remove-Item Env:VITE_PREDDITA_REMOTE_URL
 Remove-Item Env:VITE_PREDDITA_LOCKER_ID

@@ -13,7 +13,7 @@ const SINDICO_PASSWORD = 'v2-sindico-password';
 const OPERATOR_PASSWORD = 'v2-operator-password';
 const SUPER_ADMIN_PASSWORD = 'v2-super-admin-password';
 const DEVICE_KEY = 'v2-device-test-key';
-const EXPECTED_ADMIN_VERSION = '2.0.14-lab';
+const EXPECTED_ADMIN_VERSION = '2.0.15-lab';
 const PORT = 9897;
 const DATA_DIR = mkdtempSync(join(tmpdir(), 'preddita-v2-smoke-'));
 const ADMIN_USERS = JSON.stringify([
@@ -394,7 +394,7 @@ try {
       doors: Array.from({ length: 10 }, (_, index) => ({
         channel: index + 1,
         label: `Porta ${index + 1}`,
-        size: index < 2 ? 'G' : 'P',
+        size: index < 2 ? 'G' : index === 2 ? 'M' : 'P',
         status: 'closed',
         ...(index === 3 ? {
           delivery: {
@@ -451,6 +451,12 @@ try {
   const protectedDoor = protectedOperatorState.state.doors.find(
     (door) => door.delivery?.id === 'delivery-smoke-notify'
   );
+  const commissionedMediumDoor = protectedOperatorState.state.doors.find(
+    (door) => door.channel === 3
+  );
+  if (commissionedMediumDoor?.size !== 'M') {
+    throw new Error('Mapa remoto deveria preservar o tamanho fisico comissionado.');
+  }
   const serializedOperatorState = JSON.stringify(protectedOperatorState.state);
   if (
     !protectedDelivery
@@ -702,8 +708,8 @@ try {
   if (!evidenceDelivery?.labelPhotoDataUrl || evidenceDelivery.labelOcrApartment !== '901') {
     throw new Error('Sincronizacao offline deveria preservar comprovante fotografico da etiqueta.');
   }
-  if (state.state.doors[0]?.size !== 'G' || state.state.doors[1]?.size !== 'G' || state.state.doors[2]?.size !== 'P') {
-    throw new Error('Perfil fisico deveria manter portas 1 e 2 grandes e demais pequenas.');
+  if (state.state.doors[0]?.size !== 'G' || state.state.doors[1]?.size !== 'G' || state.state.doors[2]?.size !== 'M') {
+    throw new Error('Perfil fisico deveria preservar o mapa de tamanhos enviado pelo locker.');
   }
   const releasedDelivery = state.state.deliveries.find((delivery) => delivery.id === 'delivery-smoke-notify');
   if (releasedDelivery?.status !== 'stored') {
