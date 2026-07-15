@@ -1,0 +1,35 @@
+.DS_Store
+*.log
+*.tmp
+
+# Secrets and runtime configuration
+.env
+.env.*
+!.env.example
+!.env.production.example
+*.jks
+*.keystore
+*.pem
+*.key
+*.p12
+
+# Dependencies and generated output
+node_modules/
+dist/
+build/
+.gradle/
+android/local.properties
+android/app/src/main/assets/www/*
+!android/app/src/main/assets/www/.gitkeep
+web/vite.config.js.timestamp-*
+
+# Runtime data and release packages
+admin-online/data/
+*.apk
+*.aab
+*.tgz
+*.rar
+
+# Recovered source and protected evidence
+extraido-documents-rar/
+recovery/

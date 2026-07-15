@@ -1,0 +1,13 @@
+services:
+  preddita-admin-online:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    env_file:
+      - .env
+    volumes:
+      - preddita-admin-data:/data
+
+volumes:
+  preddita-admin-data:
