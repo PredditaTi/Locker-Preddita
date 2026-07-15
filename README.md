@@ -1,4 +1,6 @@
 # PREDDITA SMART LOCKER — Guia de Implantação
+[![CI](https://github.com/PredditaTi/Locker-Preddita/actions/workflows/ci.yml/badge.svg)](https://github.com/PredditaTi/Locker-Preddita/actions/workflows/ci.yml)
+
 **Dispositivo:** KS1062-N-ZY · RK3562 · Android 11/13 · serial validada em `/dev/ttyS5`
 
 ## Documentacao para programadores
@@ -9,6 +11,7 @@ Para entender a versao atual antes de alterar codigo, leia:
   sincronizacao offline, comandos remotos e modelo de dados.
 - `docs/DEVELOPER-RUNBOOK.md`: setup, testes, build, ADB, checklist e
   depuracao rapida.
+- `docs/CI-RELEASE.md`: GitHub Actions, assinatura e geracao dos APKs.
 
 ---
 

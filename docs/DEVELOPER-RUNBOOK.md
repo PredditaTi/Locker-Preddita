@@ -117,6 +117,16 @@ Se quiser pular o build web na verificacao completa:
 powershell -ExecutionPolicy Bypass -File .\scripts\v2-verify.ps1 -SkipBuild
 ```
 
+## CI e release no GitHub
+
+O workflow `CI` executa testes, smoke Postgres, auditorias, build web e gera um
+APK debug em cada pull request. O workflow manual `Release APK` restaura a
+keystore a partir de GitHub Actions secrets, gera o release assinado, valida a
+assinatura e publica o APK com seu SHA-256.
+
+Consulte `docs/CI-RELEASE.md` para configurar secrets, executar o release e
+manter a custodia da chave de assinatura.
+
 ## Rodar localmente
 
 Admin Online:
