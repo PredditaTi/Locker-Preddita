@@ -70,6 +70,9 @@ PREDDITA_DOMAIN=locker.preddita.com
 PREDDITA_SUPER_ADMIN_TOKEN=crie-um-token-forte-da-preddita
 PREDDITA_ADMIN_TOKEN=crie-um-token-forte-do-sindico
 PREDDITA_DEVICE_KEY=crie-uma-chave-forte-do-armario
+PREDDITA_DEVICE_KEYS={"ks1062-aurora":"crie-uma-chave-forte-do-armario"}
+PREDDITA_DEVICE_AUTH_MODE=hmac
+PREDDITA_DEVICE_SIGNATURE_TTL_MS=120000
 PREDDITA_SMTP_USER=enviopreddita@gmail.com
 PREDDITA_SMTP_PASS=senha-de-app-google
 ```

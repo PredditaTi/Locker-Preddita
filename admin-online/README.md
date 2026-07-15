@@ -38,6 +38,7 @@ Em producao, troque esses valores por variaveis de ambiente:
 ```powershell
 $env:PREDDITA_ADMIN_TOKEN="um-token-forte"
 $env:PREDDITA_DEVICE_KEY="uma-chave-do-armario"
+$env:PREDDITA_DEVICE_AUTH_MODE="hmac"
 node server.mjs
 ```
 
@@ -57,6 +58,7 @@ $env:PREDDITA_DATABASE_URL="postgresql://preddita:senha@localhost:5432/preddita_
 $env:PREDDITA_TENANT_ID="residencial-aurora"
 $env:PREDDITA_LOCKER_ID="ks1062-aurora"
 $env:PREDDITA_DEVICE_KEYS='{"ks1062-aurora":"uma-chave-do-armario"}'
+$env:PREDDITA_DEVICE_AUTH_MODE="hmac"
 node server.mjs
 ```
 
@@ -85,6 +87,8 @@ node scripts\v2-smoke-test.mjs
 O smoke sobe o servidor em uma porta temporaria, usa dados temporarios e valida:
 
 - token de administrador obrigatorio;
+- HMAC de dispositivo valido, com recusa de chave estatica, corpo adulterado,
+  timestamp vencido e nonce repetido;
 - cadastro de morador;
 - exportacao CSV;
 - heartbeat do armario;
@@ -118,6 +122,8 @@ PREDDITA_V2_SMOKE_OK
 - Persistencia opcional em Postgres por `tenant_id`/`locker_id`, mantendo
   `state.json` como modo local.
 - Chave por armario via `PREDDITA_DEVICE_KEYS`.
+- Requisicoes do armario assinadas com HMAC-SHA256, timestamp, nonce e hash do
+  corpo; producao recusa autenticacao legada.
 - Comandos remotos com `pending -> leased -> executing -> completed/failed`,
   lease renovavel e `executionId` idempotente.
 

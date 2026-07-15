@@ -12,6 +12,8 @@ Para entender a versao atual antes de alterar codigo, leia:
 - `docs/DEVELOPER-RUNBOOK.md`: setup, testes, build, ADB, checklist e
   depuracao rapida.
 - `docs/CI-RELEASE.md`: GitHub Actions, assinatura e geracao dos APKs.
+- `docs/DEVICE-AUTH.md`: assinatura HMAC das chamadas do armario e migracao do
+  modo legado.
 
 ---
 

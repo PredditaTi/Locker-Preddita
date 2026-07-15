@@ -26,6 +26,9 @@ Valores opcionais para conectar o APK ao Admin Online:
 - Variable `PREDDITA_EDGE_REMOTE_URL`: URL HTTPS do Admin Online.
 - Variable `PREDDITA_EDGE_LOCKER_ID`: identificador do armario.
 
+O workflow gera o app com `VITE_PREDDITA_DEVICE_AUTH_MODE=hmac`. A mesma chave
+configurada no secret deve existir no mapa `PREDDITA_DEVICE_KEYS` do servidor.
+
 Sem as configuracoes opcionais, o APK release continua operando localmente,
 mas nao sincroniza com o Admin Online.
 
@@ -39,6 +42,8 @@ mas nao sincroniza com o Admin Online.
 6. Confira o APK com o arquivo `.sha256` antes de instalar.
 
 O workflow tambem executa `apksigner verify` antes de publicar o artifact.
+O canal precisa corresponder ao sufixo do `versionName`: `-lab`, `-pilot` ou
+nenhum sufixo para producao. Uma combinacao incorreta falha antes do upload.
 
 ## Custodia da chave
 

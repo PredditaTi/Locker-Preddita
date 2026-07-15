@@ -171,6 +171,11 @@ Servidor:
 - `PREDDITA_ADMIN_TOKEN`: token do sindico.
 - `PREDDITA_SUPER_ADMIN_TOKEN`: token do Admin Geral PREDDITA.
 - `PREDDITA_DEVICE_KEY`: chave usada pelo armario.
+- `PREDDITA_DEVICE_KEYS`: mapa de uma chave diferente por `lockerId`.
+- `PREDDITA_DEVICE_AUTH_MODE`: `hmac` em producao; `dual` existe apenas para
+  migracao controlada em laboratorio.
+- `PREDDITA_DEVICE_SIGNATURE_TTL_MS`: janela maxima da assinatura, 120 segundos
+  por padrao.
 - `PREDDITA_DATA_DIR`: pasta do `state.json`.
 - `PREDDITA_COMMAND_TTL_MS`: prazo total do comando.
 - `PREDDITA_COMMAND_LEASE_MS`: prazo para o armario confirmar a entrega.
@@ -184,7 +189,13 @@ Build do app:
 - `VITE_PREDDITA_REMOTE_URL`: URL do Admin Online.
 - `VITE_PREDDITA_DEVICE_KEY`: chave do armario.
 - `VITE_PREDDITA_LOCKER_ID`: identificador do locker.
+- `VITE_PREDDITA_DEVICE_AUTH_MODE`: `hmac` por padrao; `legacy` somente para
+  conectar temporariamente a um servidor antigo em laboratorio.
 - `VITE_PREDDITA_EDGE_APP_VERSION`: versao reportada no heartbeat.
+
+Cada chamada `/api/device/*` assina metodo, rota, `lockerId`, timestamp, nonce e
+SHA-256 do corpo com HMAC-SHA256. O servidor valida a janela de tempo e consome o
+nonce uma unica vez, bloqueando alteracao do payload e replay da requisicao.
 
 ## Riscos conhecidos e proximos passos
 

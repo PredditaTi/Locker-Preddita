@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -9,7 +9,7 @@ const PUBLIC_DIR = join(ROOT_DIR, 'public');
 const DATA_DIR = process.env.PREDDITA_DATA_DIR ? normalize(process.env.PREDDITA_DATA_DIR) : join(ROOT_DIR, 'data');
 const DB_PATH = join(DATA_DIR, 'state.json');
 const BACKUP_DIR = join(DATA_DIR, 'backups');
-const APP_VERSION = '2.0.10-lab';
+const APP_VERSION = '2.0.11-lab';
 const SCHEMA_VERSION = 7;
 const DEFAULT_ADMIN_TOKEN = 'preddita-admin-local';
 const DEFAULT_SUPER_ADMIN_TOKEN = 'preddita-super-admin-local';
@@ -33,6 +33,15 @@ const DEVICE_KEY = process.env.PREDDITA_DEVICE_KEY ?? (IS_PRODUCTION ? '' : DEFA
 const DEFAULT_TENANT_ID = process.env.PREDDITA_TENANT_ID ?? 'residencial-aurora';
 const DEFAULT_LOCKER_ID = process.env.PREDDITA_LOCKER_ID ?? 'ks1062-aurora';
 const DEVICE_KEYS = parseDeviceKeys(process.env.PREDDITA_DEVICE_KEYS, DEVICE_KEY);
+const DEVICE_AUTH_MODES = new Set(['hmac', 'dual', 'legacy']);
+const DEVICE_AUTH_MODE = cleanText(
+  process.env.PREDDITA_DEVICE_AUTH_MODE || (IS_PRODUCTION ? 'hmac' : 'dual')
+).toLowerCase();
+const DEVICE_SIGNATURE_TTL_MS = Math.min(
+  parsePositiveInteger(process.env.PREDDITA_DEVICE_SIGNATURE_TTL_MS, 120000),
+  600000
+);
+const MAX_DEVICE_AUTH_NONCES = 5000;
 const STORAGE_MODE = cleanText(process.env.PREDDITA_STORAGE || (process.env.PREDDITA_DATABASE_URL || process.env.DATABASE_URL ? 'postgres' : 'json')).toLowerCase();
 const DATABASE_URL = cleanText(process.env.PREDDITA_DATABASE_URL || process.env.DATABASE_URL);
 const COMMAND_TTL_MS = parsePositiveInteger(process.env.PREDDITA_COMMAND_TTL_MS, 120000);
@@ -68,6 +77,7 @@ let notificationOutboxInFlight = false;
 let postgresPool = null;
 let postgresReadyPromise = null;
 const lockerStateMutationQueues = new Map();
+const deviceAuthNonces = new Map();
 
 function nowIso() {
   return new Date().toISOString();
@@ -200,11 +210,17 @@ function parseDeviceKeys(rawValue, legacyKey) {
 }
 
 function getStartupConfigErrors() {
+  const errors = [];
+  if (!DEVICE_AUTH_MODES.has(DEVICE_AUTH_MODE)) {
+    errors.push('PREDDITA_DEVICE_AUTH_MODE deve ser hmac, dual ou legacy.');
+  }
+  if (IS_PRODUCTION && DEVICE_AUTH_MODE !== 'hmac') {
+    errors.push('PREDDITA_DEVICE_AUTH_MODE deve ser hmac em producao.');
+  }
   if (!IS_PRODUCTION) {
-    return [];
+    return errors;
   }
 
-  const errors = [];
   const requiredSecrets = [
     ['PREDDITA_ADMIN_TOKEN', ADMIN_TOKEN, DEFAULT_ADMIN_TOKEN],
     ['PREDDITA_SUPER_ADMIN_TOKEN', SUPER_ADMIN_TOKEN, DEFAULT_SUPER_ADMIN_TOKEN],
@@ -807,6 +823,7 @@ function getRuntimeSummary(state) {
     smtpConfigured: isSmtpConfigured(),
     pendingNotificationCount: notificationOutbox.filter((item) => ['pending', 'failed'].includes(cleanText(item.status))).length,
     failedNotificationCount: notificationOutbox.filter((item) => cleanText(item.status) === 'failed').length,
+    deviceAuthMode: DEVICE_AUTH_MODE,
     securityWarnings: getSecurityWarnings(),
   };
 }
@@ -875,6 +892,9 @@ function getSecurityWarnings() {
   }
   if (DEVICE_KEYS.size <= 1 && !process.env.PREDDITA_DEVICE_KEYS) {
     warnings.push('PREDDITA_DEVICE_KEYS nao foi definido; usando uma unica chave de dispositivo.');
+  }
+  if (DEVICE_AUTH_MODE !== 'hmac') {
+    warnings.push(`Autenticacao de dispositivo esta em modo ${DEVICE_AUTH_MODE}; use hmac antes de publicar.`);
   }
   if (ALLOWED_ORIGINS.length === 0) {
     warnings.push('PREDDITA_ALLOWED_ORIGINS nao foi definido; CORS esta permissivo.');
@@ -1727,7 +1747,11 @@ async function applyDeviceEvents(state, rawEvents = []) {
 }
 
 function readBody(request) {
-  return new Promise((resolve, reject) => {
+  if (request.predditaBodyPromise) {
+    return request.predditaBodyPromise;
+  }
+
+  request.predditaBodyPromise = new Promise((resolve, reject) => {
     let body = '';
     let bodyBytes = 0;
     let rejected = false;
@@ -1744,6 +1768,7 @@ function readBody(request) {
     });
     request.on('end', () => {
       if (rejected) return;
+      request.predditaRawBody = body;
       if (!body) {
         resolve({});
         return;
@@ -1755,6 +1780,7 @@ function readBody(request) {
       }
     });
   });
+  return request.predditaBodyPromise;
 }
 
 function sendJson(response, status, payload) {
@@ -1762,7 +1788,7 @@ function sendJson(response, status, payload) {
     'content-type': 'application/json; charset=utf-8',
     'access-control-allow-origin': response.predditaCorsOrigin ?? '*',
     'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
-    'access-control-allow-headers': 'content-type,x-admin-token,x-device-key,x-locker-id',
+    'access-control-allow-headers': 'content-type,x-admin-token,x-device-key,x-locker-id,x-preddita-timestamp,x-preddita-nonce,x-preddita-content-sha256,x-preddita-signature',
     'x-preddita-version': APP_VERSION,
   });
   response.end(JSON.stringify(payload));
@@ -1777,7 +1803,7 @@ function sendText(response, status, text, contentType = 'text/plain; charset=utf
     'content-type': contentType,
     'access-control-allow-origin': response.predditaCorsOrigin ?? '*',
     'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
-    'access-control-allow-headers': 'content-type,x-admin-token,x-device-key,x-locker-id',
+    'access-control-allow-headers': 'content-type,x-admin-token,x-device-key,x-locker-id,x-preddita-timestamp,x-preddita-nonce,x-preddita-content-sha256,x-preddita-signature',
     'x-preddita-version': APP_VERSION,
   });
   response.end(text);
@@ -1822,10 +1848,94 @@ function getAdminSession(request) {
   return null;
 }
 
-function hasDeviceAuth(request) {
+function getDeviceKey(request) {
   const lockerId = getRequestLockerId(request);
-  const expectedKey = DEVICE_KEYS.get(lockerId) || (lockerId === DEFAULT_LOCKER_ID ? DEVICE_KEY : '');
-  return Boolean(expectedKey) && safeTokenEquals(request.headers['x-device-key'], expectedKey);
+  return DEVICE_KEYS.get(lockerId) || (lockerId === DEFAULT_LOCKER_ID ? DEVICE_KEY : '');
+}
+
+function createDeviceRequestCanonical(request, lockerId, timestamp, nonce, contentSha256) {
+  const url = new URL(request.url, `http://localhost:${PORT}`);
+  return [
+    'PREDDITA-HMAC-V1',
+    String(request.method || 'GET').toUpperCase(),
+    `${url.pathname}${url.search}`,
+    lockerId,
+    timestamp,
+    nonce,
+    contentSha256,
+  ].join('\n');
+}
+
+function reserveDeviceNonce(lockerId, nonce, now) {
+  for (const [key, expiresAt] of deviceAuthNonces) {
+    if (expiresAt <= now) deviceAuthNonces.delete(key);
+  }
+
+  const key = `${lockerId}:${nonce}`;
+  if ((deviceAuthNonces.get(key) ?? 0) > now) {
+    return false;
+  }
+  deviceAuthNonces.set(key, now + DEVICE_SIGNATURE_TTL_MS);
+
+  while (deviceAuthNonces.size > MAX_DEVICE_AUTH_NONCES) {
+    const oldest = deviceAuthNonces.keys().next().value;
+    if (!oldest) break;
+    deviceAuthNonces.delete(oldest);
+  }
+  return true;
+}
+
+function hasValidDeviceSignature(request) {
+  const lockerId = getRequestLockerId(request);
+  const expectedKey = getDeviceKey(request);
+  const timestamp = cleanText(request.headers['x-preddita-timestamp']);
+  const nonce = cleanText(request.headers['x-preddita-nonce']);
+  const contentSha256 = cleanText(request.headers['x-preddita-content-sha256']).toLowerCase();
+  const signatureHeader = cleanText(request.headers['x-preddita-signature']);
+  const signature = signatureHeader.startsWith('v1=') ? signatureHeader.slice(3).toLowerCase() : '';
+  const timestampMs = Number.parseInt(timestamp, 10);
+  const now = Date.now();
+
+  if (
+    !expectedKey ||
+    !/^\d{10,16}$/.test(timestamp) ||
+    !Number.isSafeInteger(timestampMs) ||
+    Math.abs(now - timestampMs) > DEVICE_SIGNATURE_TTL_MS ||
+    !/^[A-Za-z0-9._:-]{16,128}$/.test(nonce) ||
+    !/^[a-f0-9]{64}$/.test(contentSha256) ||
+    !/^[a-f0-9]{64}$/.test(signature)
+  ) {
+    return false;
+  }
+
+  const actualContentSha256 = createHash('sha256')
+    .update(String(request.predditaRawBody ?? ''), 'utf8')
+    .digest('hex');
+  if (!safeTokenEquals(contentSha256, actualContentSha256)) {
+    return false;
+  }
+
+  const canonical = createDeviceRequestCanonical(request, lockerId, timestamp, nonce, contentSha256);
+  const expectedSignature = createHmac('sha256', expectedKey).update(canonical, 'utf8').digest('hex');
+  if (!safeTokenEquals(signature, expectedSignature)) {
+    return false;
+  }
+
+  return reserveDeviceNonce(lockerId, nonce, now);
+}
+
+function hasDeviceAuth(request) {
+  if (DEVICE_AUTH_MODE === 'hmac') {
+    return hasValidDeviceSignature(request);
+  }
+  if (DEVICE_AUTH_MODE === 'dual' && request.headers['x-preddita-signature']) {
+    return hasValidDeviceSignature(request);
+  }
+
+  const expectedKey = getDeviceKey(request);
+  return DEVICE_AUTH_MODE !== 'hmac'
+    && Boolean(expectedKey)
+    && safeTokenEquals(request.headers['x-device-key'], expectedKey);
 }
 
 function routePath(url) {
@@ -1944,9 +2054,17 @@ async function handleApi(request, response) {
     return;
   }
 
-  if (isDevicePath && !hasDeviceAuth(request)) {
-    sendError(response, 401, 'Chave do dispositivo invalida.');
-    return;
+  if (isDevicePath) {
+    try {
+      await readBody(request);
+    } catch (error) {
+      sendError(response, 400, error.message || 'Corpo da requisicao invalido.');
+      return;
+    }
+    if (!hasDeviceAuth(request)) {
+      sendError(response, 401, 'Autenticacao do dispositivo invalida.');
+      return;
+    }
   }
 
   const requestLockerId = getRequestLockerId(request);
