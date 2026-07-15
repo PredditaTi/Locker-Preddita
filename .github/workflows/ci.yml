@@ -1,0 +1,129 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify project
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: preddita_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d preddita_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      PREDDITA_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/preddita_ci
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: |
+            admin-online/package-lock.json
+            web/package-lock.json
+
+      - name: Set up Java 17
+        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5.5.0
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+          cache-dependency-path: |
+            android/build.gradle
+            android/settings.gradle
+            android/app/build.gradle
+            android/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Set up Android SDK 34
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        with:
+          packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
+
+      - name: Install Admin Online dependencies
+        run: npm ci
+        working-directory: admin-online
+
+      - name: Install locker app dependencies
+        run: npm ci
+        working-directory: web
+
+      - name: Run JavaScript test suites
+        run: |
+          node scripts/v2-workflow-test.mjs
+          node scripts/v2-device-event-journal-test.mjs
+          node scripts/v2-remote-command-journal-test.mjs
+          node scripts/v2-qr-scanner-test.mjs
+          node scripts/v2-serial-protocol-test.mjs
+          node scripts/v2-state-recovery-test.mjs
+          node scripts/v2-smoke-test.mjs
+          node scripts/v2-postgres-smoke-test.mjs
+
+      - name: Validate server syntax
+        run: |
+          node --check admin-online/server.mjs
+          node --check admin-online/public/app.js
+
+      - name: Test native RS-485 parser
+        run: |
+          output_dir="$(mktemp -d)"
+          trap 'rm -rf "$output_dir"' EXIT
+          javac -d "$output_dir" \
+            android/app/src/main/java/com/preddita/entregaslocker/Rs485FrameParser.java \
+            scripts/Rs485FrameParserTest.java
+          java -cp "$output_dir" Rs485FrameParserTest
+
+      - name: Audit production dependencies
+        run: |
+          npm audit --omit=dev --audit-level=high --prefix admin-online
+          npm audit --omit=dev --audit-level=high --prefix web
+
+      - name: Build locker web assets
+        run: npm run build
+        working-directory: web
+
+      - name: Build debug APK
+        run: ./gradlew --no-daemon assembleDebug
+        working-directory: android
+
+      - name: Generate debug APK checksum
+        run: sha256sum app-debug.apk > app-debug.apk.sha256
+        working-directory: android/app/build/outputs/apk/debug
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: preddita-locker-debug-${{ github.run_number }}
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            android/app/build/outputs/apk/debug/app-debug.apk.sha256
+          if-no-files-found: error
+          retention-days: 14
