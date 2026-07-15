@@ -16,15 +16,26 @@ const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const ADMIN_DIR = join(ROOT, 'admin-online');
 const SERVER_PATH = join(ADMIN_DIR, 'server.mjs');
 const ADMIN_PASSWORD = 'v2-admin-postgres-password';
+const ROTATED_ADMIN_PASSWORD = 'v2-admin-postgres-password-rotated';
 const DEVICE_KEY = 'v2-device-postgres-key';
-const LOCKER_ID = `locker-test-${Date.now().toString(36)}`;
+const RUN_SUFFIX = Date.now().toString(36);
+const LOCKER_ID = `locker-test-${RUN_SUFFIX}`;
+const ADMIN_USERNAME = `postgres-admin-${RUN_SUFFIX}`;
 const PORT = 9898;
 const DATA_DIR = mkdtempSync(join(tmpdir(), 'preddita-v2-pg-smoke-'));
 const ADMIN_USERS = JSON.stringify([{
-  username: 'postgres-admin',
+  username: ADMIN_USERNAME,
   name: 'Postgres Admin',
   role: 'super_admin',
   passwordHash: hashAdminPassword(ADMIN_PASSWORD, { salt: 'postgres-admin-salt-001' }),
+  tenantId: 'tenant-postgres-smoke',
+  lockerIds: ['*'],
+}]);
+const ROTATED_ADMIN_USERS = JSON.stringify([{
+  username: ADMIN_USERNAME,
+  name: 'Postgres Admin',
+  role: 'super_admin',
+  passwordHash: hashAdminPassword(ROTATED_ADMIN_PASSWORD, { salt: 'postgres-admin-salt-002' }),
   tenantId: 'tenant-postgres-smoke',
   lockerIds: ['*'],
 }]);
@@ -65,44 +76,62 @@ async function waitForServer() {
   throw new Error('Servidor Postgres nao iniciou dentro do tempo esperado.');
 }
 
-async function login() {
+async function login(password = ADMIN_PASSWORD) {
   const { response, payload } = await request('/api/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ username: 'postgres-admin', password: ADMIN_PASSWORD }),
+    body: JSON.stringify({ username: ADMIN_USERNAME, password }),
   });
   if (!response.ok) throw new Error(payload.error || 'Login Postgres falhou.');
-  return { cookie: String(response.headers.get('set-cookie') || '').split(';')[0] };
+  return {
+    cookie: String(response.headers.get('set-cookie') || '').split(';')[0],
+    csrfToken: payload.session?.csrfToken || '',
+    sessionId: payload.session?.id || '',
+  };
 }
 
-const server = spawn(process.execPath, [SERVER_PATH], {
-  cwd: ADMIN_DIR,
-  env: {
-    ...process.env,
-    PORT: String(PORT),
-    PREDDITA_STORAGE: 'postgres',
-    PREDDITA_DATABASE_URL: DATABASE_URL,
-    PREDDITA_DATA_DIR: DATA_DIR,
-    PREDDITA_TENANT_ID: 'tenant-postgres-smoke',
-    PREDDITA_LOCKER_ID: LOCKER_ID,
-    PREDDITA_ADMIN_USERS: ADMIN_USERS,
-    PREDDITA_DEVICE_KEY: DEVICE_KEY,
-    PREDDITA_DEVICE_KEYS: JSON.stringify({ [LOCKER_ID]: DEVICE_KEY }),
-    PREDDITA_DEVICE_AUTH_MODE: 'hmac',
-    PREDDITA_COMMAND_TTL_MS: '30000',
-    PREDDITA_DEVICE_STALE_MS: '30000',
-  },
-  stdio: ['ignore', 'pipe', 'pipe'],
-});
-
 let serverLog = '';
-server.stdout.on('data', (chunk) => {
-  serverLog += chunk.toString();
-});
-server.stderr.on('data', (chunk) => {
-  serverLog += chunk.toString();
-});
+let server = null;
+
+function spawnServer({ adminUsersBootstrap = '' } = {}) {
+  const child = spawn(process.execPath, [SERVER_PATH], {
+    cwd: ADMIN_DIR,
+    env: {
+      ...process.env,
+      PORT: String(PORT),
+      PREDDITA_STORAGE: 'postgres',
+      PREDDITA_DATABASE_URL: DATABASE_URL,
+      PREDDITA_DATA_DIR: DATA_DIR,
+      PREDDITA_TENANT_ID: 'tenant-postgres-smoke',
+      PREDDITA_LOCKER_ID: LOCKER_ID,
+      PREDDITA_ADMIN_USERS: adminUsersBootstrap,
+      PREDDITA_DEVICE_KEY: DEVICE_KEY,
+      PREDDITA_DEVICE_KEYS: JSON.stringify({ [LOCKER_ID]: DEVICE_KEY }),
+      PREDDITA_DEVICE_AUTH_MODE: 'hmac',
+      PREDDITA_COMMAND_TTL_MS: '30000',
+      PREDDITA_DEVICE_STALE_MS: '30000',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  child.stdout.on('data', (chunk) => {
+    serverLog += chunk.toString();
+  });
+  child.stderr.on('data', (chunk) => {
+    serverLog += chunk.toString();
+  });
+  return child;
+}
+
+async function stopServer(child) {
+  if (!child || child.exitCode !== null) return;
+  child.kill();
+  await Promise.race([
+    new Promise((resolve) => child.once('exit', resolve)),
+    delay(2000),
+  ]);
+}
 
 try {
+  server = spawnServer({ adminUsersBootstrap: ADMIN_USERS });
   await waitForServer();
 
   const adminHeaders = await login();
@@ -131,13 +160,57 @@ try {
   if (state.state.tenant?.lockerId !== LOCKER_ID) {
     throw new Error('Estado Postgres deveria ser carregado pelo lockerId solicitado.');
   }
+  if (state.state.runtime?.adminSessionStorage !== 'postgres') {
+    throw new Error('Runtime deveria informar sessoes administrativas no Postgres.');
+  }
+
+  await stopServer(server);
+  server = spawnServer();
+  await waitForServer();
+
+  const restoredSession = await requestOk('/api/auth/session', {
+    headers: { cookie: adminHeaders.cookie },
+  });
+  if (restoredSession.session?.id !== adminHeaders.sessionId) {
+    throw new Error('Sessao administrativa deveria sobreviver ao restart do servidor.');
+  }
+
+  await requestOk('/api/auth/logout', {
+    method: 'POST',
+    headers: {
+      cookie: adminHeaders.cookie,
+      'x-csrf-token': adminHeaders.csrfToken,
+    },
+    body: '{}',
+  });
+
+  await stopServer(server);
+  server = spawnServer();
+  await waitForServer();
+  const revokedSession = await request('/api/auth/session', {
+    headers: { cookie: adminHeaders.cookie },
+  });
+  if (revokedSession.response.status !== 401) {
+    throw new Error('Sessao revogada nao pode voltar depois de novo restart.');
+  }
+
+  const sessionBeforePasswordRotation = await login();
+  await stopServer(server);
+  server = spawnServer({ adminUsersBootstrap: ROTATED_ADMIN_USERS });
+  await waitForServer();
+  const sessionAfterPasswordRotation = await request('/api/auth/session', {
+    headers: { cookie: sessionBeforePasswordRotation.cookie },
+  });
+  if (sessionAfterPasswordRotation.response.status !== 401) {
+    throw new Error('Rotacao de senha deveria revogar sessoes administrativas anteriores.');
+  }
+  await login(ROTATED_ADMIN_PASSWORD);
 
   console.log('PREDDITA_V2_POSTGRES_SMOKE_OK');
 } finally {
-  server.kill();
-  await delay(300);
+  await stopServer(server);
   rmSync(DATA_DIR, { recursive: true, force: true });
-  if (server.exitCode && server.exitCode !== 0) {
+  if (serverLog && server?.exitCode && server.exitCode !== 0) {
     console.error(serverLog);
   }
 }

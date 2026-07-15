@@ -1,4 +1,4 @@
-import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 
 export const ADMIN_SESSION_COOKIE = 'preddita_admin_session';
 export const ADMIN_PASSWORD_HASH_PREFIX = 'scrypt-v1';
@@ -224,10 +224,31 @@ function sessionCookie(token, options) {
   return parts.join('; ');
 }
 
+function normalizeSessionOptions(options = {}) {
+  return {
+    ttlMs: Math.max(15 * 60 * 1000, Math.min(Number(options.ttlMs) || 8 * 60 * 60 * 1000, 24 * 60 * 60 * 1000)),
+    maxSessions: Math.max(10, Math.min(Number(options.maxSessions) || 500, 5000)),
+    secure: Boolean(options.secure),
+  };
+}
+
+function createSession(user, ttlMs, now = Date.now()) {
+  return Object.freeze({
+    id: randomBytes(12).toString('base64url'),
+    csrfToken: randomBytes(24).toString('base64url'),
+    user,
+    createdAt: new Date(now).toISOString(),
+    expiresAt: new Date(now + ttlMs).toISOString(),
+    expiresAtMs: now + ttlMs,
+  });
+}
+
+export function hashAdminSessionToken(token) {
+  return createHash('sha256').update(String(token ?? '')).digest('hex');
+}
+
 export function createAdminSessionStore(options = {}) {
-  const ttlMs = Math.max(15 * 60 * 1000, Math.min(Number(options.ttlMs) || 8 * 60 * 60 * 1000, 24 * 60 * 60 * 1000));
-  const maxSessions = Math.max(10, Math.min(Number(options.maxSessions) || 500, 5000));
-  const secure = Boolean(options.secure);
+  const { ttlMs, maxSessions, secure } = normalizeSessionOptions(options);
   const sessions = new Map();
 
   function prune(now = Date.now()) {
@@ -245,14 +266,7 @@ export function createAdminSessionStore(options = {}) {
     const now = Date.now();
     prune(now);
     const token = randomBytes(32).toString('base64url');
-    const session = Object.freeze({
-      id: randomBytes(12).toString('base64url'),
-      csrfToken: randomBytes(24).toString('base64url'),
-      user,
-      createdAt: new Date(now).toISOString(),
-      expiresAt: new Date(now + ttlMs).toISOString(),
-      expiresAtMs: now + ttlMs,
-    });
+    const session = createSession(user, ttlMs, now);
     sessions.set(token, session);
     return {
       session,
@@ -279,6 +293,87 @@ export function createAdminSessionStore(options = {}) {
   }
 
   return Object.freeze({ create, get, destroy, size: () => sessions.size });
+}
+
+export function createPersistentAdminSessionStore(options = {}) {
+  const { ttlMs, maxSessions, secure } = normalizeSessionOptions(options);
+  const repository = options.repository;
+  const resolveUser = options.resolveUser;
+  if (
+    !repository
+    || typeof repository.create !== 'function'
+    || typeof repository.find !== 'function'
+    || typeof repository.revoke !== 'function'
+    || typeof repository.prune !== 'function'
+  ) {
+    throw new Error('Repositorio persistente de sessoes administrativas invalido.');
+  }
+  if (typeof resolveUser !== 'function') {
+    throw new Error('Resolvedor de usuario administrativo invalido.');
+  }
+
+  async function create(user) {
+    const now = Date.now();
+    await repository.prune(new Date(now).toISOString(), maxSessions);
+    const token = randomBytes(32).toString('base64url');
+    const tokenHash = hashAdminSessionToken(token);
+    const session = createSession(user, ttlMs, now);
+    await repository.create({
+      tokenHash,
+      sessionId: session.id,
+      username: user.username,
+      csrfToken: session.csrfToken,
+      createdAt: session.createdAt,
+      expiresAt: session.expiresAt,
+    });
+    return {
+      session,
+      cookie: sessionCookie(token, { secure, maxAgeSeconds: Math.floor(ttlMs / 1000) }),
+    };
+  }
+
+  async function get(cookieHeader) {
+    const token = readCookie(cookieHeader, ADMIN_SESSION_COOKIE);
+    if (!token) return null;
+    const tokenHash = hashAdminSessionToken(token);
+    const record = await repository.find(tokenHash);
+    if (!record || record.revokedAt) return null;
+
+    const expiresAtMs = Date.parse(record.expiresAt);
+    if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
+      await repository.revoke(tokenHash, new Date().toISOString());
+      return null;
+    }
+
+    const user = await resolveUser(record.username);
+    if (!user || user.disabled) {
+      await repository.revoke(tokenHash, new Date().toISOString());
+      return null;
+    }
+
+    return Object.freeze({
+      id: record.sessionId,
+      csrfToken: record.csrfToken,
+      user,
+      createdAt: record.createdAt,
+      expiresAt: record.expiresAt,
+      expiresAtMs,
+    });
+  }
+
+  async function destroy(cookieHeader) {
+    const token = readCookie(cookieHeader, ADMIN_SESSION_COOKIE);
+    if (token) {
+      await repository.revoke(hashAdminSessionToken(token), new Date().toISOString());
+    }
+    return sessionCookie('', { secure, maxAgeSeconds: 0 });
+  }
+
+  async function size() {
+    return typeof repository.size === 'function' ? repository.size() : null;
+  }
+
+  return Object.freeze({ create, get, destroy, size });
 }
 
 export function toPublicAdminSession(session, options = {}) {

@@ -72,7 +72,11 @@ node server.mjs
 ```
 
 O schema de referencia fica em `sql/postgres-schema.sql`. O servidor tambem cria
-a tabela automaticamente no startup quando usa Postgres.
+as tabelas automaticamente no startup quando usa Postgres. No primeiro boot,
+`PREDDITA_ADMIN_USERS` importa e reconcilia as contas em
+`preddita_admin_users`. Sessoes ficam em `preddita_admin_sessions` e usam hash
+SHA-256 do token; restart e logout preservam validade e revogacao. Sem Postgres,
+usuarios continuam no ambiente e sessoes continuam na memoria.
 
 ## Teste local da v2
 
@@ -120,7 +124,8 @@ PREDDITA_V2_SMOKE_OK
 
 - Escrita atomica de `state.json` com backup em `data/backups`.
 - `runtime` no `/api/admin/state` com saude do armario, fila, SMTP e versao.
-- Senhas derivadas com `scrypt`, sessoes opacas e logout com revogacao imediata.
+- Senhas derivadas com `scrypt`, sessoes opacas e logout com revogacao imediata;
+  no modo Postgres, usuarios, sessoes e revogacoes sobrevivem a restart.
 - Papeis `sindico`, `operador`, `suporte` e `super_admin` aplicados na API.
 - Rate limit administrativo e de abertura remota.
 - Endpoint `GET /api/admin/commands/:id` para acompanhar comandos.

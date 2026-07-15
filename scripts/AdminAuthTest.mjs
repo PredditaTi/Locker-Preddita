@@ -3,8 +3,10 @@ import {
   adminUserCanAccessLocker,
   authenticateAdminUser,
   createAdminSessionStore,
+  createPersistentAdminSessionStore,
   getAdminRolePermissions,
   hashAdminPassword,
+  hashAdminSessionToken,
   parseAdminUsers,
   toPublicAdminSession,
   verifyAdminPassword,
@@ -53,5 +55,44 @@ assert.equal('passwordHash' in publicSession, false);
 const clearedCookie = store.destroy(cookiePair);
 assert.match(clearedCookie, /Max-Age=0/);
 assert.equal(store.get(cookiePair), null);
+
+const persistentRecords = new Map();
+const persistentRepository = {
+  async create(record) {
+    persistentRecords.set(record.tokenHash, { ...record, revokedAt: '' });
+  },
+  async find(tokenHash) {
+    return persistentRecords.get(tokenHash) || null;
+  },
+  async revoke(tokenHash, revokedAt) {
+    const record = persistentRecords.get(tokenHash);
+    if (record) persistentRecords.set(tokenHash, { ...record, revokedAt });
+  },
+  async prune() {},
+  async size() {
+    return persistentRecords.size;
+  },
+};
+const persistentOptions = {
+  ttlMs: 15 * 60 * 1000,
+  secure: true,
+  repository: persistentRepository,
+  resolveUser: (username) => users.find((candidate) => candidate.username === username) || null,
+};
+const persistentStore = createPersistentAdminSessionStore(persistentOptions);
+const persistentCreated = await persistentStore.create(user);
+const persistentCookie = persistentCreated.cookie.split(';')[0];
+const rawToken = decodeURIComponent(persistentCookie.split('=')[1]);
+assert.equal(persistentRecords.has(rawToken), false, 'token bruto nao pode ser persistido');
+assert.equal(persistentRecords.has(hashAdminSessionToken(rawToken)), true);
+
+const restartedStore = createPersistentAdminSessionStore(persistentOptions);
+const persistentRestored = await restartedStore.get(persistentCookie);
+assert.equal(persistentRestored?.id, persistentCreated.session.id);
+assert.equal(persistentRestored?.user.username, 'operador.teste');
+
+await restartedStore.destroy(persistentCookie);
+const restartedAfterLogout = createPersistentAdminSessionStore(persistentOptions);
+assert.equal(await restartedAfterLogout.get(persistentCookie), null, 'logout deve continuar revogado apos restart');
 
 console.log('PREDDITA_ADMIN_AUTH_OK');

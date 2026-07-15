@@ -1,6 +1,6 @@
 {
   "name": "preddita-entregas-locker",
-  "version": "2.0.15-lab",
+  "version": "2.0.16-lab",
   "type": "module",
   "description": "PREDDITA Entregas Locker - Kiosk App",
   "scripts": {

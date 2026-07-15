@@ -7,6 +7,7 @@ import {
   adminUserCanAccessLocker,
   authenticateAdminUser,
   createAdminSessionStore,
+  createPersistentAdminSessionStore,
   getAdminRolePermissions,
   parseAdminUsers,
   toPublicAdminSession,
@@ -17,7 +18,7 @@ const PUBLIC_DIR = join(ROOT_DIR, 'public');
 const DATA_DIR = process.env.PREDDITA_DATA_DIR ? normalize(process.env.PREDDITA_DATA_DIR) : join(ROOT_DIR, 'data');
 const DB_PATH = join(DATA_DIR, 'state.json');
 const BACKUP_DIR = join(DATA_DIR, 'backups');
-const APP_VERSION = '2.0.15-lab';
+const APP_VERSION = '2.0.16-lab';
 const SCHEMA_VERSION = 7;
 const DEFAULT_ADMIN_TOKEN = 'preddita-admin-local';
 const DEFAULT_SUPER_ADMIN_TOKEN = 'preddita-super-admin-local';
@@ -84,6 +85,7 @@ const SMTP_PASS = cleanText(process.env.PREDDITA_SMTP_PASS);
 const SMTP_FROM = cleanText(process.env.PREDDITA_SMTP_FROM || process.env.PREDDITA_SMTP_USER);
 const ALLOW_LEGACY_ADMIN_TOKENS = !IS_PRODUCTION
   && String(process.env.PREDDITA_LEGACY_ADMIN_TOKENS ?? 'false').toLowerCase() === 'true';
+const ADMIN_USERS_BOOTSTRAP_CONFIGURED = Boolean(cleanText(process.env.PREDDITA_ADMIN_USERS));
 let adminUsers = [];
 let adminUsersConfigError = '';
 try {
@@ -95,7 +97,7 @@ try {
 } catch (error) {
   adminUsersConfigError = error.message;
 }
-const adminSessionStore = createAdminSessionStore({
+let adminSessionStore = createAdminSessionStore({
   ttlMs: ADMIN_SESSION_TTL_MS,
   secure: IS_PRODUCTION,
 });
@@ -251,9 +253,9 @@ function getStartupConfigErrors() {
     return errors;
   }
 
-  if (adminUsers.length === 0) {
+  if (adminUsers.length === 0 && !isPostgresStorage()) {
     errors.push('PREDDITA_ADMIN_USERS deve definir usuarios com passwordHash em producao.');
-  } else if (!adminUsers.some((user) => user.role === 'super_admin' && !user.disabled)) {
+  } else if (adminUsers.length > 0 && !adminUsers.some((user) => user.role === 'super_admin' && !user.disabled)) {
     errors.push('PREDDITA_ADMIN_USERS deve conter ao menos um super_admin ativo.');
   }
   if (String(process.env.PREDDITA_LEGACY_ADMIN_TOKENS ?? '').toLowerCase() === 'true') {
@@ -562,10 +564,279 @@ async function ensurePostgres() {
       create index if not exists idx_preddita_locker_states_updated_at
       on preddita_locker_states (updated_at desc)
     `);
+    await postgresPool.query(`
+      create table if not exists preddita_admin_users (
+        username text primary key,
+        user_id text not null,
+        name text not null,
+        role text not null,
+        password_hash text not null,
+        tenant_id text not null,
+        locker_ids jsonb not null,
+        disabled boolean not null default false,
+        source text not null default 'environment',
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now()
+      )
+    `);
+    await postgresPool.query(`
+      create index if not exists idx_preddita_admin_users_tenant
+      on preddita_admin_users (tenant_id, disabled, role)
+    `);
+    await postgresPool.query(`
+      create table if not exists preddita_admin_sessions (
+        token_hash char(64) primary key,
+        session_id text not null unique,
+        username text not null references preddita_admin_users(username),
+        csrf_token text not null,
+        created_at timestamptz not null,
+        expires_at timestamptz not null,
+        last_seen_at timestamptz not null default now(),
+        revoked_at timestamptz
+      )
+    `);
+    await postgresPool.query(`
+      create index if not exists idx_preddita_admin_sessions_active
+      on preddita_admin_sessions (username, expires_at desc)
+      where revoked_at is null
+    `);
     return postgresPool;
   })();
 
   return postgresReadyPromise;
+}
+
+async function syncPostgresAdminUsers(users) {
+  const pool = await ensurePostgres();
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+    for (const user of users) {
+      const changedResult = await client.query(
+        `
+          select exists (
+            select 1
+            from preddita_admin_users
+            where username = $1
+              and (
+                password_hash <> $2
+                or role <> $3
+                or tenant_id <> $4
+                or locker_ids <> $5::jsonb
+                or disabled <> $6
+              )
+          ) as changed
+        `,
+        [
+          user.username,
+          user.passwordHash,
+          user.role,
+          user.tenantId,
+          JSON.stringify(user.lockerIds),
+          user.disabled,
+        ]
+      );
+      await client.query(
+        `
+          insert into preddita_admin_users (
+            username, user_id, name, role, password_hash, tenant_id,
+            locker_ids, disabled, source, updated_at
+          ) values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, 'environment', now())
+          on conflict (username)
+          do update set
+            user_id = excluded.user_id,
+            name = excluded.name,
+            role = excluded.role,
+            password_hash = excluded.password_hash,
+            tenant_id = excluded.tenant_id,
+            locker_ids = excluded.locker_ids,
+            disabled = excluded.disabled,
+            source = 'environment',
+            updated_at = now()
+        `,
+        [
+          user.username,
+          user.id,
+          user.name,
+          user.role,
+          user.passwordHash,
+          user.tenantId,
+          JSON.stringify(user.lockerIds),
+          user.disabled,
+        ]
+      );
+      if (changedResult.rows[0]?.changed) {
+        await client.query(
+          `
+            update preddita_admin_sessions
+            set revoked_at = coalesce(revoked_at, now())
+            where username = $1 and revoked_at is null
+          `,
+          [user.username]
+        );
+      }
+    }
+    const activeUsernames = users.map((user) => user.username);
+    const removedResult = await client.query(
+      `
+        update preddita_admin_users
+        set disabled = true, updated_at = now()
+        where source = 'environment'
+          and not (username = any($1::text[]))
+          and disabled = false
+        returning username
+      `,
+      [activeUsernames]
+    );
+    const removedUsernames = removedResult.rows.map((row) => row.username);
+    if (removedUsernames.length > 0) {
+      await client.query(
+        `
+          update preddita_admin_sessions
+          set revoked_at = coalesce(revoked_at, now())
+          where username = any($1::text[]) and revoked_at is null
+        `,
+        [removedUsernames]
+      );
+    }
+    await client.query('commit');
+  } catch (error) {
+    await client.query('rollback');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function readPostgresAdminUsers() {
+  const pool = await ensurePostgres();
+  const result = await pool.query(`
+    select username, user_id, name, role, password_hash, tenant_id, locker_ids, disabled
+    from preddita_admin_users
+    where disabled = false
+    order by username
+  `);
+  const rawUsers = result.rows.map((row) => ({
+    id: row.user_id,
+    username: row.username,
+    name: row.name,
+    role: row.role,
+    passwordHash: row.password_hash,
+    tenantId: row.tenant_id,
+    lockerIds: row.locker_ids,
+    disabled: row.disabled,
+  }));
+  if (rawUsers.length === 0) return [];
+  return parseAdminUsers(JSON.stringify(rawUsers), {
+    defaultLockerId: DEFAULT_LOCKER_ID,
+    defaultTenantId: DEFAULT_TENANT_ID,
+    allowLocalDefaults: false,
+  });
+}
+
+function createPostgresAdminSessionRepository() {
+  return {
+    async create(record) {
+      const pool = await ensurePostgres();
+      await pool.query(
+        `
+          insert into preddita_admin_sessions (
+            token_hash, session_id, username, csrf_token, created_at, expires_at, last_seen_at
+          ) values ($1, $2, $3, $4, $5, $6, now())
+        `,
+        [
+          record.tokenHash,
+          record.sessionId,
+          record.username,
+          record.csrfToken,
+          record.createdAt,
+          record.expiresAt,
+        ]
+      );
+    },
+    async find(tokenHash) {
+      const pool = await ensurePostgres();
+      const result = await pool.query(
+        `
+          update preddita_admin_sessions
+          set last_seen_at = now()
+          where token_hash = $1
+          returning
+            session_id, username, csrf_token, created_at, expires_at, revoked_at
+        `,
+        [tokenHash]
+      );
+      const row = result.rows[0];
+      return row ? {
+        sessionId: row.session_id,
+        username: row.username,
+        csrfToken: row.csrf_token,
+        createdAt: row.created_at.toISOString(),
+        expiresAt: row.expires_at.toISOString(),
+        revokedAt: row.revoked_at?.toISOString() || '',
+      } : null;
+    },
+    async revoke(tokenHash, revokedAt) {
+      const pool = await ensurePostgres();
+      await pool.query(
+        `
+          update preddita_admin_sessions
+          set revoked_at = coalesce(revoked_at, $2::timestamptz), last_seen_at = now()
+          where token_hash = $1
+        `,
+        [tokenHash, revokedAt]
+      );
+    },
+    async prune(now, maxSessions) {
+      const pool = await ensurePostgres();
+      await pool.query('delete from preddita_admin_sessions where expires_at <= $1::timestamptz', [now]);
+      const countResult = await pool.query('select count(*)::integer as count from preddita_admin_sessions');
+      const excess = Math.max(0, Number(countResult.rows[0]?.count || 0) - maxSessions + 1);
+      if (excess > 0) {
+        await pool.query(
+          `
+            delete from preddita_admin_sessions
+            where token_hash in (
+              select token_hash
+              from preddita_admin_sessions
+              order by revoked_at nulls last, created_at asc
+              limit $1
+            )
+          `,
+          [excess]
+        );
+      }
+    },
+    async size() {
+      const pool = await ensurePostgres();
+      const result = await pool.query('select count(*)::integer as count from preddita_admin_sessions');
+      return Number(result.rows[0]?.count || 0);
+    },
+  };
+}
+
+async function initializePostgresAdminAuth() {
+  if (ADMIN_USERS_BOOTSTRAP_CONFIGURED) {
+    await syncPostgresAdminUsers(adminUsers);
+  }
+  let persistedUsers = await readPostgresAdminUsers();
+  if (persistedUsers.length === 0 && !IS_PRODUCTION && adminUsers.length > 0) {
+    await syncPostgresAdminUsers(adminUsers);
+    persistedUsers = await readPostgresAdminUsers();
+  }
+  adminUsers = persistedUsers;
+  if (adminUsers.length === 0) {
+    throw new Error('Nenhum usuario administrativo foi encontrado no Postgres. Configure PREDDITA_ADMIN_USERS no primeiro boot.');
+  }
+  if (!adminUsers.some((user) => user.role === 'super_admin' && !user.disabled)) {
+    throw new Error('O Postgres deve conter ao menos um super_admin ativo.');
+  }
+  adminSessionStore = createPersistentAdminSessionStore({
+    ttlMs: ADMIN_SESSION_TTL_MS,
+    secure: IS_PRODUCTION,
+    repository: createPostgresAdminSessionRepository(),
+    resolveUser: (username) => adminUsers.find((user) => user.username === username) || null,
+  });
 }
 
 async function readJsonState(lockerId = DEFAULT_LOCKER_ID) {
@@ -865,6 +1136,8 @@ function getRuntimeSummary(state) {
     pendingNotificationCount: notificationOutbox.filter((item) => ['pending', 'failed'].includes(cleanText(item.status))).length,
     failedNotificationCount: notificationOutbox.filter((item) => cleanText(item.status) === 'failed').length,
     deviceAuthMode: DEVICE_AUTH_MODE,
+    storageMode: STORAGE_MODE,
+    adminSessionStorage: isPostgresStorage() ? 'postgres' : 'memory',
     securityWarnings: getSecurityWarnings(),
   };
 }
@@ -927,7 +1200,7 @@ function getPlatformSummary(state) {
 
 function getSecurityWarnings() {
   const warnings = [];
-  if (!process.env.PREDDITA_ADMIN_USERS) {
+  if (!ADMIN_USERS_BOOTSTRAP_CONFIGURED && !isPostgresStorage()) {
     warnings.push('PREDDITA_ADMIN_USERS nao foi definido; usando usuarios e senhas locais de desenvolvimento.');
   }
   if (ALLOW_LEGACY_ADMIN_TOKENS) {
@@ -1986,8 +2259,8 @@ function createLegacyAdminAuth(role, username, name) {
   };
 }
 
-function getAdminAuth(request) {
-  const cookieSession = adminSessionStore.get(request.headers.cookie);
+async function getAdminAuth(request) {
+  const cookieSession = await adminSessionStore.get(request.headers.cookie);
   if (cookieSession) {
     return { type: 'session-cookie', session: cookieSession };
   }
@@ -2238,7 +2511,7 @@ async function handleApi(request, response) {
       sendError(response, 401, 'Usuario ou senha invalidos.');
       return;
     }
-    const created = adminSessionStore.create(user);
+    const created = await adminSessionStore.create(user);
     console.log(JSON.stringify({
       level: 'info',
       event: 'admin-login',
@@ -2257,7 +2530,7 @@ async function handleApi(request, response) {
   }
 
   if (method === 'GET' && path === '/api/auth/session') {
-    const adminAuth = getAdminAuth(request);
+    const adminAuth = await getAdminAuth(request);
     if (!adminAuth) {
       sendError(response, 401, 'Sessao administrativa ausente ou expirada.');
       return;
@@ -2270,7 +2543,7 @@ async function handleApi(request, response) {
   }
 
   if (method === 'POST' && path === '/api/auth/logout') {
-    const adminAuth = getAdminAuth(request);
+    const adminAuth = await getAdminAuth(request);
     if (!adminAuth) {
       sendError(response, 401, 'Sessao administrativa ausente ou expirada.');
       return;
@@ -2279,7 +2552,7 @@ async function handleApi(request, response) {
       sendError(response, 403, 'Token CSRF invalido. Atualize a pagina e tente novamente.');
       return;
     }
-    const clearedCookie = adminSessionStore.destroy(request.headers.cookie);
+    const clearedCookie = await adminSessionStore.destroy(request.headers.cookie);
     console.log(JSON.stringify({
       level: 'info',
       event: 'admin-logout',
@@ -2306,7 +2579,7 @@ async function handleApi(request, response) {
     return;
   }
 
-  const adminAuth = isAdminPath ? getAdminAuth(request) : null;
+  const adminAuth = isAdminPath ? await getAdminAuth(request) : null;
   if (isAdminPath && !adminAuth) {
     sendError(response, 401, 'Sessao administrativa ausente ou expirada.');
     return;
@@ -2998,6 +3271,7 @@ const server = createServer((request, response) => {
 async function startServer() {
   if (isPostgresStorage()) {
     await ensurePostgres();
+    await initializePostgresAdminAuth();
   }
 
   server.listen(PORT, '0.0.0.0', () => {

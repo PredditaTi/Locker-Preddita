@@ -67,6 +67,10 @@ node scripts\v2-commissioning-test.mjs
 O teste nativo `scripts\Rs485FrameParserTest.java` tambem roda dentro de
 `scripts\v2-verify.ps1` usando o JDK 17.
 
+Com `PREDDITA_TEST_DATABASE_URL`, o smoke Postgres tambem reinicia o servidor
+tres vezes: confirma restauracao sem novo bootstrap, logout duravelmente
+revogado e invalidacao das sessoes anteriores depois de rotacionar a senha.
+
 Build web do armario:
 
 ```powershell
@@ -170,7 +174,7 @@ cd web
 $env:VITE_PREDDITA_REMOTE_URL="https://locker.example.com"
 $env:VITE_PREDDITA_LOCKER_ID="ks1062-aurora"
 $env:VITE_PREDDITA_DEVICE_AUTH_MODE="hmac"
-$env:VITE_PREDDITA_EDGE_APP_VERSION="2.0.15-lab"
+$env:VITE_PREDDITA_EDGE_APP_VERSION="2.0.16-lab"
 npm run build
 Remove-Item Env:VITE_PREDDITA_REMOTE_URL
 Remove-Item Env:VITE_PREDDITA_LOCKER_ID

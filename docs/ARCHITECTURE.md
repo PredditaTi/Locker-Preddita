@@ -234,9 +234,11 @@ CSRF token mantido somente em memoria pela pagina. Os papeis `sindico`,
 `operador`, `suporte` e `super_admin` sao validados no backend, inclusive para
 escopo por `lockerId`, dados pessoais, exportacoes e operacao remota.
 
-Nesta etapa, as sessoes ficam na memoria do processo Node. Reiniciar o servidor
-encerra as sessoes ativas, e uma instalacao com mais de uma replica precisa de um
-store compartilhado antes de receber trafego distribuido.
+No modo Postgres, `PREDDITA_ADMIN_USERS` funciona como bootstrap e reconciliacao
+da tabela `preddita_admin_users`. O cookie recebe um token aleatorio, mas o banco
+guarda somente seu SHA-256 em `preddita_admin_sessions`. CSRF, expiracao,
+restauracao apos restart e revogacao por logout passam pelo store compartilhado.
+No modo JSON de laboratorio, as sessoes continuam somente na memoria.
 
 ## Riscos conhecidos e proximos passos
 
@@ -249,5 +251,6 @@ store compartilhado antes de receber trafego distribuido.
 - HTTPS e dominio proprio devem ser obrigatorios em producao.
 - O envio de e-mail depende de SMTP externo; falhas ficam registradas para
   reprocessamento/diagnostico.
-- Persistir sessoes e revogacoes no Postgres (ou Redis) antes de escalar o Admin
-  Online para varias replicas; depois adicionar MFA para contas privilegiadas.
+- As sessoes ja sao compartilhadas no Postgres, mas as mutacoes do snapshot por
+  locker ainda usam fila em memoria. Mantenha uma replica ate tornar essas
+  mutacoes transacionais; depois adicione MFA para contas privilegiadas.

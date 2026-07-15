@@ -166,6 +166,19 @@ Validacao do segundo lote:
   operacional remota.
 - Versao atualizada para `2.0.15-lab` e `versionCode 15`.
 
+### Autenticacao persistente no Postgres em 2026-07-15
+
+- Usuarios administrativos sairam da dependencia exclusiva do ambiente e
+  passaram a ser reconciliados em `preddita_admin_users` no primeiro boot.
+- Sessoes usam tabela propria, com somente o SHA-256 do token persistido; o
+  cookie bruto continua `HttpOnly`, `SameSite=Strict` e `Secure` em producao.
+- Restart preserva sessoes validas. Logout grava revogacao duravel e o mesmo
+  cookie continua recusado depois de um novo restart.
+- O smoke Postgres passou a reiniciar o servidor tres vezes para cobrir
+  restauracao, bootstrap pelo banco, logout e rotacao de senha.
+- MFA permanece como proxima camada para `super_admin` e `suporte`.
+- Versao atualizada para `2.0.16-lab` e `versionCode 16`.
+
 Primeiro pacote de Fase 0 aplicado apos esta revisao:
 
 - `admin-online`: `nodemailer` atualizado para versao sem vulnerabilidades no

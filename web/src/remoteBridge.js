@@ -35,7 +35,7 @@ const BUILD_FALLBACK_URLS = String(import.meta.env?.VITE_PREDDITA_FALLBACK_URLS 
 const FALLBACK_BASE_URLS = BUILD_FALLBACK_URLS;
 const DEFAULT_LOCKER_ID = BUILD_LOCKER_ID || 'ks1062-aurora';
 const REQUEST_TIMEOUT_MS = 5000;
-const EDGE_APP_VERSION = String(import.meta.env?.VITE_PREDDITA_EDGE_APP_VERSION ?? '2.0.15-lab').trim();
+const EDGE_APP_VERSION = String(import.meta.env?.VITE_PREDDITA_EDGE_APP_VERSION ?? '2.0.16-lab').trim();
 
 function getLocalValue(key, fallback) {
   if (typeof window === 'undefined' || !window.localStorage) return fallback;
