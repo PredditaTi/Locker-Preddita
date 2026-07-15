@@ -39,8 +39,15 @@ read -s PASSWORD && printf '%s\n' "$PASSWORD" | node scripts/generate-admin-pass
 unset PASSWORD
 ```
 
-As sessoes atuais ficam na memoria do processo: um restart desconecta o painel.
-Use uma unica replica ate migrar sessoes e revogacoes para Postgres ou Redis.
+No modo Postgres, usuarios, sessoes e revogacoes ficam nas tabelas
+`preddita_admin_users` e `preddita_admin_sessions`. O primeiro boot importa
+`PREDDITA_ADMIN_USERS`; nos seguintes o servidor consegue restaurar os usuarios
+do banco mesmo sem repetir a variavel. Mantenha a variavel no deploy para
+reconciliar papeis, senhas, escopos e contas removidas.
+
+O token bruto existe apenas no cookie `HttpOnly`; o banco armazena seu SHA-256.
+Um restart preserva sessoes validas, e logout permanece revogado depois de novo
+restart. O modo JSON continua com sessoes somente em memoria.
 
 As variaveis `PREDDITA_SMTP_*` sao usadas para enviar o PIN e o QR Code por e-mail quando uma entrega e confirmada no armario.
 

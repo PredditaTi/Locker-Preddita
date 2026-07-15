@@ -75,11 +75,17 @@ Solucoes maduras de smart lockers se posicionam como plataformas completas, nao 
 - Configuracao comissionada persistida no locker e enviada ao Admin Online;
   qualquer mudanca de board, quantidade, tempo, polaridade ou mapa invalida as
   provas anteriores.
+- Persistencia Postgres por `tenant_id` e `locker_id`, com importacao inicial do
+  `state.json` e smoke executado no CI.
+- Usuarios e sessoes administrativas em tabelas Postgres proprias. O banco
+  guarda somente o SHA-256 do token de sessao; restart e logout preservam a
+  validade ou revogacao do cookie.
 
 ## Proximas melhorias recomendadas
 
-1. Migrar `state.json` para Postgres ou DynamoDB.
-2. Persistir usuarios e revogacao de sessoes no Postgres e adicionar MFA.
+1. Adicionar MFA para contas `super_admin` e `suporte`.
+2. Normalizar entregas, comandos, moradores e auditoria que ainda ficam no
+   snapshot JSONB por locker.
 3. Criar tabela/colecao de comandos com idempotencia e retry.
 4. Implementar logs estruturados e exportaveis.
 5. Separar `Edge Agent` e `Kiosk UI`.

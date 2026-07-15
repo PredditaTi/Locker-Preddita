@@ -84,8 +84,9 @@ read -s PASSWORD && printf '%s\n' "$PASSWORD" | node scripts/generate-admin-pass
 unset PASSWORD
 ```
 
-O Admin Online deve permanecer em uma unica replica nesta versao, pois reiniciar
-o processo invalida as sessoes mantidas em memoria.
+Com Postgres, reiniciar o processo preserva sessoes validas e revogadas. Mantenha
+uma unica replica nesta versao porque as mutacoes do snapshot de cada locker e o
+worker de notificacoes ainda nao usam coordenacao distribuida.
 
 ## Verificar
 
