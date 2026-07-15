@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createDeviceRequestAuthHeaders } from '../web/src/deviceRequestAuth.js';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const ADMIN_DIR = join(ROOT, 'admin-online');
@@ -10,7 +11,7 @@ const SERVER_PATH = join(ADMIN_DIR, 'server.mjs');
 const ADMIN_TOKEN = 'v2-admin-test-token';
 const SUPER_ADMIN_TOKEN = 'v2-super-admin-test-token';
 const DEVICE_KEY = 'v2-device-test-key';
-const EXPECTED_ADMIN_VERSION = '2.0.10-lab';
+const EXPECTED_ADMIN_VERSION = '2.0.11-lab';
 const PORT = 9897;
 const DATA_DIR = mkdtempSync(join(tmpdir(), 'preddita-v2-smoke-'));
 
@@ -19,11 +20,24 @@ function delay(ms) {
 }
 
 async function request(path, options = {}) {
+  const { deviceAuth = false, deviceAuthOptions = {}, ...fetchOptions } = options;
+  const authHeaders = deviceAuth
+    ? await createDeviceRequestAuthHeaders({
+        method: fetchOptions.method || 'GET',
+        path,
+        lockerId: deviceAuthOptions.lockerId || 'ks1062-aurora',
+        deviceKey: deviceAuthOptions.deviceKey || DEVICE_KEY,
+        body: deviceAuthOptions.body ?? fetchOptions.body ?? '',
+        timestamp: deviceAuthOptions.timestamp,
+        nonce: deviceAuthOptions.nonce,
+      })
+    : {};
   const response = await fetch(`http://127.0.0.1:${PORT}${path}`, {
-    ...options,
+    ...fetchOptions,
     headers: {
       'content-type': 'application/json',
-      ...(options.headers || {}),
+      ...(fetchOptions.headers || {}),
+      ...authHeaders,
     },
   });
   const payload = await response.json().catch(() => ({}));
@@ -50,6 +64,44 @@ async function waitForServer() {
   throw new Error('Servidor v2 nao iniciou dentro do tempo esperado.');
 }
 
+async function assertProductionRejectsLegacyAuth() {
+  const child = spawn(process.execPath, [SERVER_PATH], {
+    cwd: ADMIN_DIR,
+    env: {
+      ...process.env,
+      NODE_ENV: 'production',
+      PORT: String(PORT + 1),
+      PREDDITA_DATA_DIR: DATA_DIR,
+      PREDDITA_STORAGE: 'json',
+      PREDDITA_ALLOWED_ORIGINS: 'https://locker.example.com',
+      PREDDITA_ADMIN_TOKEN: ADMIN_TOKEN,
+      PREDDITA_SUPER_ADMIN_TOKEN: SUPER_ADMIN_TOKEN,
+      PREDDITA_DEVICE_KEY: DEVICE_KEY,
+      PREDDITA_DEVICE_KEYS: JSON.stringify({ 'ks1062-aurora': DEVICE_KEY }),
+      PREDDITA_DEVICE_AUTH_MODE: 'legacy',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let output = '';
+  child.stdout.on('data', (chunk) => { output += chunk.toString(); });
+  child.stderr.on('data', (chunk) => { output += chunk.toString(); });
+
+  const exitCode = await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error('Servidor inseguro nao encerrou no startup.'));
+    }, 3000);
+    child.once('exit', (code) => {
+      clearTimeout(timer);
+      resolve(code);
+    });
+  });
+
+  if (exitCode === 0 || !output.includes('PREDDITA_DEVICE_AUTH_MODE deve ser hmac em producao.')) {
+    throw new Error('Producao deveria falhar no startup quando a autenticacao do device nao usa HMAC.');
+  }
+}
+
 const server = spawn(process.execPath, [SERVER_PATH], {
   cwd: ADMIN_DIR,
   env: {
@@ -60,6 +112,8 @@ const server = spawn(process.execPath, [SERVER_PATH], {
     PREDDITA_SUPER_ADMIN_TOKEN: SUPER_ADMIN_TOKEN,
     PREDDITA_DEVICE_KEY: DEVICE_KEY,
     PREDDITA_DEVICE_KEYS: JSON.stringify({ 'ks1062-aurora': DEVICE_KEY }),
+    PREDDITA_DEVICE_AUTH_MODE: 'hmac',
+    PREDDITA_DEVICE_SIGNATURE_TTL_MS: '60000',
     PREDDITA_COMMAND_TTL_MS: '30000',
     PREDDITA_COMMAND_LEASE_MS: '800',
     PREDDITA_COMMAND_EXECUTION_LEASE_MS: '3000',
@@ -77,6 +131,7 @@ server.stderr.on('data', (chunk) => {
 });
 
 try {
+  await assertProductionRejectsLegacyAuth();
   await waitForServer();
 
   const health = await requestOk('/api/healthz');
@@ -91,7 +146,6 @@ try {
 
   const adminHeaders = { 'x-admin-token': ADMIN_TOKEN };
   const superAdminHeaders = { 'x-admin-token': SUPER_ADMIN_TOKEN };
-  const deviceHeaders = { 'x-device-key': DEVICE_KEY, 'x-locker-id': 'ks1062-aurora' };
 
   const sindicoState = await requestOk('/api/admin/state', { headers: adminHeaders });
   if (sindicoState.state.session?.role !== 'sindico' || sindicoState.state.platform !== null) {
@@ -101,6 +155,54 @@ try {
   const superState = await requestOk('/api/admin/state', { headers: superAdminHeaders });
   if (superState.state.session?.role !== 'super_admin' || !superState.state.platform?.lockers?.length) {
     throw new Error('Token PREDDITA deveria abrir o Admin Geral com resumo de armarios.');
+  }
+
+  const legacyDeviceAuth = await request('/api/device/snapshot', {
+    headers: { 'x-device-key': DEVICE_KEY, 'x-locker-id': 'ks1062-aurora' },
+  });
+  if (legacyDeviceAuth.response.status !== 401) {
+    throw new Error('Modo HMAC deveria recusar a chave estatica sem assinatura.');
+  }
+
+  const expiredDeviceAuth = await request('/api/device/snapshot', {
+    deviceAuth: true,
+    deviceAuthOptions: {
+      timestamp: Date.now() - 61000,
+      nonce: 'expired-smoke-nonce-0001',
+    },
+  });
+  if (expiredDeviceAuth.response.status !== 401) {
+    throw new Error('Assinatura HMAC vencida deveria receber 401.');
+  }
+
+  const signedStatusBody = JSON.stringify({ device: { online: false, serialOpen: false } });
+  const tamperedDeviceBody = await request('/api/device/status', {
+    method: 'POST',
+    deviceAuth: true,
+    deviceAuthOptions: {
+      body: signedStatusBody,
+      nonce: 'tampered-smoke-nonce-001',
+    },
+    body: JSON.stringify({ device: { online: true, serialOpen: true } }),
+  });
+  if (tamperedDeviceBody.response.status !== 401) {
+    throw new Error('Corpo diferente do hash assinado deveria receber 401.');
+  }
+
+  const replayAuthOptions = {
+    timestamp: Date.now(),
+    nonce: 'replay-smoke-nonce-00001',
+  };
+  const firstSignedRequest = await request('/api/device/snapshot', {
+    deviceAuth: true,
+    deviceAuthOptions: replayAuthOptions,
+  });
+  const replayedSignedRequest = await request('/api/device/snapshot', {
+    deviceAuth: true,
+    deviceAuthOptions: replayAuthOptions,
+  });
+  if (!firstSignedRequest.response.ok || replayedSignedRequest.response.status !== 401) {
+    throw new Error('Nonce HMAC reutilizado deveria ser bloqueado como replay.');
   }
 
   await requestOk('/api/admin/residents', {
@@ -133,7 +235,7 @@ try {
 
   const wrongLockerStatus = await request('/api/device/status', {
     method: 'POST',
-    headers: deviceHeaders,
+    deviceAuth: true,
     body: JSON.stringify({
       lockerId: 'locker-errado',
       device: { online: true, serialOpen: true },
@@ -146,7 +248,7 @@ try {
   const oldDepositedAt = new Date(Date.now() - 49 * 60 * 60 * 1000).toISOString();
   await requestOk('/api/device/status', {
     method: 'POST',
-    headers: deviceHeaders,
+    deviceAuth: true,
     body: JSON.stringify({
       device: {
         online: true,
@@ -236,7 +338,7 @@ try {
   };
   const eventSync = await requestOk('/api/device/events', {
     method: 'POST',
-    headers: deviceHeaders,
+    deviceAuth: true,
     body: JSON.stringify({
       events: [
         {
@@ -267,7 +369,7 @@ try {
 
   const duplicateReplay = await requestOk('/api/device/events', {
     method: 'POST',
-    headers: deviceHeaders,
+    deviceAuth: true,
     body: JSON.stringify({
       events: [
         {
@@ -293,7 +395,7 @@ try {
     body: JSON.stringify({ reason: 'Smoke test v2', requestedBy: 'codex' }),
   });
 
-  const firstSnapshot = await requestOk('/api/device/snapshot', { headers: deviceHeaders });
+  const firstSnapshot = await requestOk('/api/device/snapshot', { deviceAuth: true });
   if (firstSnapshot.lockerId !== 'ks1062-aurora') {
     throw new Error('Snapshot deveria expor o lockerId autenticado/configurado.');
   }
@@ -302,13 +404,13 @@ try {
     throw new Error('Snapshot deveria entregar o comando com lease e primeira tentativa.');
   }
 
-  const snapshotWhileLeased = await requestOk('/api/device/snapshot', { headers: deviceHeaders });
+  const snapshotWhileLeased = await requestOk('/api/device/snapshot', { deviceAuth: true });
   if (snapshotWhileLeased.commands.some((command) => command.id === created.command.id)) {
     throw new Error('Comando com lease ativo nao deveria ser entregue para outra execucao.');
   }
 
   await delay(1000);
-  const retrySnapshot = await requestOk('/api/device/snapshot', { headers: deviceHeaders });
+  const retrySnapshot = await requestOk('/api/device/snapshot', { deviceAuth: true });
   const retryLease = retrySnapshot.commands.find((command) => command.id === created.command.id);
   if (
     !retryLease ||
@@ -322,7 +424,7 @@ try {
   const executionId = 'exec-smoke-open-door-4';
   const staleAck = await request(`/api/device/commands/${encodeURIComponent(created.command.id)}/ack`, {
     method: 'POST',
-    headers: deviceHeaders,
+    deviceAuth: true,
     body: JSON.stringify({ leaseId: firstLease.leaseId, executionId }),
   });
   if (staleAck.response.status !== 409) {
@@ -331,7 +433,7 @@ try {
 
   const acknowledged = await requestOk(`/api/device/commands/${encodeURIComponent(created.command.id)}/ack`, {
     method: 'POST',
-    headers: deviceHeaders,
+    deviceAuth: true,
     body: JSON.stringify({ leaseId: retryLease.leaseId, executionId }),
   });
   if (acknowledged.command.status !== 'executing' || acknowledged.command.executionId !== executionId) {
@@ -340,21 +442,21 @@ try {
 
   const duplicateAck = await requestOk(`/api/device/commands/${encodeURIComponent(created.command.id)}/ack`, {
     method: 'POST',
-    headers: deviceHeaders,
+    deviceAuth: true,
     body: JSON.stringify({ leaseId: retryLease.leaseId, executionId }),
   });
   if (duplicateAck.duplicate !== true) {
     throw new Error('Replay do mesmo ACK deveria ser idempotente.');
   }
 
-  const snapshotWhileExecuting = await requestOk('/api/device/snapshot', { headers: deviceHeaders });
+  const snapshotWhileExecuting = await requestOk('/api/device/snapshot', { deviceAuth: true });
   if (snapshotWhileExecuting.commands.some((command) => command.id === created.command.id)) {
     throw new Error('Comando em execucao nao deveria ser reentregue com lease ativo.');
   }
 
   const unknownComplete = await request('/api/device/commands/comando-inexistente/complete', {
     method: 'POST',
-    headers: deviceHeaders,
+    deviceAuth: true,
     body: JSON.stringify({
       ok: true,
       releasedDoor: true,
@@ -368,7 +470,7 @@ try {
 
   const conflictingCompletion = await request(`/api/device/commands/${encodeURIComponent(created.command.id)}/complete`, {
     method: 'POST',
-    headers: deviceHeaders,
+    deviceAuth: true,
     body: JSON.stringify({ ok: true, executionId: 'exec-conflitante', door: 4 }),
   });
   if (conflictingCompletion.response.status !== 409) {
@@ -386,7 +488,7 @@ try {
   };
   const completion = await requestOk(`/api/device/commands/${encodeURIComponent(created.command.id)}/complete`, {
     method: 'POST',
-    headers: deviceHeaders,
+    deviceAuth: true,
     body: JSON.stringify(completionPayload),
   });
   if (completion.duplicate !== false) {
@@ -395,7 +497,7 @@ try {
 
   const duplicateCompletion = await requestOk(`/api/device/commands/${encodeURIComponent(created.command.id)}/complete`, {
     method: 'POST',
-    headers: deviceHeaders,
+    deviceAuth: true,
     body: JSON.stringify({ ...completionPayload, retriedAt: new Date().toISOString() }),
   });
   if (duplicateCompletion.duplicate !== true) {

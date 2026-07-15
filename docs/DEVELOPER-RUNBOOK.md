@@ -153,11 +153,13 @@ cd web
 $env:VITE_PREDDITA_REMOTE_URL="https://locker.example.com"
 $env:VITE_PREDDITA_DEVICE_KEY="cole-a-chave-do-device"
 $env:VITE_PREDDITA_LOCKER_ID="ks1062-aurora"
-$env:VITE_PREDDITA_EDGE_APP_VERSION="2.0.10-lab"
+$env:VITE_PREDDITA_DEVICE_AUTH_MODE="hmac"
+$env:VITE_PREDDITA_EDGE_APP_VERSION="2.0.11-lab"
 npm run build
 Remove-Item Env:VITE_PREDDITA_REMOTE_URL
 Remove-Item Env:VITE_PREDDITA_DEVICE_KEY
 Remove-Item Env:VITE_PREDDITA_LOCKER_ID
+Remove-Item Env:VITE_PREDDITA_DEVICE_AUTH_MODE
 Remove-Item Env:VITE_PREDDITA_EDGE_APP_VERSION
 ```
 
@@ -194,6 +196,7 @@ Ver versao instalada:
 - O APK `release` foi assinado com a keystore de producao, nunca com a de debug.
 - `PREDDITA_ADMIN_TOKEN`, `PREDDITA_SUPER_ADMIN_TOKEN` e
   `PREDDITA_DEVICE_KEY` nao usam valores padrao.
+- `PREDDITA_DEVICE_AUTH_MODE=hmac` no servidor e no build do APK.
 - `PREDDITA_ALLOWED_ORIGINS` inclui o dominio do painel e
   `https://appassets.androidplatform.net`, usado pelo APK.
 - SMTP configurado e testado.

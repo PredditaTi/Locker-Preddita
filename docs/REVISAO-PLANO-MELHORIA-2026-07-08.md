@@ -101,6 +101,17 @@ Validacao do segundo lote:
 - Workflow, QR, recuperacao, protocolo serial, diario remoto, smoke e build Vite
   passaram em conjunto.
 
+### Autenticacao de dispositivo reforcada em 2026-07-15
+
+- Chamadas `/api/device/*` passaram a usar HMAC-SHA256 sobre metodo, rota,
+  `lockerId`, timestamp, nonce e hash do corpo.
+- O servidor bloqueia corpo adulterado, assinatura vencida e reutilizacao de
+  nonce. Em producao, autenticacao legada impede o startup.
+- O modo `dual` ficou disponivel somente para migracao controlada em laboratorio;
+  assinatura HMAC invalida nunca faz fallback para a chave estatica.
+- O smoke test passou a exercer o contrato real usado pelo kiosk.
+- App, backend e Android foram atualizados para `2.0.11-lab` (`versionCode 11`).
+
 Primeiro pacote de Fase 0 aplicado apos esta revisao:
 
 - `admin-online`: `nodemailer` atualizado para versao sem vulnerabilidades no

@@ -85,6 +85,7 @@ jobs:
           VITE_PREDDITA_REMOTE_URL: ${{ vars.PREDDITA_EDGE_REMOTE_URL }}
           VITE_PREDDITA_DEVICE_KEY: ${{ secrets.PREDDITA_EDGE_DEVICE_KEY }}
           VITE_PREDDITA_LOCKER_ID: ${{ vars.PREDDITA_EDGE_LOCKER_ID }}
+          VITE_PREDDITA_DEVICE_AUTH_MODE: hmac
         run: npm run build
         working-directory: web
 
@@ -102,7 +103,17 @@ jobs:
         run: |
           version_name="$(sed -n 's/.*versionName "\([^"]*\)".*/\1/p' android/app/build.gradle | head -1)"
           source_apk="android/app/build/outputs/apk/release/app-release.apk"
-          artifact_name="PREDDITA-Locker-${version_name}-${{ inputs.channel }}-release.apk"
+          channel="${{ inputs.channel }}"
+          case "$version_name" in
+            *-lab) version_channel="lab" ;;
+            *-pilot) version_channel="pilot" ;;
+            *) version_channel="production" ;;
+          esac
+          if [ "$version_channel" != "$channel" ]; then
+            echo "versionName $version_name pertence ao canal $version_channel, nao $channel." >&2
+            exit 1
+          fi
+          artifact_name="PREDDITA-Locker-${version_name}-release.apk"
           mkdir -p artifacts
           cp "$source_apk" "artifacts/$artifact_name"
           "$ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner" verify --verbose --print-certs "artifacts/$artifact_name"

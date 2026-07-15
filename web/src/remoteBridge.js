@@ -1,4 +1,5 @@
 import { formatRecipientApartment, formatRecipientUnit } from './lockerWorkflow.js';
+import { createDeviceRequestAuthHeaders } from './deviceRequestAuth.js';
 
 /*
  * Ponte HTTP entre o app embarcado no Android e o Admin Online.
@@ -17,6 +18,9 @@ const REMOTE_WORKING_BASE_URL_KEY = 'preddita_remote_admin_working_base_url';
 const BUILD_BASE_URL = String(import.meta.env?.VITE_PREDDITA_REMOTE_URL ?? '').trim();
 const BUILD_DEVICE_KEY = String(import.meta.env?.VITE_PREDDITA_DEVICE_KEY ?? '').trim();
 const BUILD_LOCKER_ID = String(import.meta.env?.VITE_PREDDITA_LOCKER_ID ?? '').trim();
+const BUILD_DEVICE_AUTH_MODE = String(import.meta.env?.VITE_PREDDITA_DEVICE_AUTH_MODE ?? 'hmac')
+  .trim()
+  .toLowerCase();
 const IS_DEVELOPMENT = Boolean(import.meta.env?.DEV);
 const BUILD_FALLBACK_URLS = String(import.meta.env?.VITE_PREDDITA_FALLBACK_URLS ?? '')
   .split(',')
@@ -26,7 +30,7 @@ const BUILD_FALLBACK_URLS = String(import.meta.env?.VITE_PREDDITA_FALLBACK_URLS 
 const FALLBACK_BASE_URLS = BUILD_FALLBACK_URLS;
 const DEFAULT_LOCKER_ID = BUILD_LOCKER_ID || 'ks1062-aurora';
 const REQUEST_TIMEOUT_MS = 5000;
-const EDGE_APP_VERSION = String(import.meta.env?.VITE_PREDDITA_EDGE_APP_VERSION ?? '2.0.10-lab').trim();
+const EDGE_APP_VERSION = String(import.meta.env?.VITE_PREDDITA_EDGE_APP_VERSION ?? '2.0.11-lab').trim();
 
 function getLocalValue(key, fallback) {
   if (typeof window === 'undefined' || !window.localStorage) return fallback;
@@ -57,6 +61,7 @@ export function getRemoteBridgeConfig() {
       .filter((item, index, items) => items.indexOf(item) === index),
     deviceKey: BUILD_DEVICE_KEY || getLocalValue(REMOTE_DEVICE_KEY_KEY, ''),
     lockerId: BUILD_LOCKER_ID || getLocalValue(REMOTE_LOCKER_ID_KEY, DEFAULT_LOCKER_ID),
+    authMode: BUILD_DEVICE_AUTH_MODE === 'legacy' ? 'legacy' : 'hmac',
   };
 }
 
@@ -90,13 +95,21 @@ async function request(path, options = {}) {
     const timer = window.setTimeout(() => controller.abort(), timeoutMs);
 
     try {
+      const authHeaders = config.authMode === 'legacy'
+        ? { 'x-device-key': config.deviceKey, 'x-locker-id': config.lockerId }
+        : await createDeviceRequestAuthHeaders({
+            method: fetchOptions.method || 'GET',
+            path,
+            lockerId: config.lockerId,
+            deviceKey: config.deviceKey,
+            body: fetchOptions.body ?? '',
+          });
       const response = await fetch(`${baseUrl}${path}`, {
         ...fetchOptions,
         signal: controller.signal,
         headers: {
           'content-type': 'application/json',
-          'x-device-key': config.deviceKey,
-          'x-locker-id': config.lockerId,
+          ...authHeaders,
           ...(fetchOptions.headers || {}),
         },
       });
