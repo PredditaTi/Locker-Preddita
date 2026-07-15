@@ -138,6 +138,21 @@ Validacao do segundo lote:
   migracao do agente operacional para sessao administrativa e HMAC.
 - Versao atualizada para `2.0.13-lab` e `versionCode 13`.
 
+### Confirmacao fisica das portas em 2026-07-15
+
+- Deposito e retirada passaram a exigir leituras individuais com BCC valido e
+  a transicao completa fechada-aberta-fechada no mesmo canal.
+- Leituras antigas, em bloco, ambiguas ou sem mudanca de byte bloqueiam a
+  operacao; timeout de comando so e aceito se a leitura individual comprovar a
+  abertura.
+- Abertura remota deixou de marcar a entrega como coletada imediatamente. O app
+  persiste `pickup_opened`, reconcilia o fechamento mesmo apos reinicio e so
+  entao sincroniza `delivery-collected`.
+- O backend recusa `releasedDoor` sem prova temporal de fechamento.
+- As polaridades `zeroOpen` e `zeroClosed` ficaram explicitas por armario para
+  resolver a divergencia entre o manual e a placa observada em campo.
+- Versao atualizada para `2.0.14-lab` e `versionCode 14`.
+
 Primeiro pacote de Fase 0 aplicado apos esta revisao:
 
 - `admin-online`: `nodemailer` atualizado para versao sem vulnerabilidades no

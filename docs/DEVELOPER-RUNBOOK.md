@@ -60,6 +60,7 @@ Testes de idempotencia remota e protocolo serial:
 node scripts\v2-remote-command-journal-test.mjs
 node scripts\v2-device-event-journal-test.mjs
 node scripts\v2-serial-protocol-test.mjs
+node scripts\v2-door-safety-test.mjs
 ```
 
 O teste nativo `scripts\Rs485FrameParserTest.java` tambem roda dentro de
@@ -153,7 +154,7 @@ cd web
 $env:VITE_PREDDITA_REMOTE_URL="https://locker.example.com"
 $env:VITE_PREDDITA_LOCKER_ID="ks1062-aurora"
 $env:VITE_PREDDITA_DEVICE_AUTH_MODE="hmac"
-$env:VITE_PREDDITA_EDGE_APP_VERSION="2.0.13-lab"
+$env:VITE_PREDDITA_EDGE_APP_VERSION="2.0.14-lab"
 npm run build
 Remove-Item Env:VITE_PREDDITA_REMOTE_URL
 Remove-Item Env:VITE_PREDDITA_LOCKER_ID
@@ -193,6 +194,7 @@ Ver versao instalada:
 - `npm run test:workflow` passou.
 - `npm run smoke` passou.
 - Testes do diario remoto e parser RS-485 passaram.
+- Teste `v2-door-safety-test.mjs` passou.
 - `npm run build` passou.
 - `gradlew assembleDebug` passou.
 - O APK `release` foi assinado com a keystore de producao, nunca com a de debug.
@@ -208,6 +210,10 @@ Ver versao instalada:
 - SMTP configurado e testado.
 - APK reporta a versao esperada no painel online.
 - Armario aparece online, serial aberta e com `/dev/ttyS5`.
+- Polaridade do sensor foi comissionada no equipamento com uma porta fechada,
+  depois aberta e novamente fechada.
+- Deposito, retirada e abertura remota permaneceram ocupados ate a leitura
+  individual confirmar o fechamento.
 
 ## Como revisar uma mudanca
 
@@ -230,6 +236,8 @@ Armario nao abre porta:
 - Rodar diagnostico no app ou `web/src/diagnostics.js`.
 - Conferir a timeline `pending`, `leased`, `executing` e `completed/failed` no
   painel.
+- Conferir em `Sistema` se a polaridade selecionada corresponde ao byte lido
+  com a porta fechada e aberta. Nao troque o perfil sem repetir o teste fisico.
 
 E-mail nao chegou:
 

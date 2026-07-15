@@ -2367,9 +2367,9 @@ button {
 
 .public-home-action strong {
   max-width: 390px;
-  font-size: clamp(2.7rem, 5vw, 4.8rem);
+  font-size: 4.2rem;
   line-height: 0.9;
-  letter-spacing: -0.075em;
+  letter-spacing: 0;
 }
 
 .public-home-action span:last-child {
@@ -2739,6 +2739,59 @@ button {
   .public-apartment-card {
     min-height: 82px;
     font-size: 1.35rem;
+  }
+}
+
+@media (max-width: 600px) {
+  .public-kiosk-screen {
+    height: auto;
+    overflow: visible;
+  }
+
+  .public-kiosk-home {
+    height: auto;
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .public-home-action {
+    min-height: 360px;
+    padding: 24px 18px;
+    border-radius: 24px;
+    gap: 16px;
+  }
+
+  .public-home-icon {
+    width: 92px;
+    height: 92px;
+    border-radius: 28px;
+  }
+
+  .public-home-icon svg {
+    width: 56px;
+    height: 56px;
+  }
+
+  .public-home-action strong {
+    font-size: 2.4rem;
+    line-height: 1;
+  }
+
+  .public-home-action span:last-child {
+    font-size: 1rem;
+  }
+
+  .public-apartment-layout,
+  .public-pickup-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .public-apartment-grid {
+    overflow: visible;
+  }
+
+  .public-number-key.is-muted {
+    font-size: 0.9rem;
   }
 }
 

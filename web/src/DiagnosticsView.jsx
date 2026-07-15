@@ -44,6 +44,7 @@ export default function DiagnosticsView({ lockerState, onClose }) {
         {
           board: lockerState?.deviceConfig?.board ?? 1,
           doorCount: lockerState?.deviceConfig?.doorCount ?? 24,
+          sensorPolarity: lockerState?.deviceConfig?.sensorPolarity ?? 'zeroOpen',
         },
         ({ suites: next }) => setSuites(next),
       );
@@ -63,6 +64,7 @@ export default function DiagnosticsView({ lockerState, onClose }) {
       lockerId: lockerState?.tenant?.lockerId ?? '',
       board: lockerState?.deviceConfig?.board,
       doorCount: lockerState?.deviceConfig?.doorCount,
+      sensorPolarity: lockerState?.deviceConfig?.sensorPolarity,
       startedAt: startedAt?.toISOString(),
       finishedAt: finishedAt?.toISOString(),
       summary,

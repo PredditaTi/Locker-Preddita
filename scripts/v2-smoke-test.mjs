@@ -13,7 +13,7 @@ const SINDICO_PASSWORD = 'v2-sindico-password';
 const OPERATOR_PASSWORD = 'v2-operator-password';
 const SUPER_ADMIN_PASSWORD = 'v2-super-admin-password';
 const DEVICE_KEY = 'v2-device-test-key';
-const EXPECTED_ADMIN_VERSION = '2.0.13-lab';
+const EXPECTED_ADMIN_VERSION = '2.0.14-lab';
 const PORT = 9897;
 const DATA_DIR = mkdtempSync(join(tmpdir(), 'preddita-v2-smoke-'));
 const ADMIN_USERS = JSON.stringify([
@@ -659,7 +659,8 @@ try {
     reason: 'confirmed',
     executionId,
     door: 4,
-    releasedDoor: false,
+    releasedDoor: true,
+    pendingPhysicalClose: true,
     at: new Date().toISOString(),
   };
   const completion = await requestOk(`/api/device/commands/${encodeURIComponent(created.command.id)}/complete`, {
@@ -686,8 +687,8 @@ try {
   if (commandStatus.command.status !== 'completed' || commandStatus.command.result?.confirmed !== true) {
     throw new Error('Comando deveria finalizar como completed/confirmed.');
   }
-  if (commandStatus.command.result?.releasedDoor !== true) {
-    throw new Error('Abertura remota de porta ocupada deveria liberar a entrega no painel.');
+  if (commandStatus.command.result?.releasedDoor !== false) {
+    throw new Error('Servidor nao deve liberar porta sem prova fisica de fechamento.');
   }
 
   const state = await requestOk('/api/admin/state', { headers: adminHeaders });
@@ -705,8 +706,8 @@ try {
     throw new Error('Perfil fisico deveria manter portas 1 e 2 grandes e demais pequenas.');
   }
   const releasedDelivery = state.state.deliveries.find((delivery) => delivery.id === 'delivery-smoke-notify');
-  if (releasedDelivery?.status !== 'collected') {
-    throw new Error('Entrega da porta aberta remotamente deveria ser marcada como retirada.');
+  if (releasedDelivery?.status !== 'stored') {
+    throw new Error('Entrega aberta remotamente deve permanecer ocupada enquanto aguarda fechamento.');
   }
   const offlineSyncedDelivery = state.state.deliveries.find((delivery) => delivery.id === offlineDelivery.id);
   if (offlineSyncedDelivery?.status !== 'collected') {

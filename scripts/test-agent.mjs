@@ -35,9 +35,26 @@ import {
   findAvailableDoor,
   formatRecipientApartment,
   formatRecipientUnit,
+  markDepositDoorOpened,
   reserveDelivery,
   resolvePickupRequest,
 } from '../web/src/lockerWorkflow.js';
+import { createPhysicalDoorProofs } from './door-safety-fixtures.mjs';
+
+let physicalSequence = 100;
+function confirmTestReservation(reservation) {
+  const physical = createPhysicalDoorProofs(
+    reservation.delivery.door,
+    'dropoff',
+    physicalSequence++
+  );
+  const openedState = markDepositDoorOpened(
+    reservation.state,
+    reservation.delivery.id,
+    physical.cycle
+  );
+  return confirmDeposit(openedState, reservation.delivery.id, {}, physical.closeProof);
+}
 
 // ============================================================================
 // 1. CLI / config
@@ -499,7 +516,7 @@ async function suiteUxRules(_api, runner) {
       const recipient = { id: 'test-ux-2', firstName: '', lastName: '', name: 'Ap 202', cpf: '', unit: 'A-202', building: 'A', floor: '2', apartment: '202', phone: '', email: 'a@b.c' };
       const initial = { ...createInitialState(), recipients: [recipient], deliveries: [], deviceConfig: { board: 1, doorCount: 10 } };
       const { state, delivery } = await reserveDelivery(initial, { recipientId: recipient.id, packageSize: 'M', doorCatalog: createDoorCatalog(10) });
-      const after = confirmDeposit(state, delivery.id);
+      const after = confirmTestReservation({ state, delivery });
       const stored = after.deliveries.find((d) => d.id === delivery.id);
       assertEqual(stored.status, 'stored', 'status apos confirm');
       assertEqual(stored.notificationStatus, 'pending', 'notificacao deveria ficar pending com e-mail');
@@ -551,7 +568,7 @@ async function suiteUserErrors(_api, runner) {
         { ...baseInit, deviceConfig: { board: 1, doorCount: 3 } }, // 2G + 1P
         { recipientId: recipient.id, packageSize: 'P', doorCatalog: createDoorCatalog(3) },
       );
-      const stored = confirmDeposit(occupied.state, occupied.delivery.id);
+      const stored = confirmTestReservation(occupied);
       try {
         await reserveDelivery(stored, { recipientId: recipient.id, packageSize: 'P', doorCatalog: createDoorCatalog(3) });
         return 'caiu no fallback de porta maior (comportamento atual: aloca G)';
@@ -562,7 +579,7 @@ async function suiteUserErrors(_api, runner) {
 
     await runner.test('resolvePickupRequest com PIN errado rejeita', async () => {
       const reserved = await reserveDelivery(baseInit, { recipientId: recipient.id, packageSize: 'M', doorCatalog: createDoorCatalog(10) });
-      const state = confirmDeposit(reserved.state, reserved.delivery.id);
+      const state = confirmTestReservation(reserved);
       const r = resolvePickupRequest(state, 'pin', '000000');
       assertEqual(r.ok, false, 'deveria rejeitar');
       assert(/encomenda ativa|codigo/i.test(r.error), `mensagem: ${r.error}`);
@@ -571,7 +588,7 @@ async function suiteUserErrors(_api, runner) {
 
     await runner.test('resolvePickupRequest com QR mal formatado rejeita', async () => {
       const reserved = await reserveDelivery(baseInit, { recipientId: recipient.id, packageSize: 'M', doorCatalog: createDoorCatalog(10) });
-      const state = confirmDeposit(reserved.state, reserved.delivery.id);
+      const state = confirmTestReservation(reserved);
       const r = resolvePickupRequest(state, 'predditaQr', 'http://qualquer-coisa.com');
       assertEqual(r.ok, false, 'deveria rejeitar');
       return r.error;
@@ -579,7 +596,7 @@ async function suiteUserErrors(_api, runner) {
 
     await runner.test('resolvePickupRequest em entrega cancelada nao libera', async () => {
       const reserved = await reserveDelivery(baseInit, { recipientId: recipient.id, packageSize: 'M', doorCatalog: createDoorCatalog(10) });
-      const stored = confirmDeposit(reserved.state, reserved.delivery.id);
+      const stored = confirmTestReservation(reserved);
       const cancelled = cancelDelivery(stored, reserved.delivery.id, 'Teste');
       const r = resolvePickupRequest(cancelled, 'pin', reserved.delivery.pin);
       assertEqual(r.ok, false, 'deveria rejeitar entrega cancelada');

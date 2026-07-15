@@ -33,6 +33,8 @@ Principais arquivos:
 - `web/src/lockerWorkflow.js`: regras puras de negocio. Nao acessa DOM, serial
   ou HTTP. E o melhor lugar para adicionar testes de regras.
 - `web/src/serial.js`: protocolo RS-485, comandos e parse das respostas da placa.
+- `web/src/doorSafety.js`: validacao das leituras e provas do ciclo fisico
+  fechada-aberta-fechada.
 - `web/src/remoteBridge.js`: HTTP entre app embarcado e Admin Online.
 - `web/src/diagnostics.js`: testes de diagnostico executaveis dentro do armario.
 - `android/app/src/main/java/.../MainActivity.java`: WebView e ponte JavaScript
@@ -55,9 +57,11 @@ Fluxo do morador:
 1. Morador entra em `Buscar entrega`.
 2. Informa PIN ou QR PREDDITA.
 3. O app valida localmente contra as entregas ativas.
-4. A porta e aberta localmente.
-5. A entrega e marcada como retirada e o evento `delivery-collected` e enviado
-   ao painel quando houver internet.
+4. O app confirma uma leitura individual fechada, aciona a trava e exige que o
+   sensor mude para aberta.
+5. A entrega permanece em `pickup_opened` e ocupando a porta.
+6. Somente uma nova leitura individual fechada conclui a retirada e enfileira
+   `delivery-collected` para o painel.
 
 ## Admin Online
 
@@ -140,6 +144,18 @@ smoke tests.
 
 Somente `door_opened_for_dropoff`, `stored` e `pickup_opened` ocupam porta.
 
+## Confirmacao fisica das portas
+
+Leituras em bloco servem apenas para o mapa visual. Uma operacao usa tres
+leituras individuais com BCC valido: fechada antes do comando, aberta depois do
+comando e fechada depois da abertura. As duas transicoes, canal, bytes,
+polaridade e horarios ficam persistidos na entrega.
+
+O perfil de polaridade e configurado por armario: `zeroOpen` interpreta `0x00`
+como aberta e `0x11` como fechada; `zeroClosed` faz o inverso. Uma mudanca de
+perfil exige comissionamento fisico. Timeout, leitura antiga, estado em bloco,
+canal divergente ou byte sem transicao interrompem o fluxo.
+
 ## Comandos remotos
 
 O painel nunca abre a porta diretamente. Ele cria um comando em fila:
@@ -155,7 +171,10 @@ O painel nunca abre a porta diretamente. Ele cria um comando em fila:
 6. Armario grava o resultado local antes de chamar
    `/api/device/commands/:id/complete`.
 7. Servidor marca como `completed` ou `failed`; ACK e conclusao repetidos sao
-   idempotentes.
+   idempotentes. Abrir remotamente uma porta ocupada nao libera a entrega.
+8. O app espera o fechamento fisico, conclui `pickup_opened` e sincroniza
+   `delivery-collected`; o servidor tambem recusa `releasedDoor` sem prova de
+   fechamento.
 
 Se a resposta do snapshot se perder, o lease expira e o comando volta para a
 fila. Se o app reiniciar depois do ACK, o diario local impede nova abertura e

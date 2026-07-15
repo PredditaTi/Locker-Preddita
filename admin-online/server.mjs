@@ -17,7 +17,7 @@ const PUBLIC_DIR = join(ROOT_DIR, 'public');
 const DATA_DIR = process.env.PREDDITA_DATA_DIR ? normalize(process.env.PREDDITA_DATA_DIR) : join(ROOT_DIR, 'data');
 const DB_PATH = join(DATA_DIR, 'state.json');
 const BACKUP_DIR = join(DATA_DIR, 'backups');
-const APP_VERSION = '2.0.13-lab';
+const APP_VERSION = '2.0.14-lab';
 const SCHEMA_VERSION = 7;
 const DEFAULT_ADMIN_TOKEN = 'preddita-admin-local';
 const DEFAULT_SUPER_ADMIN_TOKEN = 'preddita-super-admin-local';
@@ -2841,10 +2841,42 @@ async function handleApi(request, response) {
         const doorHadOccupancy = (current.doors ?? []).some((door) =>
           Number.parseInt(door.channel, 10) === commandDoor && door.occupancy === 'busy'
         );
+        const physicalCloseProof = body.physicalCloseProof && typeof body.physicalCloseProof === 'object'
+          ? body.physicalCloseProof
+          : null;
+        const physicalOpenCycle = body.physicalOpenCycle && typeof body.physicalOpenCycle === 'object'
+          ? body.physicalOpenCycle
+          : null;
+        const cycleBaselineAt = Date.parse(cleanText(physicalOpenCycle?.baselineReadAt));
+        const cycleOpenedAt = Date.parse(cleanText(physicalOpenCycle?.openedAt));
+        const proofOpenedAt = Date.parse(cleanText(physicalCloseProof?.openedAt));
+        const proofClosedAt = Date.parse(cleanText(physicalCloseProof?.closedAt));
+        const physicalCloseConfirmed = Boolean(
+          body.physicalCloseConfirmed === true &&
+          physicalCloseProof &&
+          physicalOpenCycle &&
+          Number.parseInt(physicalOpenCycle.channel, 10) === commandDoor &&
+          Number.parseInt(physicalCloseProof.channel, 10) === commandDoor &&
+          ['zeroOpen', 'zeroClosed'].includes(cleanText(physicalOpenCycle.sensorPolarity)) &&
+          cleanText(physicalCloseProof.sensorPolarity) === cleanText(physicalOpenCycle.sensorPolarity) &&
+          Number.isInteger(Number(physicalOpenCycle.closedStateByte)) &&
+          Number.isInteger(Number(physicalOpenCycle.openStateByte)) &&
+          Number(physicalOpenCycle.closedStateByte) !== Number(physicalOpenCycle.openStateByte) &&
+          Number(physicalCloseProof.stateByte) === Number(physicalOpenCycle.closedStateByte) &&
+          cleanText(physicalCloseProof.openedAt) === cleanText(physicalOpenCycle.openedAt) &&
+          Number.isFinite(cycleBaselineAt) &&
+          Number.isFinite(cycleOpenedAt) &&
+          Number.isFinite(proofOpenedAt) &&
+          Number.isFinite(proofClosedAt) &&
+          cycleOpenedAt > cycleBaselineAt &&
+          proofClosedAt > proofOpenedAt
+        );
         const shouldReleaseDoor = Boolean(
           body.ok &&
+          body.releasedDoor === true &&
+          physicalCloseConfirmed &&
           Number.isInteger(commandDoor) &&
-          (body.releasedDoor || doorHadOccupancy || deliveryOnDoor)
+          (doorHadOccupancy || deliveryOnDoor)
         );
         const completedAt = nowIso();
         const normalizedResult = {
@@ -2852,6 +2884,8 @@ async function handleApi(request, response) {
           ok: Boolean(body.ok),
           executionId,
           door: commandDoor,
+          physicalCloseConfirmed,
+          physicalCloseProof: physicalCloseConfirmed ? physicalCloseProof : null,
           releasedDoor: shouldReleaseDoor,
           releasedDeliveryId: shouldReleaseDoor && deliveryOnDoor ? deliveryOnDoor.id : '',
         };

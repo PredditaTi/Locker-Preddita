@@ -10,6 +10,19 @@ const unlockRequest = frame(0x8a, 0x01, 0x04, 0x33);
 const unlockResponse = frame(0x8a, 0x01, 0x04, 0x00);
 const parsedUnlock = parseResponse(formatHex(unlockResponse));
 assert.equal(responseMatchesRequest(parsedUnlock, unlockRequest), true, 'resposta correta deve confirmar o comando');
+assert.equal(parsedUnlock.state, 'open', 'perfil instalado deve interpretar 0x00 como aberta');
+assert.equal(
+  parseResponse(formatHex(unlockResponse), { sensorPolarity: 'zeroClosed' }).state,
+  'closed',
+  'perfil alternativo deve interpretar 0x00 como fechada'
+);
+assert.equal(
+  parseResponse(formatHex(frame(0x80, 0x01, 0x04, 0x11)), {
+    sensorPolarity: 'zeroClosed',
+  }).state,
+  'open',
+  'perfil alternativo deve interpretar 0x11 como aberta'
+);
 
 const wrongBoard = parseResponse(formatHex(frame(0x8a, 0x02, 0x04, 0x00)));
 assert.equal(responseMatchesRequest(wrongBoard, unlockRequest), false, 'placa diferente nao pode confirmar o comando');

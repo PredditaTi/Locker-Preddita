@@ -1,6 +1,6 @@
 {
   "name": "preddita-entregas-locker",
-  "version": "2.0.13-lab",
+  "version": "2.0.14-lab",
   "type": "module",
   "description": "PREDDITA Entregas Locker - Kiosk App",
   "scripts": {
@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test:workflow": "node ../scripts/v2-workflow-test.mjs",
+    "test:door-safety": "node ../scripts/v2-door-safety-test.mjs",
     "test:event-journal": "node ../scripts/v2-device-event-journal-test.mjs"
   },
   "dependencies": {
