@@ -67,8 +67,8 @@ docker compose -f docker-compose.prod.yml up -d --build
 
 ```text
 PREDDITA_DOMAIN=locker.preddita.com
-PREDDITA_SUPER_ADMIN_TOKEN=crie-um-token-forte-da-preddita
-PREDDITA_ADMIN_TOKEN=crie-um-token-forte-do-sindico
+PREDDITA_ADMIN_USERS='[{"username":"preddita","name":"Admin Geral PREDDITA","role":"super_admin","passwordHash":"scrypt-v1$...","tenantId":"residencial-aurora","lockerIds":["*"]},{"username":"sindico","name":"Sindico","role":"sindico","passwordHash":"scrypt-v1$...","tenantId":"residencial-aurora","lockerIds":["ks1062-aurora"]}]'
+PREDDITA_ADMIN_SESSION_TTL_MS=28800000
 PREDDITA_DEVICE_KEY=crie-uma-chave-forte-do-armario
 PREDDITA_DEVICE_KEYS={"ks1062-aurora":"crie-uma-chave-forte-do-armario"}
 PREDDITA_DEVICE_AUTH_MODE=hmac
@@ -76,6 +76,16 @@ PREDDITA_DEVICE_SIGNATURE_TTL_MS=120000
 PREDDITA_SMTP_USER=enviopreddita@gmail.com
 PREDDITA_SMTP_PASS=senha-de-app-google
 ```
+
+Gere os `passwordHash` antes de editar o `.env`, a partir da raiz do repositorio:
+
+```bash
+read -s PASSWORD && printf '%s\n' "$PASSWORD" | node scripts/generate-admin-password.mjs --username sindico --name "Sindico" --role sindico --locker-id ks1062-aurora
+unset PASSWORD
+```
+
+O Admin Online deve permanecer em uma unica replica nesta versao, pois reiniciar
+o processo invalida as sessoes mantidas em memoria.
 
 ## Verificar
 

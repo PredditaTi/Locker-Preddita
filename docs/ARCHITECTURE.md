@@ -168,8 +168,10 @@ mesma porta, a API bloqueia a abertura.
 
 Servidor:
 
-- `PREDDITA_ADMIN_TOKEN`: token do sindico.
-- `PREDDITA_SUPER_ADMIN_TOKEN`: token do Admin Geral PREDDITA.
+- `PREDDITA_ADMIN_USERS`: lista JSON de usuarios com `passwordHash` scrypt,
+  papel, tenant e lockers permitidos.
+- `PREDDITA_ADMIN_SESSION_TTL_MS`: validade maxima da sessao administrativa.
+- `PREDDITA_ADMIN_LOGIN_RATE_LIMIT_PER_MINUTE`: limite de tentativas de login.
 - `PREDDITA_DEVICE_KEY`: chave usada pelo armario.
 - `PREDDITA_DEVICE_KEYS`: mapa de uma chave diferente por `lockerId`.
 - `PREDDITA_DEVICE_AUTH_MODE`: `hmac` em producao; `dual` existe apenas para
@@ -200,6 +202,16 @@ Cada chamada `/api/device/*` assina metodo, rota, `lockerId`, timestamp, nonce e
 SHA-256 do corpo com HMAC-SHA256. O servidor valida a janela de tempo e consome o
 nonce uma unica vez, bloqueando alteracao do payload e replay da requisicao.
 
+O painel autentica em `/api/auth/login`. O servidor devolve cookie de sessao
+opaco, `HttpOnly`, `SameSite=Strict` e `Secure` em producao. Mutacoes exigem um
+CSRF token mantido somente em memoria pela pagina. Os papeis `sindico`,
+`operador`, `suporte` e `super_admin` sao validados no backend, inclusive para
+escopo por `lockerId`, dados pessoais, exportacoes e operacao remota.
+
+Nesta etapa, as sessoes ficam na memoria do processo Node. Reiniciar o servidor
+encerra as sessoes ativas, e uma instalacao com mais de uma replica precisa de um
+store compartilhado antes de receber trafego distribuido.
+
 ## Riscos conhecidos e proximos passos
 
 - `web/src/App.jsx` ainda e grande. Antes de escalar para muitos armarios, vale
@@ -211,3 +223,5 @@ nonce uma unica vez, bloqueando alteracao do payload e replay da requisicao.
 - HTTPS e dominio proprio devem ser obrigatorios em producao.
 - O envio de e-mail depende de SMTP externo; falhas ficam registradas para
   reprocessamento/diagnostico.
+- Persistir sessoes e revogacoes no Postgres (ou Redis) antes de escalar o Admin
+  Online para varias replicas; depois adicionar MFA para contas privilegiadas.

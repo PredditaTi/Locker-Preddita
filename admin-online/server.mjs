@@ -3,13 +3,21 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameS
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  adminUserCanAccessLocker,
+  authenticateAdminUser,
+  createAdminSessionStore,
+  getAdminRolePermissions,
+  parseAdminUsers,
+  toPublicAdminSession,
+} from './adminAuth.mjs';
 
 const ROOT_DIR = fileURLToPath(new URL('.', import.meta.url));
 const PUBLIC_DIR = join(ROOT_DIR, 'public');
 const DATA_DIR = process.env.PREDDITA_DATA_DIR ? normalize(process.env.PREDDITA_DATA_DIR) : join(ROOT_DIR, 'data');
 const DB_PATH = join(DATA_DIR, 'state.json');
 const BACKUP_DIR = join(DATA_DIR, 'backups');
-const APP_VERSION = '2.0.12-lab';
+const APP_VERSION = '2.0.13-lab';
 const SCHEMA_VERSION = 7;
 const DEFAULT_ADMIN_TOKEN = 'preddita-admin-local';
 const DEFAULT_SUPER_ADMIN_TOKEN = 'preddita-super-admin-local';
@@ -57,6 +65,8 @@ const DEVICE_STALE_MS = Number.parseInt(process.env.PREDDITA_DEVICE_STALE_MS ?? 
 const BACKUP_INTERVAL_MS = Number.parseInt(process.env.PREDDITA_BACKUP_INTERVAL_MS ?? '900000', 10);
 const MAX_BACKUPS = Number.parseInt(process.env.PREDDITA_MAX_BACKUPS ?? '32', 10);
 const ADMIN_RATE_LIMIT_PER_MINUTE = Number.parseInt(process.env.PREDDITA_ADMIN_RATE_LIMIT_PER_MINUTE ?? '180', 10);
+const ADMIN_LOGIN_RATE_LIMIT_PER_MINUTE = parsePositiveInteger(process.env.PREDDITA_ADMIN_LOGIN_RATE_LIMIT_PER_MINUTE, 12);
+const ADMIN_SESSION_TTL_MS = parsePositiveInteger(process.env.PREDDITA_ADMIN_SESSION_TTL_MS, 28800000);
 const DEVICE_RATE_LIMIT_PER_MINUTE = Number.parseInt(process.env.PREDDITA_DEVICE_RATE_LIMIT_PER_MINUTE ?? '240', 10);
 const OPEN_RATE_LIMIT_PER_MINUTE = Number.parseInt(process.env.PREDDITA_OPEN_RATE_LIMIT_PER_MINUTE ?? '18', 10);
 const NOTIFICATION_OUTBOX_INTERVAL_MS = Number.parseInt(process.env.PREDDITA_NOTIFICATION_OUTBOX_INTERVAL_MS ?? '30000', 10);
@@ -72,6 +82,23 @@ const SMTP_SECURE = String(process.env.PREDDITA_SMTP_SECURE ?? 'false').toLowerC
 const SMTP_USER = cleanText(process.env.PREDDITA_SMTP_USER);
 const SMTP_PASS = cleanText(process.env.PREDDITA_SMTP_PASS);
 const SMTP_FROM = cleanText(process.env.PREDDITA_SMTP_FROM || process.env.PREDDITA_SMTP_USER);
+const ALLOW_LEGACY_ADMIN_TOKENS = !IS_PRODUCTION
+  && String(process.env.PREDDITA_LEGACY_ADMIN_TOKENS ?? 'false').toLowerCase() === 'true';
+let adminUsers = [];
+let adminUsersConfigError = '';
+try {
+  adminUsers = parseAdminUsers(process.env.PREDDITA_ADMIN_USERS, {
+    defaultLockerId: DEFAULT_LOCKER_ID,
+    defaultTenantId: DEFAULT_TENANT_ID,
+    allowLocalDefaults: !IS_PRODUCTION,
+  });
+} catch (error) {
+  adminUsersConfigError = error.message;
+}
+const adminSessionStore = createAdminSessionStore({
+  ttlMs: ADMIN_SESSION_TTL_MS,
+  secure: IS_PRODUCTION,
+});
 let lastBackupAt = 0;
 let notificationOutboxInFlight = false;
 let postgresPool = null;
@@ -211,6 +238,9 @@ function parseDeviceKeys(rawValue, legacyKey) {
 
 function getStartupConfigErrors() {
   const errors = [];
+  if (adminUsersConfigError) {
+    errors.push(adminUsersConfigError);
+  }
   if (!DEVICE_AUTH_MODES.has(DEVICE_AUTH_MODE)) {
     errors.push('PREDDITA_DEVICE_AUTH_MODE deve ser hmac, dual ou legacy.');
   }
@@ -221,19 +251,13 @@ function getStartupConfigErrors() {
     return errors;
   }
 
-  const requiredSecrets = [
-    ['PREDDITA_ADMIN_TOKEN', ADMIN_TOKEN, DEFAULT_ADMIN_TOKEN],
-    ['PREDDITA_SUPER_ADMIN_TOKEN', SUPER_ADMIN_TOKEN, DEFAULT_SUPER_ADMIN_TOKEN],
-  ];
-
-  for (const [name, value, localDefault] of requiredSecrets) {
-    if (!cleanText(value)) {
-      errors.push(`${name} deve ser definido em producao.`);
-      continue;
-    }
-    if (value === localDefault) {
-      errors.push(`${name} nao pode usar o valor local padrao em producao.`);
-    }
+  if (adminUsers.length === 0) {
+    errors.push('PREDDITA_ADMIN_USERS deve definir usuarios com passwordHash em producao.');
+  } else if (!adminUsers.some((user) => user.role === 'super_admin' && !user.disabled)) {
+    errors.push('PREDDITA_ADMIN_USERS deve conter ao menos um super_admin ativo.');
+  }
+  if (String(process.env.PREDDITA_LEGACY_ADMIN_TOKENS ?? '').toLowerCase() === 'true') {
+    errors.push('PREDDITA_LEGACY_ADMIN_TOKENS nao pode ser habilitado em producao.');
   }
 
   if (DEVICE_KEYS.size === 0) {
@@ -669,6 +693,15 @@ function withLockerStateMutation(lockerId, tenantId, operation) {
 function withAudit(state, kind, message, meta = {}) {
   return {
     ...state,
+    doors: (state.doors ?? []).map((door) => ({
+      ...door,
+      delivery: door.delivery ? {
+        id: door.delivery.id,
+        unit: door.delivery.unit,
+        apartment: door.delivery.apartment,
+        status: door.delivery.status,
+      } : null,
+    })),
     auditTrail: [
       { id: createId('audit'), kind, message, meta, at: nowIso() },
       ...(state.auditTrail ?? []),
@@ -881,11 +914,11 @@ function getPlatformSummary(state) {
 
 function getSecurityWarnings() {
   const warnings = [];
-  if (ADMIN_TOKEN === DEFAULT_ADMIN_TOKEN) {
-    warnings.push('PREDDITA_ADMIN_TOKEN esta usando o valor local padrao.');
+  if (!process.env.PREDDITA_ADMIN_USERS) {
+    warnings.push('PREDDITA_ADMIN_USERS nao foi definido; usando usuarios e senhas locais de desenvolvimento.');
   }
-  if (SUPER_ADMIN_TOKEN === DEFAULT_SUPER_ADMIN_TOKEN) {
-    warnings.push('PREDDITA_SUPER_ADMIN_TOKEN esta usando o valor local padrao.');
+  if (ALLOW_LEGACY_ADMIN_TOKENS) {
+    warnings.push('PREDDITA_LEGACY_ADMIN_TOKENS esta habilitado para compatibilidade local.');
   }
   if (DEVICE_KEY === DEFAULT_DEVICE_KEY) {
     warnings.push('PREDDITA_DEVICE_KEY esta usando o valor local padrao.');
@@ -902,17 +935,89 @@ function getSecurityWarnings() {
   return warnings;
 }
 
-function decorateStateForAdmin(state, session) {
-  const runtime = getRuntimeSummary(state);
-  const safeRuntime = {
-    ...runtime,
-    securityWarnings: session?.role === 'super_admin' ? runtime.securityWarnings : [],
+function redactAdminAuditMessage(message) {
+  return cleanText(message).replace(
+    /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,
+    '[dado protegido]'
+  );
+}
+
+function redactAdminNotification(notification, session) {
+  if (!notification || session?.canViewPersonalData) return notification;
+  return {
+    status: notification.status,
+    requestedAt: notification.requestedAt,
+    sentAt: notification.sentAt,
+    error: redactAdminAuditMessage(notification.error),
+    ...(notification.duplicate ? { duplicate: true } : {}),
+    ...(notification.queued ? { queued: true } : {}),
   };
+}
+
+function redactAdminState(state, session) {
+  if (session?.canViewPersonalData) return state;
   return {
     ...state,
+    residents: (state.residents ?? []).map((resident) => ({
+      id: resident.id,
+      apartment: resident.apartment,
+      building: resident.building,
+      floor: resident.floor,
+      createdAt: resident.createdAt,
+      updatedAt: resident.updatedAt,
+    })),
+    doors: (state.doors ?? []).map((door) => ({
+      ...door,
+      delivery: door.delivery ? {
+        id: door.delivery.id,
+        unit: door.delivery.unit,
+        apartment: door.delivery.apartment,
+        status: door.delivery.status,
+      } : null,
+    })),
+    deliveries: (state.deliveries ?? []).map((delivery) => ({
+      id: delivery.id,
+      unit: delivery.unit,
+      apartment: delivery.apartment,
+      building: delivery.building,
+      floor: delivery.floor,
+      door: delivery.door,
+      size: delivery.size,
+      status: delivery.status,
+      notificationStatus: delivery.notificationStatus,
+      createdAt: delivery.createdAt,
+      depositedAt: delivery.depositedAt,
+      pickupOpenedAt: delivery.pickupOpenedAt,
+      collectedAt: delivery.collectedAt,
+      expiresAt: delivery.expiresAt,
+      labelPhotoCapturedAt: delivery.labelPhotoCapturedAt,
+      labelProofRequired: delivery.labelProofRequired,
+      reminderLevel: delivery.reminderLevel,
+      reminderLastSentAt: delivery.reminderLastSentAt,
+      reminderError: redactAdminAuditMessage(delivery.reminderError),
+    })),
+    auditTrail: (state.auditTrail ?? []).map((entry) => ({
+      id: entry.id,
+      kind: entry.kind,
+      message: redactAdminAuditMessage(entry.message),
+      at: entry.at,
+    })),
+    notificationOutbox: [],
+  };
+}
+
+function decorateStateForAdmin(state, session) {
+  const runtime = getRuntimeSummary(state);
+  const safeState = redactAdminState(state, session);
+  const safeRuntime = {
+    ...runtime,
+    securityWarnings: session?.canViewSecurity ? runtime.securityWarnings : [],
+  };
+  return {
+    ...safeState,
     runtime: safeRuntime,
     session,
-    platform: session?.role === 'super_admin' ? getPlatformSummary(state) : null,
+    platform: session?.canViewPlatform ? getPlatformSummary(state) : null,
     device: {
       ...state.device,
       online: Boolean(state.device?.online && runtime.deviceFresh),
@@ -1783,13 +1888,35 @@ function readBody(request) {
   return request.predditaBodyPromise;
 }
 
-function sendJson(response, status, payload) {
+function responseCorsHeaders(response) {
+  const origin = response.predditaCorsOrigin ?? '*';
+  return {
+    'access-control-allow-origin': origin,
+    'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
+    'access-control-allow-headers': 'content-type,x-admin-token,x-csrf-token,x-device-key,x-locker-id,x-preddita-timestamp,x-preddita-nonce,x-preddita-content-sha256,x-preddita-signature',
+    ...(origin !== '*' ? { 'access-control-allow-credentials': 'true', vary: 'Origin' } : {}),
+  };
+}
+
+function responseSecurityHeaders() {
+  return {
+    'content-security-policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+    'x-content-type-options': 'nosniff',
+    'x-frame-options': 'DENY',
+    'referrer-policy': 'no-referrer',
+    'permissions-policy': 'camera=(), microphone=(), geolocation=()',
+    ...(IS_PRODUCTION ? { 'strict-transport-security': 'max-age=31536000; includeSubDomains' } : {}),
+  };
+}
+
+function sendJson(response, status, payload, extraHeaders = {}) {
   response.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
-    'access-control-allow-origin': response.predditaCorsOrigin ?? '*',
-    'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
-    'access-control-allow-headers': 'content-type,x-admin-token,x-device-key,x-locker-id,x-preddita-timestamp,x-preddita-nonce,x-preddita-content-sha256,x-preddita-signature',
+    'cache-control': 'no-store',
+    ...responseSecurityHeaders(),
+    ...responseCorsHeaders(response),
     'x-preddita-version': APP_VERSION,
+    ...extraHeaders,
   });
   response.end(JSON.stringify(payload));
 }
@@ -1798,13 +1925,14 @@ function sendError(response, status, message) {
   sendJson(response, status, { ok: false, error: message });
 }
 
-function sendText(response, status, text, contentType = 'text/plain; charset=utf-8') {
+function sendText(response, status, text, contentType = 'text/plain; charset=utf-8', extraHeaders = {}) {
   response.writeHead(status, {
     'content-type': contentType,
-    'access-control-allow-origin': response.predditaCorsOrigin ?? '*',
-    'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
-    'access-control-allow-headers': 'content-type,x-admin-token,x-device-key,x-locker-id,x-preddita-timestamp,x-preddita-nonce,x-preddita-content-sha256,x-preddita-signature',
+    'cache-control': 'no-store',
+    ...responseSecurityHeaders(),
+    ...responseCorsHeaders(response),
     'x-preddita-version': APP_VERSION,
+    ...extraHeaders,
   });
   response.end(text);
 }
@@ -1821,31 +1949,65 @@ function toCsv(headers, rows) {
   ].join('\n');
 }
 
-function getAdminSession(request) {
+function createLegacyAdminAuth(role, username, name) {
+  const permissions = getAdminRolePermissions(role);
+  const user = {
+    id: `legacy-${username}`,
+    username,
+    name,
+    role,
+    tenantId: DEFAULT_TENANT_ID,
+    lockerIds: role === 'super_admin' ? ['*'] : [DEFAULT_LOCKER_ID],
+    permissions,
+  };
+  return {
+    type: 'legacy-token',
+    session: {
+      id: `legacy-${role}`,
+      csrfToken: '',
+      user,
+      createdAt: '',
+      expiresAt: '',
+      expiresAtMs: Number.MAX_SAFE_INTEGER,
+    },
+  };
+}
+
+function getAdminAuth(request) {
+  const cookieSession = adminSessionStore.get(request.headers.cookie);
+  if (cookieSession) {
+    return { type: 'session-cookie', session: cookieSession };
+  }
+  if (!ALLOW_LEGACY_ADMIN_TOKENS) return null;
+
   const token = request.headers['x-admin-token'];
   if (safeTokenEquals(token, SUPER_ADMIN_TOKEN)) {
-    return {
-      role: 'super_admin',
-      label: 'Admin Geral PREDDITA',
-      canOperateLocker: true,
-      canManageApartments: true,
-      canViewPlatform: true,
-      canViewSecurity: true,
-    };
+    return createLegacyAdminAuth('super_admin', 'legacy-preddita', 'Admin Geral PREDDITA');
   }
 
   if (safeTokenEquals(token, ADMIN_TOKEN)) {
-    return {
-      role: 'sindico',
-      label: 'Painel do Sindico',
-      canOperateLocker: true,
-      canManageApartments: true,
-      canViewPlatform: false,
-      canViewSecurity: false,
-    };
+    return createLegacyAdminAuth('sindico', 'legacy-sindico', 'Painel do Sindico');
   }
 
   return null;
+}
+
+function hasValidAdminCsrf(request, adminAuth) {
+  if (adminAuth?.type === 'legacy-token') return true;
+  return safeTokenEquals(request.headers['x-csrf-token'], adminAuth?.session?.csrfToken);
+}
+
+function isRequestOriginAllowed(request) {
+  const origin = cleanText(request.headers.origin);
+  return !origin || ALLOWED_ORIGINS.length === 0 || ALLOWED_ORIGINS.includes(origin);
+}
+
+function adminActor(adminAuth) {
+  return adminAuth?.session?.user?.username || 'administrador';
+}
+
+function hasAdminPermission(adminAuth, permission) {
+  return Boolean(adminAuth?.session?.user?.permissions?.[permission]);
 }
 
 function getDeviceKey(request) {
@@ -1992,11 +2154,15 @@ function checkRateLimit(request, bucketName, limit) {
 
 function applyCors(request, response) {
   const origin = cleanText(request.headers.origin);
-  if (ALLOWED_ORIGINS.length === 0 || !origin) {
+  if (!origin) {
     response.predditaCorsOrigin = '*';
     return;
   }
-  response.predditaCorsOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  if (ALLOWED_ORIGINS.length === 0 || ALLOWED_ORIGINS.includes(origin)) {
+    response.predditaCorsOrigin = origin;
+    return;
+  }
+  response.predditaCorsOrigin = 'null';
 }
 
 function serveStatic(request, response) {
@@ -2017,7 +2183,11 @@ function serveStatic(request, response) {
     '.js': 'text/javascript; charset=utf-8',
     '.json': 'application/json; charset=utf-8',
   };
-  response.writeHead(200, { 'content-type': typeMap[extname(normalized)] ?? 'application/octet-stream' });
+  response.writeHead(200, {
+    'content-type': typeMap[extname(normalized)] ?? 'application/octet-stream',
+    'cache-control': 'no-cache',
+    ...responseSecurityHeaders(),
+  });
   response.end(readFileSync(normalized));
 }
 
@@ -2035,8 +2205,83 @@ async function handleApi(request, response) {
     return;
   }
 
+  const isAuthPath = path.startsWith('/api/auth');
   const isAdminPath = path.startsWith('/api/admin');
   const isDevicePath = path.startsWith('/api/device');
+
+  if ((isAuthPath || isAdminPath) && !isRequestOriginAllowed(request)) {
+    sendError(response, 403, 'Origem nao autorizada para o painel administrativo.');
+    return;
+  }
+
+  if (method === 'POST' && path === '/api/auth/login') {
+    if (!checkRateLimit(request, 'admin-login', ADMIN_LOGIN_RATE_LIMIT_PER_MINUTE)) {
+      sendError(response, 429, 'Muitas tentativas de login. Aguarde um minuto.');
+      return;
+    }
+    const body = await readBody(request);
+    const user = authenticateAdminUser(adminUsers, body.username, body.password);
+    if (!user) {
+      sendError(response, 401, 'Usuario ou senha invalidos.');
+      return;
+    }
+    const created = adminSessionStore.create(user);
+    console.log(JSON.stringify({
+      level: 'info',
+      event: 'admin-login',
+      username: user.username,
+      role: user.role,
+      client: getClientKey(request),
+      at: nowIso(),
+    }));
+    sendJson(
+      response,
+      200,
+      { ok: true, session: toPublicAdminSession(created.session, { includeCsrf: true }) },
+      { 'set-cookie': created.cookie }
+    );
+    return;
+  }
+
+  if (method === 'GET' && path === '/api/auth/session') {
+    const adminAuth = getAdminAuth(request);
+    if (!adminAuth) {
+      sendError(response, 401, 'Sessao administrativa ausente ou expirada.');
+      return;
+    }
+    sendJson(response, 200, {
+      ok: true,
+      session: toPublicAdminSession(adminAuth.session, { includeCsrf: true }),
+    });
+    return;
+  }
+
+  if (method === 'POST' && path === '/api/auth/logout') {
+    const adminAuth = getAdminAuth(request);
+    if (!adminAuth) {
+      sendError(response, 401, 'Sessao administrativa ausente ou expirada.');
+      return;
+    }
+    if (!hasValidAdminCsrf(request, adminAuth)) {
+      sendError(response, 403, 'Token CSRF invalido. Atualize a pagina e tente novamente.');
+      return;
+    }
+    const clearedCookie = adminSessionStore.destroy(request.headers.cookie);
+    console.log(JSON.stringify({
+      level: 'info',
+      event: 'admin-logout',
+      username: adminActor(adminAuth),
+      client: getClientKey(request),
+      at: nowIso(),
+    }));
+    sendJson(response, 200, { ok: true }, { 'set-cookie': clearedCookie });
+    return;
+  }
+
+  if (isAuthPath) {
+    sendError(response, 404, 'Rota de autenticacao nao encontrada.');
+    return;
+  }
 
   if (isAdminPath && !checkRateLimit(request, 'admin', ADMIN_RATE_LIMIT_PER_MINUTE)) {
     sendError(response, 429, 'Muitas requisicoes administrativas em pouco tempo.');
@@ -2048,9 +2293,13 @@ async function handleApi(request, response) {
     return;
   }
 
-  const adminSession = isAdminPath ? getAdminSession(request) : null;
-  if (isAdminPath && !adminSession) {
-    sendError(response, 401, 'Token do administrador invalido.');
+  const adminAuth = isAdminPath ? getAdminAuth(request) : null;
+  if (isAdminPath && !adminAuth) {
+    sendError(response, 401, 'Sessao administrativa ausente ou expirada.');
+    return;
+  }
+  if (isAdminPath && !['GET', 'HEAD', 'OPTIONS'].includes(method) && !hasValidAdminCsrf(request, adminAuth)) {
+    sendError(response, 403, 'Token CSRF invalido. Atualize a pagina e tente novamente.');
     return;
   }
 
@@ -2068,6 +2317,11 @@ async function handleApi(request, response) {
   }
 
   const requestLockerId = getRequestLockerId(request);
+  if (isAdminPath && !adminUserCanAccessLocker(adminAuth.session.user, requestLockerId, DEFAULT_TENANT_ID)) {
+    sendError(response, 403, 'Este usuario nao possui acesso ao locker solicitado.');
+    return;
+  }
+  const adminSession = isAdminPath ? toPublicAdminSession(adminAuth.session) : null;
   const state = await readFreshState(requestLockerId);
   if (isDevicePath) {
     const lockerValidation = validateDeviceLocker(state, request);
@@ -2083,6 +2337,10 @@ async function handleApi(request, response) {
   }
 
   if (method === 'GET' && path === '/api/admin/export/residents.csv') {
+    if (!hasAdminPermission(adminAuth, 'canExportData')) {
+      sendError(response, 403, 'Este papel nao pode exportar dados pessoais.');
+      return;
+    }
     sendText(
       response,
       200,
@@ -2096,6 +2354,10 @@ async function handleApi(request, response) {
   }
 
   if (method === 'GET' && path === '/api/admin/export/deliveries.csv') {
+    if (!hasAdminPermission(adminAuth, 'canExportData')) {
+      sendError(response, 403, 'Este papel nao pode exportar dados pessoais.');
+      return;
+    }
     sendText(
       response,
       200,
@@ -2109,6 +2371,10 @@ async function handleApi(request, response) {
   }
 
   if (method === 'GET' && path === '/api/admin/export/audit.csv') {
+    if (!hasAdminPermission(adminAuth, 'canExportData')) {
+      sendError(response, 403, 'Este papel nao pode exportar dados.');
+      return;
+    }
     sendText(
       response,
       200,
@@ -2122,6 +2388,10 @@ async function handleApi(request, response) {
   }
 
   if (method === 'POST' && path === '/api/admin/residents') {
+    if (!hasAdminPermission(adminAuth, 'canManageApartments')) {
+      sendError(response, 403, 'Este papel nao pode cadastrar apartamentos.');
+      return;
+    }
     const body = await readBody(request);
     const resident = normalizeResident(body);
     if (!resident.apartment) {
@@ -2136,7 +2406,7 @@ async function handleApi(request, response) {
       withResidentsRevision(state, [resident, ...(state.residents ?? [])]),
       'resident-created',
       `${residentApartmentLabel(resident)} cadastrado.`,
-      { residentId: resident.id }
+      { residentId: resident.id, actor: adminActor(adminAuth) }
     );
     await writeState(next, requestLockerId);
     sendJson(response, 201, { ok: true, resident });
@@ -2145,6 +2415,10 @@ async function handleApi(request, response) {
 
   const residentMatch = path.match(/^\/api\/admin\/residents\/([^/]+)$/);
   if (residentMatch && method === 'PUT') {
+    if (!hasAdminPermission(adminAuth, 'canManageApartments')) {
+      sendError(response, 403, 'Este papel nao pode alterar apartamentos.');
+      return;
+    }
     const body = await readBody(request);
     const residentId = decodeURIComponent(residentMatch[1]);
     const previous = (state.residents ?? []).find((item) => item.id === residentId);
@@ -2168,7 +2442,7 @@ async function handleApi(request, response) {
       ),
       'resident-updated',
       `Cadastro de ${residentApartmentLabel(resident)} atualizado.`,
-      { residentId }
+      { residentId, actor: adminActor(adminAuth) }
     );
     await writeState(next, requestLockerId);
     sendJson(response, 200, { ok: true, resident });
@@ -2176,13 +2450,17 @@ async function handleApi(request, response) {
   }
 
   if (residentMatch && method === 'DELETE') {
+    if (!hasAdminPermission(adminAuth, 'canManageApartments')) {
+      sendError(response, 403, 'Este papel nao pode remover apartamentos.');
+      return;
+    }
     const residentId = decodeURIComponent(residentMatch[1]);
     const previous = (state.residents ?? []).find((item) => item.id === residentId);
     const next = withAudit(
       withResidentsRevision(state, (state.residents ?? []).filter((item) => item.id !== residentId)),
       'resident-deleted',
       previous ? `${residentApartmentLabel(previous)} removido.` : 'Apartamento removido.',
-      { residentId }
+      { residentId, actor: adminActor(adminAuth) }
     );
     await writeState(next, requestLockerId);
     sendJson(response, 200, { ok: true });
@@ -2191,6 +2469,10 @@ async function handleApi(request, response) {
 
   const openDoorMatch = path.match(/^\/api\/admin\/doors\/(\d+)\/open$/);
   if (openDoorMatch && method === 'POST') {
+    if (!hasAdminPermission(adminAuth, 'canOperateLocker')) {
+      sendError(response, 403, 'Este papel nao pode operar portas remotamente.');
+      return;
+    }
     const door = Number.parseInt(openDoorMatch[1], 10);
     const body = await readBody(request);
     const creationResult = await withLockerStateMutation(
@@ -2222,7 +2504,7 @@ async function handleApi(request, response) {
           door,
           reason: cleanText(body.reason) || 'Abertura remota pelo sindico.',
           status: 'pending',
-          requestedBy: cleanText(body.requestedBy) || 'sindico',
+          requestedBy: adminActor(adminAuth),
           createdAt,
           leaseId: '',
           leasedAt: '',
@@ -2240,7 +2522,7 @@ async function handleApi(request, response) {
           { ...current, commands: [command, ...(current.commands ?? [])] },
           'remote-open-requested',
           `Abertura remota solicitada para a porta ${door}.`,
-          { commandId: command.id, door }
+          { commandId: command.id, door, actor: adminActor(adminAuth) }
         );
         await writeState(next, requestLockerId);
         return { status: 201, payload: { ok: true, command } };
@@ -2257,6 +2539,10 @@ async function handleApi(request, response) {
 
   const commandMatch = path.match(/^\/api\/admin\/commands\/([^/]+)$/);
   if (commandMatch && method === 'GET') {
+    if (!hasAdminPermission(adminAuth, 'canOperateLocker')) {
+      sendError(response, 403, 'Este papel nao pode acompanhar comandos remotos.');
+      return;
+    }
     const commandId = decodeURIComponent(commandMatch[1]);
     const command = (state.commands ?? []).find((item) => item.id === commandId);
     if (!command) {
@@ -2302,6 +2588,10 @@ async function handleApi(request, response) {
 
   const deliveryNotifyMatch = path.match(/^\/api\/admin\/deliveries\/([^/]+)\/notify$/);
   if (deliveryNotifyMatch && method === 'POST') {
+    if (!hasAdminPermission(adminAuth, 'canOperateLocker')) {
+      sendError(response, 403, 'Este papel nao pode reenviar notificacoes.');
+      return;
+    }
     const deliveryId = decodeURIComponent(deliveryNotifyMatch[1]);
     const delivery = (state.deliveries ?? []).find((item) => item.id === deliveryId);
     if (!delivery) {
@@ -2309,8 +2599,17 @@ async function handleApi(request, response) {
       return;
     }
     const result = await notifyDeliveryStored(state, { delivery }, { force: true });
-    await writeState(result.state, requestLockerId);
-    sendJson(response, 200, { ok: true, notification: result.notification });
+    const next = withAudit(
+      result.state,
+      'delivery-notification-requested',
+      `Reenvio de notificacao solicitado para a entrega ${delivery.id}.`,
+      { deliveryId: delivery.id, actor: adminActor(adminAuth) }
+    );
+    await writeState(next, requestLockerId);
+    sendJson(response, 200, {
+      ok: true,
+      notification: redactAdminNotification(result.notification, adminSession),
+    });
     return;
   }
 

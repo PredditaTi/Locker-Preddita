@@ -122,6 +122,22 @@ Validacao do segundo lote:
 - CI e Vite falham se `VITE_PREDDITA_DEVICE_KEY` for definida em build.
 - Versao atualizada para `2.0.12-lab`, `versionCode 12` e bridge `1.6.0`.
 
+### Autenticacao administrativa real em 2026-07-15
+
+- Tokens administrativos foram removidos do navegador e substituidos por login
+  com senha derivada por `scrypt` e cookie de sessao `HttpOnly`,
+  `SameSite=Strict` e `Secure` em producao.
+- Mutacoes passaram a exigir CSRF e registrar o username autenticado na
+  auditoria, sem confiar em `requestedBy` enviado pelo cliente.
+- Papeis `sindico`, `operador`, `suporte` e `super_admin` agora sao aplicados
+  pelo backend para operacao, apartamentos, exportacao, seguranca e dados
+  pessoais.
+- Cada usuario possui escopo de `tenantId` e `lockerIds`; acesso cruzado e
+  recusado antes da leitura do estado.
+- Foi adicionado gerador de `passwordHash` por stdin, smoke de sessao/papeis e
+  migracao do agente operacional para sessao administrativa e HMAC.
+- Versao atualizada para `2.0.13-lab` e `versionCode 13`.
+
 Primeiro pacote de Fase 0 aplicado apos esta revisao:
 
 - `admin-online`: `nodemailer` atualizado para versao sem vulnerabilidades no

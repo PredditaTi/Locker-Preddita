@@ -45,4 +45,4 @@ Write-Host '[PREDDITA] Criando tunel local para o armario acessar o painel...'
 & $Adb -s $Device reverse "tcp:$Port" "tcp:$Port" | Write-Host
 
 Write-Host "[OK] Painel: http://localhost:$Port"
-Write-Host '[OK] Token inicial: preddita-admin-local'
+Write-Host '[OK] Login local: sindico / preddita-admin-local'

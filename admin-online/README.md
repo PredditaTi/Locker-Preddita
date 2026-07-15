@@ -21,10 +21,11 @@ Depois acesse:
 http://localhost:8787
 ```
 
-Token inicial do painel:
+Usuarios locais do painel:
 
 ```text
-preddita-admin-local
+sindico / preddita-admin-local
+preddita / preddita-super-admin-local
 ```
 
 Chave inicial do dispositivo:
@@ -33,10 +34,18 @@ Chave inicial do dispositivo:
 preddita-device-local
 ```
 
-Em producao, troque esses valores por variaveis de ambiente:
+As contas locais existem somente fora de producao. Gere um hash para cada conta
+real a partir da raiz do repositorio:
 
 ```powershell
-$env:PREDDITA_ADMIN_TOKEN="um-token-forte"
+$password = Read-Host "Senha com pelo menos 12 caracteres" -MaskInput
+$password | node scripts\generate-admin-password.mjs --username sindico --name "Sindico" --role sindico --locker-id ks1062-aurora
+```
+
+Combine os registros gerados em uma lista JSON e configure o servidor:
+
+```powershell
+$env:PREDDITA_ADMIN_USERS='[{"username":"sindico","name":"Sindico","role":"sindico","passwordHash":"scrypt-v1$...","tenantId":"residencial-aurora","lockerIds":["ks1062-aurora"]}]'
 $env:PREDDITA_DEVICE_KEY="uma-chave-do-armario"
 $env:PREDDITA_DEVICE_AUTH_MODE="hmac"
 node server.mjs
@@ -86,7 +95,8 @@ node scripts\v2-smoke-test.mjs
 
 O smoke sobe o servidor em uma porta temporaria, usa dados temporarios e valida:
 
-- token de administrador obrigatorio;
+- login administrativo com cookie HttpOnly e CSRF obrigatorios;
+- papeis, escopo por locker e bloqueio de mutacoes nao autorizadas;
 - HMAC de dispositivo valido, com recusa de chave estatica, corpo adulterado,
   timestamp vencido e nonce repetido;
 - cadastro de morador;
@@ -110,14 +120,15 @@ PREDDITA_V2_SMOKE_OK
 
 - Escrita atomica de `state.json` com backup em `data/backups`.
 - `runtime` no `/api/admin/state` com saude do armario, fila, SMTP e versao.
-- Comparacao de tokens com `timingSafeEqual`.
+- Senhas derivadas com `scrypt`, sessoes opacas e logout com revogacao imediata.
+- Papeis `sindico`, `operador`, `suporte` e `super_admin` aplicados na API.
 - Rate limit administrativo e de abertura remota.
 - Endpoint `GET /api/admin/commands/:id` para acompanhar comandos.
 - Timeline de comando remoto: criado, entregue ao armario e concluido/falhou.
 - UI do admin com painel de saude e rastreador de comando remoto.
 - Botoes de abertura bloqueados quando o armario esta sem sinal/serial.
 - API tambem bloqueia abertura remota se o armario estiver offline, stale, sem serial ou ja tiver comando pendente para a mesma porta.
-- Painel exibe avisos se token/chave padrao ou CORS permissivo forem usados.
+- Painel exibe avisos se usuarios locais, chave padrao ou CORS permissivo forem usados.
 - Dependencias auditadas com `npm audit --omit=dev`.
 - Persistencia opcional em Postgres por `tenant_id`/`locker_id`, mantendo
   `state.json` como modo local.

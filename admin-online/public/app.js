@@ -1,10 +1,10 @@
 const API = '';
-const TOKEN_KEY = 'preddita_admin_online_token';
 
 const state = {
   view: 'overview',
   data: null,
-  token: localStorage.getItem(TOKEN_KEY) || 'preddita-admin-local',
+  session: null,
+  csrfToken: '',
   editingResidentId: '',
   residentDrafts: {
     new: {},
@@ -16,17 +16,22 @@ const state = {
 };
 
 const root = document.querySelector('#view-root');
+const adminApp = document.querySelector('#admin-app');
+const loginScreen = document.querySelector('#login-screen');
+const loginForm = document.querySelector('#login-form');
+const loginUsername = document.querySelector('#login-username');
+const loginPassword = document.querySelector('#login-password');
+const loginButton = document.querySelector('#login-button');
+const loginMessage = document.querySelector('#login-message');
 const title = document.querySelector('#view-title');
 const siteName = document.querySelector('#site-name');
 const message = document.querySelector('#message');
-const tokenInput = document.querySelector('#admin-token');
 const deviceStatus = document.querySelector('#device-status');
 const navList = document.querySelector('#nav-list');
 const panelName = document.querySelector('#panel-name');
 const panelDescription = document.querySelector('#panel-description');
-const tokenLabel = document.querySelector('#token-label');
-
-tokenInput.value = state.token;
+const sessionName = document.querySelector('#session-name');
+const sessionRole = document.querySelector('#session-role');
 
 const NAV_BY_ROLE = {
   sindico: [
@@ -35,6 +40,20 @@ const NAV_BY_ROLE = {
     ['residents', 'Apartamentos'],
     ['deliveries', 'Entregas'],
     ['audit', 'Auditoria'],
+  ],
+  operador: [
+    ['overview', 'Resumo'],
+    ['doors', 'Portas'],
+    ['deliveries', 'Entregas'],
+    ['audit', 'Auditoria'],
+  ],
+  suporte: [
+    ['platform', 'Operacao'],
+    ['overview', 'Armario atual'],
+    ['doors', 'Portas'],
+    ['deliveries', 'Entregas'],
+    ['audit', 'Auditoria'],
+    ['system', 'Sistema'],
   ],
   super_admin: [
     ['platform', 'Admin geral'],
@@ -134,6 +153,7 @@ function deliveryAgeClass(delivery = {}) {
 
 function deliveryEvidenceLabel(delivery = {}) {
   if (delivery.labelPhotoDataUrl) return `Foto da etiqueta${delivery.labelPhotoCapturedAt ? ` em ${delivery.labelPhotoCapturedAt}` : ''}`;
+  if (delivery.labelPhotoCapturedAt) return `Foto protegida registrada em ${delivery.labelPhotoCapturedAt}`;
   if (delivery.labelProofRequired) return 'Sem foto da etiqueta';
   return 'Comprovante nao solicitado';
 }
@@ -151,7 +171,7 @@ function runtime() {
 }
 
 function session() {
-  return state.data?.session || { role: 'sindico', label: 'Painel do Sindico' };
+  return state.session || state.data?.session || { role: 'operador', label: 'Sessao administrativa' };
 }
 
 function roleNavItems() {
@@ -160,6 +180,15 @@ function roleNavItems() {
 
 function isSuperAdmin() {
   return session().role === 'super_admin';
+}
+
+function roleLabel(role) {
+  return {
+    sindico: 'Sindico',
+    operador: 'Operador',
+    suporte: 'Suporte tecnico',
+    super_admin: 'Admin Geral',
+  }[role] || 'Usuario';
 }
 
 function isDeviceReady() {
@@ -254,16 +283,55 @@ function showMessage(text, error = false) {
   }, 4200);
 }
 
-async function api(path, options = {}) {
+function showLogin(error = '') {
+  state.session = null;
+  state.csrfToken = '';
+  state.data = null;
+  adminApp.hidden = true;
+  loginScreen.hidden = false;
+  loginMessage.textContent = error;
+  loginMessage.hidden = !error;
+  loginPassword.value = '';
+  window.setTimeout(() => loginUsername.focus(), 0);
+}
+
+function showAdmin() {
+  loginScreen.hidden = true;
+  loginMessage.hidden = true;
+  adminApp.hidden = false;
+}
+
+async function authRequest(path, options = {}) {
   const response = await fetch(`${API}${path}`, {
     ...options,
+    credentials: 'same-origin',
     headers: {
       'content-type': 'application/json',
-      'x-admin-token': state.token,
       ...(options.headers || {}),
     },
   });
   const payload = await response.json().catch(() => ({}));
+  return { response, payload };
+}
+
+async function api(path, options = {}) {
+  const method = String(options.method || 'GET').toUpperCase();
+  const csrfHeaders = ['GET', 'HEAD', 'OPTIONS'].includes(method) || !state.csrfToken
+    ? {}
+    : { 'x-csrf-token': state.csrfToken };
+  const response = await fetch(`${API}${path}`, {
+    ...options,
+    credentials: 'same-origin',
+    headers: {
+      'content-type': 'application/json',
+      ...csrfHeaders,
+      ...(options.headers || {}),
+    },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (response.status === 401) {
+    showLogin('Sua sessao expirou. Entre novamente.');
+  }
   if (!response.ok || payload.ok === false) {
     throw new Error(payload.error || 'Falha na API.');
   }
@@ -272,10 +340,9 @@ async function api(path, options = {}) {
 
 async function downloadAdminFile(path, filename) {
   const response = await fetch(`${API}${path}`, {
-    headers: {
-      'x-admin-token': state.token,
-    },
+    credentials: 'same-origin',
   });
+  if (response.status === 401) showLogin('Sua sessao expirou. Entre novamente.');
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
     throw new Error(payload.error || 'Falha ao exportar arquivo.');
@@ -317,7 +384,7 @@ function ensureAllowedView() {
   const role = session().role;
   const allowed = roleNavItems().map(([view]) => view);
   if (state.lastRole !== role) {
-    state.view = role === 'super_admin' ? 'platform' : 'overview';
+    state.view = session().canViewPlatform ? 'platform' : 'overview';
     state.lastRole = role;
     return;
   }
@@ -335,13 +402,13 @@ function renderNav() {
 function updateChrome() {
   const data = state.data;
   const currentSession = session();
-  const superAdmin = isSuperAdmin();
-  panelName.textContent = superAdmin ? 'Admin Geral' : 'Sindico Online';
-  panelDescription.textContent = superAdmin
-    ? 'Visao PREDDITA de operacao, suporte, armarios e seguranca.'
-    : 'Painel do condominio para portas, apartamentos e entregas.';
-  tokenLabel.textContent = superAdmin ? 'Token PREDDITA ou sindico' : 'Token de acesso';
-  siteName.textContent = superAdmin ? 'PREDDITA Operacao' : data?.tenant?.siteName || 'PREDDITA';
+  panelName.textContent = roleLabel(currentSession.role);
+  panelDescription.textContent = currentSession.canViewPlatform
+    ? 'Operacao, suporte, armarios e seguranca.'
+    : 'Portas, apartamentos e entregas do condominio.';
+  sessionName.textContent = currentSession.name || currentSession.username || 'Usuario';
+  sessionRole.textContent = roleLabel(currentSession.role);
+  siteName.textContent = currentSession.canViewPlatform ? 'PREDDITA Operacao' : data?.tenant?.siteName || 'PREDDITA';
   const isOnline = isDeviceReady();
   deviceStatus.textContent = isOnline ? 'Armario pronto' : data?.device?.stale ? 'Armario sem sinal recente' : 'Aguardando armario';
   deviceStatus.className = isOnline ? 'status-pill' : 'status-pill is-offline';
@@ -675,7 +742,8 @@ function renderDeliveries() {
   const deliveries = state.data.deliveries || [];
   const activeDeliveries = deliveries.filter(isActiveDelivery);
   const health = runtime();
-  const withEvidence = deliveries.filter((delivery) => delivery.labelPhotoDataUrl).length;
+  const personalDataVisible = Boolean(session().canViewPersonalData);
+  const withEvidence = deliveries.filter((delivery) => delivery.labelPhotoDataUrl || delivery.labelPhotoCapturedAt).length;
   root.innerHTML = `
     <section class="panel delivery-summary">
       <div>
@@ -695,13 +763,13 @@ function renderDeliveries() {
           <div class="delivery-evidence">
             ${delivery.labelPhotoDataUrl
               ? `<img src="${escapeHtml(delivery.labelPhotoDataUrl)}" alt="Foto da etiqueta da entrega" />`
-              : '<div class="delivery-evidence-empty">Sem foto</div>'}
+              : `<div class="delivery-evidence-empty">${delivery.labelPhotoCapturedAt ? 'Foto protegida' : 'Sem foto'}</div>`}
           </div>
           <div class="delivery-card-main">
             <div class="delivery-top">
               <div>
                 <h3>${escapeHtml(deliveryUnitLabel(delivery))}</h3>
-                <p class="muted">Porta ${escapeHtml(delivery.door)} | ${escapeHtml(doorSizeLabel(delivery.doorSize || delivery.size))} | PIN ${escapeHtml(delivery.pin || '--')}</p>
+                <p class="muted">Porta ${escapeHtml(delivery.door)} | ${escapeHtml(doorSizeLabel(delivery.doorSize || delivery.size))} | ${personalDataVisible ? `PIN ${escapeHtml(delivery.pin || '--')}` : 'Dados protegidos'}</p>
               </div>
               <span class="tag">${escapeHtml(deliveryStatusLabel(delivery.status))}</span>
             </div>
@@ -741,7 +809,7 @@ function renderAudit() {
 
 function renderSystem() {
   title.textContent = 'Sistema';
-  if (!isSuperAdmin()) {
+  if (!session().canViewSecurity) {
     root.innerHTML = '<section class="panel"><h3>Acesso restrito</h3><p class="muted">Esta area e reservada ao Admin Geral PREDDITA.</p></section>';
     return;
   }
@@ -754,10 +822,10 @@ function renderSystem() {
       </section>
       <section class="panel">
         <p class="eyebrow">Seguranca</p>
-        <h3>Tokens locais</h3>
-        <p class="muted">Defina PREDDITA_SUPER_ADMIN_TOKEN, PREDDITA_ADMIN_TOKEN e PREDDITA_DEVICE_KEY antes de publicar na internet.</p>
+        <h3>Sessoes administrativas</h3>
+        <p class="muted">Usuarios usam senha derivada por scrypt, cookie HttpOnly e protecao CSRF.</p>
       </section>
-      <section class="panel">
+      ${session().canExportData ? `<section class="panel">
         <p class="eyebrow">Exportacao</p>
         <h3>Relatorios CSV</h3>
         <p class="muted">Baixe dados operacionais para auditoria, suporte ou conferencia do sindico.</p>
@@ -766,7 +834,7 @@ function renderSystem() {
           <button class="ghost-button" data-export="deliveries">Entregas</button>
           <button class="ghost-button" data-export="audit">Auditoria</button>
         </div>
-      </section>
+      </section>` : ''}
     </div>
   `;
 }
@@ -814,11 +882,9 @@ document.addEventListener('click', async (event) => {
     return;
   }
 
-  if (event.target.id === 'save-token') {
-    state.token = tokenInput.value.trim();
-    localStorage.setItem(TOKEN_KEY, state.token);
-    showMessage('Token salvo.');
-    await loadState().catch((error) => showMessage(error.message, true));
+  if (event.target.id === 'logout-button') {
+    await api('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    showLogin();
     return;
   }
 
@@ -845,7 +911,6 @@ document.addEventListener('click', async (event) => {
   if (doorButton) {
     const door = doorButton.dataset.openDoor;
     const doorData = (state.data.doors || []).find((item) => String(item.channel) === String(door));
-    const requestedBy = isSuperAdmin() ? 'admin-geral-preddita' : 'sindico';
     const reason = window.prompt(
       doorData?.occupancy === 'busy'
         ? `Motivo para abrir e liberar a porta ocupada ${door}:`
@@ -855,7 +920,7 @@ document.addEventListener('click', async (event) => {
     if (reason === null) return;
     const payload = await api(`/api/admin/doors/${door}/open`, {
       method: 'POST',
-      body: JSON.stringify({ reason, requestedBy }),
+      body: JSON.stringify({ reason }),
     });
     state.trackingCommand = payload.command;
     showMessage(`Comando criado para a porta ${door}. Acompanhando confirmacao do armario.`);
@@ -870,7 +935,7 @@ document.addEventListener('click', async (event) => {
     notifyButton.disabled = true;
     await api(`/api/admin/deliveries/${encodeURIComponent(deliveryId)}/notify`, {
       method: 'POST',
-      body: JSON.stringify({ requestedBy: 'sindico' }),
+      body: JSON.stringify({}),
     });
     showMessage('Reenvio solicitado. O status da entrega foi atualizado.');
     await loadState({ skipCapture: true });
@@ -918,10 +983,50 @@ document.addEventListener('input', (event) => {
 });
 
 document.addEventListener('submit', async (event) => {
+  if (event.target === loginForm) {
+    event.preventDefault();
+    loginButton.disabled = true;
+    loginMessage.hidden = true;
+    const { response, payload } = await authRequest('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({
+        username: loginUsername.value.trim(),
+        password: loginPassword.value,
+      }),
+    }).catch(() => ({ response: null, payload: {} }));
+    loginButton.disabled = false;
+    if (!response?.ok || !payload.session?.csrfToken) {
+      showLogin(payload.error || 'Nao foi possivel entrar.');
+      return;
+    }
+    state.session = payload.session;
+    state.csrfToken = payload.session.csrfToken;
+    state.lastRole = '';
+    loginPassword.value = '';
+    showAdmin();
+    await loadState().catch((error) => {
+      showMessage(error.message, true);
+    });
+    return;
+  }
   if (!event.target.matches('.resident-form')) return;
   event.preventDefault();
   await saveResident(event.target).catch((error) => showMessage(error.message, true));
 });
 
-loadState().catch((error) => showMessage(error.message, true));
-window.setInterval(() => refreshState({ skipRenderWhileEditing: true }).catch(() => {}), 8000);
+async function bootstrap() {
+  const { response, payload } = await authRequest('/api/auth/session');
+  if (!response.ok || !payload.session?.csrfToken) {
+    showLogin();
+    return;
+  }
+  state.session = payload.session;
+  state.csrfToken = payload.session.csrfToken;
+  showAdmin();
+  await loadState();
+}
+
+bootstrap().catch(() => showLogin('Nao foi possivel carregar a sessao.'));
+window.setInterval(() => {
+  if (state.session) refreshState({ skipRenderWhileEditing: true }).catch(() => {});
+}, 8000);

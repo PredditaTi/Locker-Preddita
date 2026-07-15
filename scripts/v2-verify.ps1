@@ -25,6 +25,9 @@ Write-Host "[PREDDITA v2] Teste do diario idempotente de comandos remotos..."
 Write-Host "[PREDDITA v2] Teste de leitura QR do app do armario..."
 & $node (Join-Path $root "scripts\v2-qr-scanner-test.mjs")
 
+Write-Host "[PREDDITA v2] Teste de autenticacao e sessoes administrativas..."
+& $node (Join-Path $root "scripts\AdminAuthTest.mjs")
+
 Write-Host "[PREDDITA v2] Teste de correlacao do protocolo RS-485..."
 & $node (Join-Path $root "scripts\v2-serial-protocol-test.mjs")
 

@@ -10,8 +10,9 @@ PREDDITA_DATA_DIR=/data
 PREDDITA_STORAGE=postgres
 PREDDITA_TENANT_ID=residencial-aurora
 PREDDITA_DATABASE_URL=postgresql://preddita:troque-esta-senha@postgres:5432/preddita_locker
-PREDDITA_SUPER_ADMIN_TOKEN=crie-um-token-forte-para-a-preddita
-PREDDITA_ADMIN_TOKEN=crie-um-token-forte-para-o-sindico
+PREDDITA_ADMIN_USERS='[{"username":"preddita","name":"Admin Geral PREDDITA","role":"super_admin","passwordHash":"scrypt-v1$...","tenantId":"residencial-aurora","lockerIds":["*"]},{"username":"sindico","name":"Sindico","role":"sindico","passwordHash":"scrypt-v1$...","tenantId":"residencial-aurora","lockerIds":["ks1062-aurora"]}]'
+PREDDITA_ADMIN_SESSION_TTL_MS=28800000
+PREDDITA_ADMIN_LOGIN_RATE_LIMIT_PER_MINUTE=12
 PREDDITA_DEVICE_KEY=crie-uma-chave-forte-para-o-armario
 PREDDITA_DEVICE_KEYS={"ks1062-aurora":"crie-uma-chave-forte-para-o-armario"}
 PREDDITA_LOCKER_ID=ks1062-aurora
@@ -26,7 +27,21 @@ PREDDITA_SMTP_PASS=senha-ou-app-password
 PREDDITA_SMTP_FROM="PREDDITA Locker <usuario-smtp@seudominio.com>"
 ```
 
-Guarde `PREDDITA_SUPER_ADMIN_TOKEN` para o Admin Geral PREDDITA e `PREDDITA_ADMIN_TOKEN` para o painel do sindico. Compile o APK do armario com a mesma chave configurada em `PREDDITA_DEVICE_KEYS`.
+Gere cada `passwordHash` com `scripts/generate-admin-password.mjs`; senhas nao
+devem ser gravadas no `.env`. Os papeis aceitos sao `sindico`, `operador`,
+`suporte` e `super_admin`, e `lockerIds` limita os armarios acessiveis. O valor
+`*` e permitido somente para suporte e Admin Geral.
+No `.env` do Docker, mantenha a lista inteira entre aspas simples para impedir
+que os caracteres `$` dos hashes sejam interpretados pelo Compose.
+
+```bash
+read -s PASSWORD && printf '%s\n' "$PASSWORD" | node scripts/generate-admin-password.mjs --username sindico --name "Sindico" --role sindico --locker-id ks1062-aurora
+unset PASSWORD
+```
+
+As sessoes atuais ficam na memoria do processo: um restart desconecta o painel.
+Use uma unica replica ate migrar sessoes e revogacoes para Postgres ou Redis.
+
 As variaveis `PREDDITA_SMTP_*` sao usadas para enviar o PIN e o QR Code por e-mail quando uma entrega e confirmada no armario.
 
 `PREDDITA_DEVICE_KEY` ainda existe como compatibilidade do piloto. Para varios armarios, prefira `PREDDITA_DEVICE_KEYS`, no formato JSON:
@@ -53,7 +68,7 @@ Se o dominio/subdominio ja apontar para a VPS, use o compose de producao com Cad
 
 1. Crie o DNS `A` do subdominio, por exemplo `locker.preddita.com`, apontando para o IP da VPS.
 2. Copie `.env.production.example` para `.env`.
-3. Preencha `PREDDITA_DOMAIN`, `PREDDITA_SUPER_ADMIN_TOKEN`, `PREDDITA_ADMIN_TOKEN`, `PREDDITA_DEVICE_KEY` e `PREDDITA_SMTP_*`.
+3. Gere `PREDDITA_ADMIN_USERS` e preencha `PREDDITA_DOMAIN`, `PREDDITA_DEVICE_KEY` e `PREDDITA_SMTP_*`.
 4. Rode:
 
 ```bash
@@ -108,7 +123,7 @@ busca moradores, envia status e recebe comandos pelo servidor online.
 
 ## Observacoes importantes
 
-- Use HTTPS, nao HTTP, para evitar bloqueios e proteger tokens.
+- Use HTTPS, nao HTTP, para proteger sessoes, senhas e dados operacionais.
 - Em producao, use `PREDDITA_STORAGE=postgres`; o volume `/data` fica apenas como fallback/importacao inicial.
 - Cada armario deve ter `lockerId` e chave propria.
 - O armario precisa ter acesso a internet.

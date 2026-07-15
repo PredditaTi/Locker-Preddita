@@ -5,29 +5,30 @@ Agente standalone Node que valida a experiência do usuário no armário v2 cobr
 1. **Health & contrato** — só GETs, sempre seguro.
 2. **UX rules puras** — importa `web/src/lockerWorkflow.js` e exercita as regras que o React usa (alocação de porta por tamanho, geração de PIN, formato do QR, transições de estado).
 3. **Erros do usuário** — PIN errado, QR mal formatado, retirada de entrega cancelada, sem porta livre.
-4. **Segurança / autorização** — gera 401 com tokens errados, valida que síndico não enxerga `platform`, opcionalmente força rate limit.
+4. **Segurança / autorização** — gera 401 com credenciais erradas, valida que síndico não enxerga `platform`, opcionalmente força rate limit.
 
 Mutações reais (cadastrar morador, publicar status do device, abrir porta, enviar e-mail) ficam atrás de flags em camada — por padrão **o agente não escreve nada**.
 
 ## Pré-requisitos
 
 - Node 20+.
-- Tokens da instância v2 que você quer testar:
-  - `PREDDITA_ADMIN_TOKEN` (síndico) — necessário para a maioria dos testes.
-  - `PREDDITA_SUPER_ADMIN_TOKEN` (super admin) — opcional.
+- Credenciais da instância v2 que você quer testar:
+  - `PREDDITA_ADMIN_USERNAME` e `PREDDITA_ADMIN_PASSWORD` (síndico) — necessários para a maioria dos testes.
+  - `PREDDITA_SUPER_ADMIN_USERNAME` e `PREDDITA_SUPER_ADMIN_PASSWORD` — opcionais.
   - `PREDDITA_DEVICE_KEY` — chave do armário, para os testes que simulam o device.
 - Acesso de rede ao Admin Online por uma URL HTTPS.
 
-> Nunca cole tokens em arquivo commitado nem em histórico de shell. Use `read -s`, `pass`, `1Password CLI`, ou `aws ssm get-parameter`.
+> Nunca cole senhas ou chaves em arquivo commitado nem em histórico de shell. Use `read -s`, `pass`, `1Password CLI`, ou `aws ssm get-parameter`.
 
 ## Uso mínimo (read-only contra EC2)
 
 ```bash
 cd preddita-entregas-retiradas-v2
 
-read -s -p "Admin token:  " PREDDITA_ADMIN_TOKEN; echo
+read -p "Admin user:   " PREDDITA_ADMIN_USERNAME
+read -s -p "Admin senha: " PREDDITA_ADMIN_PASSWORD; echo
 read -s -p "Device key:   " PREDDITA_DEVICE_KEY; echo
-export PREDDITA_ADMIN_TOKEN PREDDITA_DEVICE_KEY
+export PREDDITA_ADMIN_USERNAME PREDDITA_ADMIN_PASSWORD PREDDITA_DEVICE_KEY
 
 node scripts/test-agent.mjs --base https://locker.example.com
 ```
@@ -41,11 +42,11 @@ Saída esperada (exemplo abreviado):
 Base:      https://locker.example.com
 ...
 -- 1. Health & contrato (read-only)
-  PASS GET /api/healthz responde 200 — appVersion=2.0.12-lab schemaVersion=7
-  PASS GET admin/state com token de sindico devolve estado completo — 24 portas, 3 apartamentos, 0 entregas
+  PASS GET /api/healthz responde 200 — appVersion=2.0.13-lab schemaVersion=7
+  PASS GET admin/state com sessao de sindico devolve estado completo — 24 portas, 3 apartamentos, 0 entregas
   ...
 -- 4. Seguranca / autorizacao (gera 401/429)
-  PASS admin/state sem token responde 401
+  PASS admin/state sem sessao responde 401
   ...
 ========================================================================
   RESUMO
@@ -74,7 +75,7 @@ Cada flag superior implica conscientização sobre o impacto. O agente loga avis
 ```bash
 node scripts/test-agent.mjs \
   --base https://locker.example.com \
-  --admin-token "$PREDDITA_ADMIN_TOKEN" \
+  --admin-user "$PREDDITA_ADMIN_USERNAME" \
   --device-key  "$PREDDITA_DEVICE_KEY" \
   --report ./out/test-agent-prod.json
 ```
@@ -84,8 +85,8 @@ node scripts/test-agent.mjs \
 ```bash
 node scripts/test-agent.mjs \
   --base https://locker.example.com \
-  --admin-token "$PREDDITA_ADMIN_TOKEN" \
-  --super-token "$PREDDITA_SUPER_ADMIN_TOKEN" \
+  --admin-user "$PREDDITA_ADMIN_USERNAME" \
+  --super-user "$PREDDITA_SUPER_ADMIN_USERNAME" \
   --device-key  "$PREDDITA_DEVICE_KEY" \
   --report ./out/test-agent-prod.json
 ```
@@ -95,7 +96,7 @@ node scripts/test-agent.mjs \
 ```bash
 node scripts/test-agent.mjs \
   --base https://locker.example.com \
-  --admin-token "$PREDDITA_ADMIN_TOKEN" \
+  --admin-user "$PREDDITA_ADMIN_USERNAME" \
   --device-key  "$PREDDITA_DEVICE_KEY" \
   --write
 ```
@@ -108,7 +109,7 @@ O apartamento criado tem prefixo `TEST-AGENT-` e é apagado imediatamente. Se o 
 # Avise o operador no local antes!
 node scripts/test-agent.mjs \
   --base https://locker.example.com \
-  --admin-token "$PREDDITA_ADMIN_TOKEN" \
+  --admin-user "$PREDDITA_ADMIN_USERNAME" \
   --device-key  "$PREDDITA_DEVICE_KEY" \
   --write --actuate
 ```
@@ -134,7 +135,7 @@ Dispara um e-mail com PIN `000000` e QR fake; serve para validar que SMTP está 
 ### Filtrar uma suite
 
 ```bash
-node scripts/test-agent.mjs --only auth --admin-token ...
+node scripts/test-agent.mjs --only auth --admin-user ...
 node scripts/test-agent.mjs --only ux
 node scripts/test-agent.mjs --only health
 ```
