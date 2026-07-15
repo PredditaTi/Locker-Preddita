@@ -61,6 +61,7 @@ Solucoes maduras de smart lockers se posicionam como plataformas completas, nao 
 - Botoes de abertura remota ficam bloqueados quando o armario nao esta pronto.
 - Smoke test local sem AWS e sem armario fisico.
 - Teste de workflow do kiosk cobrindo volume obrigatorio, portas grandes/pequenas, PIN, QR PREDDITA e liberacao de porta ocupada.
+- Painel administrativo com login, sessoes HttpOnly, CSRF, papeis e escopo por locker.
 - API de abertura remota recusa comandos quando o armario esta offline, com serial fechada ou ja tem comando pendente para a mesma porta.
 - Healthcheck e painel mostram versao v2 e alertas de configuracao insegura antes de levar o servidor para producao.
 - Script `scripts/v2-verify.ps1` roda workflow, smoke, sintaxe, auditoria e build local da v2.
@@ -68,7 +69,7 @@ Solucoes maduras de smart lockers se posicionam como plataformas completas, nao 
 ## Proximas melhorias recomendadas
 
 1. Migrar `state.json` para Postgres ou DynamoDB.
-2. Criar autenticacao real com usuarios e papeis.
+2. Persistir usuarios e revogacao de sessoes no Postgres e adicionar MFA.
 3. Criar tabela/colecao de comandos com idempotencia e retry.
 4. Implementar logs estruturados e exportaveis.
 5. Separar `Edge Agent` e `Kiosk UI`.

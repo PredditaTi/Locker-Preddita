@@ -63,7 +63,7 @@ Pesquisa feita para orientar a v2 experimental. Fontes principais:
 - Comandos ganharam timeline.
 - O painel deixa claro se o armario esta sem sinal recente.
 - Abertura remota pode ser bloqueada quando o device esta stale/sem serial.
-- O servidor tem rate limit e comparacao segura de tokens.
+- O servidor tem rate limit, sessoes HttpOnly, CSRF e papeis administrativos.
 - A persistencia JSON ficou atomica e com backup local, ate migrarmos para banco real.
 
 ## Gaps que continuam para uma v2 de verdade

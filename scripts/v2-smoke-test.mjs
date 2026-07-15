@@ -4,16 +4,41 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createDeviceRequestAuthHeaders } from '../web/src/deviceRequestAuth.js';
+import { hashAdminPassword } from '../admin-online/adminAuth.mjs';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const ADMIN_DIR = join(ROOT, 'admin-online');
 const SERVER_PATH = join(ADMIN_DIR, 'server.mjs');
-const ADMIN_TOKEN = 'v2-admin-test-token';
-const SUPER_ADMIN_TOKEN = 'v2-super-admin-test-token';
+const SINDICO_PASSWORD = 'v2-sindico-password';
+const OPERATOR_PASSWORD = 'v2-operator-password';
+const SUPER_ADMIN_PASSWORD = 'v2-super-admin-password';
 const DEVICE_KEY = 'v2-device-test-key';
-const EXPECTED_ADMIN_VERSION = '2.0.12-lab';
+const EXPECTED_ADMIN_VERSION = '2.0.13-lab';
 const PORT = 9897;
 const DATA_DIR = mkdtempSync(join(tmpdir(), 'preddita-v2-smoke-'));
+const ADMIN_USERS = JSON.stringify([
+  {
+    username: 'sindico-smoke',
+    name: 'Sindico Smoke',
+    role: 'sindico',
+    passwordHash: hashAdminPassword(SINDICO_PASSWORD, { salt: 'smoke-sindico-salt-001' }),
+    lockerIds: ['ks1062-aurora'],
+  },
+  {
+    username: 'operador-smoke',
+    name: 'Operador Smoke',
+    role: 'operador',
+    passwordHash: hashAdminPassword(OPERATOR_PASSWORD, { salt: 'smoke-operador-salt-001' }),
+    lockerIds: ['ks1062-aurora'],
+  },
+  {
+    username: 'preddita-smoke',
+    name: 'Admin PREDDITA Smoke',
+    role: 'super_admin',
+    passwordHash: hashAdminPassword(SUPER_ADMIN_PASSWORD, { salt: 'smoke-super-admin-salt-01' }),
+    lockerIds: ['*'],
+  },
+]);
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -52,6 +77,23 @@ async function requestOk(path, options = {}) {
   return payload;
 }
 
+async function login(username, password) {
+  const { response, payload } = await request('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ username, password }),
+  });
+  if (!response.ok || !payload.session?.csrfToken) {
+    throw new Error(`Login de ${username} falhou: ${response.status} ${payload.error || ''}`);
+  }
+  const setCookie = String(response.headers.get('set-cookie') || '');
+  if (!setCookie.includes('HttpOnly') || !setCookie.includes('SameSite=Strict')) {
+    throw new Error(`Login de ${username} retornou cookie sem protecoes obrigatorias.`);
+  }
+  const cookie = setCookie.split(';')[0];
+  if (!cookie) throw new Error(`Login de ${username} nao retornou cookie de sessao.`);
+  return { cookie, 'x-csrf-token': payload.session.csrfToken };
+}
+
 async function waitForServer() {
   for (let index = 0; index < 40; index += 1) {
     try {
@@ -74,8 +116,7 @@ async function assertProductionRejectsLegacyAuth() {
       PREDDITA_DATA_DIR: DATA_DIR,
       PREDDITA_STORAGE: 'json',
       PREDDITA_ALLOWED_ORIGINS: 'https://locker.example.com',
-      PREDDITA_ADMIN_TOKEN: ADMIN_TOKEN,
-      PREDDITA_SUPER_ADMIN_TOKEN: SUPER_ADMIN_TOKEN,
+      PREDDITA_ADMIN_USERS: ADMIN_USERS,
       PREDDITA_DEVICE_KEY: DEVICE_KEY,
       PREDDITA_DEVICE_KEYS: JSON.stringify({ 'ks1062-aurora': DEVICE_KEY }),
       PREDDITA_DEVICE_AUTH_MODE: 'legacy',
@@ -102,14 +143,50 @@ async function assertProductionRejectsLegacyAuth() {
   }
 }
 
+async function assertProductionRejectsMissingAdminUsers() {
+  const child = spawn(process.execPath, [SERVER_PATH], {
+    cwd: ADMIN_DIR,
+    env: {
+      ...process.env,
+      NODE_ENV: 'production',
+      PORT: String(PORT + 2),
+      PREDDITA_DATA_DIR: DATA_DIR,
+      PREDDITA_STORAGE: 'json',
+      PREDDITA_ALLOWED_ORIGINS: 'https://locker.example.com',
+      PREDDITA_ADMIN_USERS: '',
+      PREDDITA_DEVICE_KEY: DEVICE_KEY,
+      PREDDITA_DEVICE_KEYS: JSON.stringify({ 'ks1062-aurora': DEVICE_KEY }),
+      PREDDITA_DEVICE_AUTH_MODE: 'hmac',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let output = '';
+  child.stdout.on('data', (chunk) => { output += chunk.toString(); });
+  child.stderr.on('data', (chunk) => { output += chunk.toString(); });
+
+  const exitCode = await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error('Servidor sem usuarios administrativos nao encerrou no startup.'));
+    }, 3000);
+    child.once('exit', (code) => {
+      clearTimeout(timer);
+      resolve(code);
+    });
+  });
+
+  if (exitCode === 0 || !output.includes('PREDDITA_ADMIN_USERS deve definir usuarios')) {
+    throw new Error('Producao deveria falhar no startup sem usuarios administrativos.');
+  }
+}
+
 const server = spawn(process.execPath, [SERVER_PATH], {
   cwd: ADMIN_DIR,
   env: {
     ...process.env,
     PORT: String(PORT),
     PREDDITA_DATA_DIR: DATA_DIR,
-    PREDDITA_ADMIN_TOKEN: ADMIN_TOKEN,
-    PREDDITA_SUPER_ADMIN_TOKEN: SUPER_ADMIN_TOKEN,
+    PREDDITA_ADMIN_USERS: ADMIN_USERS,
     PREDDITA_DEVICE_KEY: DEVICE_KEY,
     PREDDITA_DEVICE_KEYS: JSON.stringify({ 'ks1062-aurora': DEVICE_KEY }),
     PREDDITA_DEVICE_AUTH_MODE: 'hmac',
@@ -132,6 +209,7 @@ server.stderr.on('data', (chunk) => {
 
 try {
   await assertProductionRejectsLegacyAuth();
+  await assertProductionRejectsMissingAdminUsers();
   await waitForServer();
 
   const health = await requestOk('/api/healthz');
@@ -141,11 +219,27 @@ try {
 
   const unauthorized = await request('/api/admin/state');
   if (unauthorized.response.status !== 401) {
-    throw new Error('Admin sem token deveria receber 401.');
+    throw new Error('Admin sem sessao deveria receber 401.');
   }
 
-  const adminHeaders = { 'x-admin-token': ADMIN_TOKEN };
-  const superAdminHeaders = { 'x-admin-token': SUPER_ADMIN_TOKEN };
+  const legacyAdminToken = await request('/api/admin/state', {
+    headers: { 'x-admin-token': 'v2-admin-test-token' },
+  });
+  if (legacyAdminToken.response.status !== 401) {
+    throw new Error('Token administrativo legado deveria estar desabilitado por padrao.');
+  }
+
+  const invalidLogin = await request('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ username: 'sindico-smoke', password: 'senha-invalida' }),
+  });
+  if (invalidLogin.response.status !== 401 || invalidLogin.payload.error !== 'Usuario ou senha invalidos.') {
+    throw new Error('Login invalido deveria falhar sem revelar qual credencial divergiu.');
+  }
+
+  const adminHeaders = await login('sindico-smoke', SINDICO_PASSWORD);
+  const operatorHeaders = await login('operador-smoke', OPERATOR_PASSWORD);
+  const superAdminHeaders = await login('preddita-smoke', SUPER_ADMIN_PASSWORD);
 
   const sindicoState = await requestOk('/api/admin/state', { headers: adminHeaders });
   if (sindicoState.state.session?.role !== 'sindico' || sindicoState.state.platform !== null) {
@@ -154,7 +248,39 @@ try {
 
   const superState = await requestOk('/api/admin/state', { headers: superAdminHeaders });
   if (superState.state.session?.role !== 'super_admin' || !superState.state.platform?.lockers?.length) {
-    throw new Error('Token PREDDITA deveria abrir o Admin Geral com resumo de armarios.');
+    throw new Error('Sessao PREDDITA deveria abrir o Admin Geral com resumo de armarios.');
+  }
+
+  const adminWithoutCsrf = await request('/api/admin/residents', {
+    method: 'POST',
+    headers: { cookie: adminHeaders.cookie },
+    body: JSON.stringify({ apartment: 'SEM-CSRF' }),
+  });
+  if (adminWithoutCsrf.response.status !== 403) {
+    throw new Error('Mutacao administrativa sem CSRF deveria receber 403.');
+  }
+
+  const crossLocker = await request('/api/admin/state?lockerId=locker-nao-autorizado', {
+    headers: adminHeaders,
+  });
+  if (crossLocker.response.status !== 403) {
+    throw new Error('Sindico nao deveria acessar outro locker pela query string.');
+  }
+
+  const operatorMutation = await request('/api/admin/residents', {
+    method: 'POST',
+    headers: operatorHeaders,
+    body: JSON.stringify({ apartment: 'OPERADOR' }),
+  });
+  if (operatorMutation.response.status !== 403) {
+    throw new Error('Operador nao deveria cadastrar apartamentos.');
+  }
+
+  const operatorExport = await request('/api/admin/export/residents.csv', {
+    headers: operatorHeaders,
+  });
+  if (operatorExport.response.status !== 403) {
+    throw new Error('Operador nao deveria exportar dados pessoais.');
   }
 
   const legacyDeviceAuth = await request('/api/device/snapshot', {
@@ -217,6 +343,12 @@ try {
     }),
   });
 
+  const operatorState = await requestOk('/api/admin/state', { headers: operatorHeaders });
+  const operatorResident = operatorState.state.residents.find((resident) => resident.apartment === '901');
+  if (!operatorResident || 'email' in operatorResident || 'phone' in operatorResident) {
+    throw new Error('Operador deveria receber apartamento sem e-mail ou telefone.');
+  }
+
   const residentsCsv = await fetch(`http://127.0.0.1:${PORT}/api/admin/export/residents.csv`, {
     headers: adminHeaders,
   }).then((response) => response.text());
@@ -264,6 +396,14 @@ try {
         label: `Porta ${index + 1}`,
         size: index < 2 ? 'G' : 'P',
         status: 'closed',
+        ...(index === 3 ? {
+          delivery: {
+            id: 'delivery-smoke-notify',
+            recipientName: 'Morador Protegido',
+            unit: 'Torre Teste - 9 andar - Ap 901',
+            status: 'stored',
+          },
+        } : {}),
       })),
       deliveries: [
         {
@@ -304,6 +444,29 @@ try {
     }),
   });
 
+  const protectedOperatorState = await requestOk('/api/admin/state', { headers: operatorHeaders });
+  const protectedDelivery = protectedOperatorState.state.deliveries.find(
+    (delivery) => delivery.id === 'delivery-smoke-notify'
+  );
+  const protectedDoor = protectedOperatorState.state.doors.find(
+    (door) => door.delivery?.id === 'delivery-smoke-notify'
+  );
+  const serializedOperatorState = JSON.stringify(protectedOperatorState.state);
+  if (
+    !protectedDelivery
+    || !protectedDoor
+    || 'recipientName' in protectedDelivery
+    || 'recipientEmail' in protectedDelivery
+    || 'pin' in protectedDelivery
+    || 'token' in protectedDelivery
+    || 'qrPayload' in protectedDelivery
+    || 'recipientName' in (protectedDoor?.delivery || {})
+    || serializedOperatorState.includes('teste.v2@example.com')
+    || serializedOperatorState.includes('SMOKE-TOKEN')
+  ) {
+    throw new Error('Operador recebeu dados pessoais ou credenciais de retirada protegidas.');
+  }
+
   const notify = await requestOk('/api/admin/deliveries/delivery-smoke-notify/notify', {
     method: 'POST',
     headers: adminHeaders,
@@ -311,6 +474,19 @@ try {
   });
   if (!['failed', 'sent'].includes(notify.notification.status)) {
     throw new Error('Reenvio de notificacao deveria retornar sent ou failed.');
+  }
+
+  const operatorNotify = await requestOk('/api/admin/deliveries/delivery-smoke-notify/notify', {
+    method: 'POST',
+    headers: operatorHeaders,
+    body: JSON.stringify({}),
+  });
+  const operatorStateAfterNotify = await requestOk('/api/admin/state', { headers: operatorHeaders });
+  if (
+    JSON.stringify(operatorNotify).includes('teste.v2@example.com')
+    || JSON.stringify(operatorStateAfterNotify.state).includes('teste.v2@example.com')
+  ) {
+    throw new Error('Reenvio ou auditoria revelou e-mail ao operador.');
   }
 
   const offlineDelivery = {
@@ -553,6 +729,12 @@ try {
   );
   if (completionAudits.length !== 1) {
     throw new Error('Conclusao repetida nao deveria duplicar auditoria ou efeitos do comando.');
+  }
+
+  await requestOk('/api/auth/logout', { method: 'POST', headers: adminHeaders });
+  const loggedOutSession = await request('/api/auth/session', { headers: { cookie: adminHeaders.cookie } });
+  if (loggedOutSession.response.status !== 401) {
+    throw new Error('Logout deveria invalidar imediatamente a sessao administrativa.');
   }
 
   console.log('PREDDITA_V2_SMOKE_OK');

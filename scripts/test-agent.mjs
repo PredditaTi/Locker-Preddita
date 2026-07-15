@@ -15,7 +15,7 @@
  * Uso minimo (read-only contra uma instancia HTTPS):
  *   node scripts/test-agent.mjs \
  *     --base https://locker.example.com \
- *     --admin-token "$PREDDITA_ADMIN_TOKEN" \
+ *     --admin-user "$PREDDITA_ADMIN_USERNAME" \
  *     --device-key  "$PREDDITA_DEVICE_KEY"
  *
  * Para detalhes de cada flag, veja scripts/test-agent-README.md.
@@ -24,6 +24,7 @@
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { writeFileSync } from 'node:fs';
+import { createDeviceRequestAuthHeaders } from '../web/src/deviceRequestAuth.js';
 import {
   PACKAGE_SIZES,
   cancelDelivery,
@@ -45,8 +46,10 @@ import {
 function parseArgs(argv) {
   const args = {
     base: process.env.PREDDITA_BASE_URL || '',
-    adminToken: process.env.PREDDITA_ADMIN_TOKEN || '',
-    superAdminToken: process.env.PREDDITA_SUPER_ADMIN_TOKEN || '',
+    adminUsername: process.env.PREDDITA_ADMIN_USERNAME || '',
+    adminPassword: process.env.PREDDITA_ADMIN_PASSWORD || '',
+    superAdminUsername: process.env.PREDDITA_SUPER_ADMIN_USERNAME || '',
+    superAdminPassword: process.env.PREDDITA_SUPER_ADMIN_PASSWORD || '',
     deviceKey: process.env.PREDDITA_DEVICE_KEY || '',
     lockerId: process.env.PREDDITA_LOCKER_ID || 'ks1062-aurora',
     write: false,
@@ -63,8 +66,10 @@ function parseArgs(argv) {
     const next = argv[i + 1];
     switch (arg) {
       case '--base':            args.base = next; i += 1; break;
-      case '--admin-token':     args.adminToken = next; i += 1; break;
-      case '--super-token':     args.superAdminToken = next; i += 1; break;
+      case '--admin-user':      args.adminUsername = next; i += 1; break;
+      case '--admin-password':  args.adminPassword = next; i += 1; break;
+      case '--super-user':      args.superAdminUsername = next; i += 1; break;
+      case '--super-password':  args.superAdminPassword = next; i += 1; break;
       case '--device-key':      args.deviceKey = next; i += 1; break;
       case '--locker-id':       args.lockerId = next; i += 1; break;
       case '--report':          args.report = next; i += 1; break;
@@ -115,8 +120,10 @@ PREDDITA test-agent — agente de testes de experiencia para o admin-online v2.
 
 Flags principais:
   --base URL              Base URL HTTPS obrigatoria do admin-online
-  --admin-token TOKEN     PREDDITA_ADMIN_TOKEN (sindico)
-  --super-token TOKEN     PREDDITA_SUPER_ADMIN_TOKEN (super admin) — opcional
+  --admin-user USER       Usuario com papel sindico
+  --admin-password PASS   Senha do sindico (prefira PREDDITA_ADMIN_PASSWORD)
+  --super-user USER       Usuario super_admin — opcional
+  --super-password PASS   Senha do super_admin — opcional
   --device-key KEY        PREDDITA_DEVICE_KEY do armario
   --locker-id ID          ID do armario (default: ks1062-aurora)
 
@@ -133,7 +140,8 @@ Filtros e relatorio:
   --verbose               Detalhe completo de cada assercao.
 
 Variaveis de ambiente equivalentes:
-  PREDDITA_BASE_URL, PREDDITA_ADMIN_TOKEN, PREDDITA_SUPER_ADMIN_TOKEN,
+  PREDDITA_BASE_URL, PREDDITA_ADMIN_USERNAME, PREDDITA_ADMIN_PASSWORD,
+  PREDDITA_SUPER_ADMIN_USERNAME, PREDDITA_SUPER_ADMIN_PASSWORD,
   PREDDITA_DEVICE_KEY, PREDDITA_LOCKER_ID, PREDDITA_TEST_EMAIL.
 `);
 }
@@ -169,26 +177,64 @@ function section(text) {
 // ============================================================================
 
 class ApiClient {
-  constructor({ base, adminToken, superAdminToken, deviceKey }) {
+  constructor({
+    base,
+    adminUsername,
+    adminPassword,
+    superAdminUsername,
+    superAdminPassword,
+    deviceKey,
+    lockerId,
+  }) {
     this.base = base;
-    this.adminToken = adminToken;
-    this.superAdminToken = superAdminToken;
+    this.adminUsername = adminUsername;
+    this.adminPassword = adminPassword;
+    this.superAdminUsername = superAdminUsername;
+    this.superAdminPassword = superAdminPassword;
     this.deviceKey = deviceKey;
+    this.lockerId = lockerId;
+    this.adminSession = null;
+    this.superAdminSession = null;
   }
 
-  async _fetch(path, { method = 'GET', body, headers = {}, timeoutMs = 8000 } = {}) {
+  async _fetch(path, {
+    method = 'GET',
+    body,
+    headers = {},
+    timeoutMs = 8000,
+    adminSession = null,
+    deviceKey = '',
+  } = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     const start = Date.now();
+    const bodyText = body === undefined ? '' : JSON.stringify(body);
     try {
+      const deviceHeaders = deviceKey
+        ? await createDeviceRequestAuthHeaders({
+            method,
+            path,
+            lockerId: this.lockerId,
+            deviceKey,
+            body: bodyText,
+          })
+        : {};
+      const sessionHeaders = adminSession ? {
+        cookie: adminSession.cookie,
+        ...(['GET', 'HEAD', 'OPTIONS'].includes(String(method).toUpperCase())
+          ? {}
+          : { 'x-csrf-token': adminSession.csrfToken }),
+      } : {};
       const response = await fetch(`${this.base}${path}`, {
         method,
         signal: controller.signal,
         headers: {
           'content-type': 'application/json',
+          ...sessionHeaders,
+          ...deviceHeaders,
           ...headers,
         },
-        body: body ? JSON.stringify(body) : undefined,
+        body: body === undefined ? undefined : bodyText,
       });
       const text = await response.text();
       let json = null;
@@ -198,6 +244,7 @@ class ApiClient {
         status: response.status,
         json,
         durationMs: Date.now() - start,
+        setCookie: response.headers.get('set-cookie') || '',
       };
     } catch (error) {
       return {
@@ -212,55 +259,82 @@ class ApiClient {
     }
   }
 
+  async _login(username, password) {
+    if (!username || !password) return null;
+    const response = await this._fetch('/api/auth/login', {
+      method: 'POST',
+      body: { username, password },
+    });
+    if (!response.ok || !response.json.session?.csrfToken) return null;
+    const cookie = response.setCookie.split(';')[0];
+    return cookie ? { cookie, csrfToken: response.json.session.csrfToken, user: response.json.session } : null;
+  }
+
+  async loginAdmin() {
+    this.adminSession = await this._login(this.adminUsername, this.adminPassword);
+    return this.adminSession;
+  }
+
+  async loginSuperAdmin() {
+    this.superAdminSession = await this._login(this.superAdminUsername, this.superAdminPassword);
+    return this.superAdminSession;
+  }
+
   health()              { return this._fetch('/api/healthz'); }
   notFound()            { return this._fetch('/api/this-route-does-not-exist'); }
-  adminState(token)     { return this._fetch('/api/admin/state', { headers: { 'x-admin-token': token ?? this.adminToken } }); }
-  deviceSnapshot(key)   { return this._fetch('/api/device/snapshot', { headers: { 'x-device-key': key ?? this.deviceKey } }); }
+  adminState(kind = 'admin') {
+    return this._fetch('/api/admin/state', {
+      adminSession: kind === 'super' ? this.superAdminSession : this.adminSession,
+    });
+  }
+  deviceSnapshot(key = this.deviceKey) {
+    return this._fetch('/api/device/snapshot', { deviceKey: key });
+  }
   deviceStatus(payload) {
     return this._fetch('/api/device/status', {
       method: 'POST',
-      headers: { 'x-device-key': this.deviceKey },
+      deviceKey: this.deviceKey,
       body: payload,
     });
   }
   postResident(payload) {
     return this._fetch('/api/admin/residents', {
       method: 'POST',
-      headers: { 'x-admin-token': this.adminToken },
+      adminSession: this.adminSession,
       body: payload,
     });
   }
   deleteResident(id) {
     return this._fetch(`/api/admin/residents/${encodeURIComponent(id)}`, {
       method: 'DELETE',
-      headers: { 'x-admin-token': this.adminToken },
+      adminSession: this.adminSession,
     });
   }
   openDoor(door, body) {
     return this._fetch(`/api/admin/doors/${door}/open`, {
       method: 'POST',
-      headers: { 'x-admin-token': this.adminToken },
+      adminSession: this.adminSession,
       body,
     });
   }
   completeCommand(commandId, body) {
     return this._fetch(`/api/device/commands/${encodeURIComponent(commandId)}/complete`, {
       method: 'POST',
-      headers: { 'x-device-key': this.deviceKey },
+      deviceKey: this.deviceKey,
       body,
     });
   }
   acknowledgeCommand(commandId, body) {
     return this._fetch(`/api/device/commands/${encodeURIComponent(commandId)}/ack`, {
       method: 'POST',
-      headers: { 'x-device-key': this.deviceKey },
+      deviceKey: this.deviceKey,
       body,
     });
   }
   notifyDelivery(delivery) {
     return this._fetch('/api/device/deliveries/notify', {
       method: 'POST',
-      headers: { 'x-device-key': this.deviceKey },
+      deviceKey: this.deviceKey,
       body: { delivery },
       timeoutMs: 20000,
     });
@@ -330,8 +404,8 @@ async function suiteHealth(api, runner) {
       return `appVersion=${r.json.appVersion} schemaVersion=${r.json.schemaVersion}`;
     });
 
-    await runner.test('GET admin/state com token de sindico devolve estado completo', async () => {
-      if (!api.adminToken) throw new Error('--admin-token nao foi fornecido');
+    await runner.test('GET admin/state com sessao de sindico devolve estado completo', async () => {
+      if (!api.adminSession) throw new Error('credenciais do sindico nao foram fornecidas ou sao invalidas');
       const r = await api.adminState();
       assert(r.ok, `status ${r.status}: ${r.json.error || ''}`);
       const s = r.json.state;
@@ -339,12 +413,12 @@ async function suiteHealth(api, runner) {
       assert(s.tenant && s.tenant.lockerId, 'state.tenant.lockerId ausente');
       assert(Array.isArray(s.doors) && s.doors.length > 0, 'state.doors vazio');
       assert(Array.isArray(s.residents), 'state.residents nao e array');
-      assertEqual(s.session?.role, 'sindico', 'role do token');
+      assertEqual(s.session?.role, 'sindico', 'papel da sessao');
       assertEqual(s.platform, null, 'sindico nao deveria ver platform');
       return `${s.doors.length} portas, ${s.residents.length} apartamentos, ${s.deliveries?.length ?? 0} entregas`;
     });
 
-    await runner.test('GET device/snapshot com device-key responde com residents+commands', async () => {
+    await runner.test('GET device/snapshot com HMAC responde com residents+commands', async () => {
       if (!api.deviceKey) throw new Error('--device-key nao foi fornecido');
       const r = await api.deviceSnapshot();
       assert(r.ok, `status ${r.status}: ${r.json.error || ''}`);
@@ -360,16 +434,16 @@ async function suiteHealth(api, runner) {
       return `${r.durationMs}ms`;
     });
 
-    if (api.superAdminToken) {
-      await runner.test('Token de super_admin enxerga platform e securityWarnings', async () => {
-        const r = await api.adminState(api.superAdminToken);
+    if (api.superAdminSession) {
+      await runner.test('Sessao de super_admin enxerga platform e securityWarnings', async () => {
+        const r = await api.adminState('super');
         assert(r.ok, `status ${r.status}: ${r.json.error || ''}`);
-        assertEqual(r.json.state.session?.role, 'super_admin', 'role do super token');
+        assertEqual(r.json.state.session?.role, 'super_admin', 'papel da sessao super_admin');
         assert(r.json.state.platform, 'platform deveria existir para super_admin');
         return `${r.json.state.platform.lockerCount} armarios, warnings=${(r.json.state.runtime?.securityWarnings ?? []).length}`;
       });
     } else {
-      runner.skip('super_admin checa platform', '--super-token nao fornecido');
+      runner.skip('super_admin checa platform', 'credenciais de super_admin nao fornecidas');
     }
   });
 }
@@ -525,28 +599,31 @@ async function suiteUserErrors(_api, runner) {
 
 async function suiteSecurity(api, runner, args) {
   await runner.suite('4. Seguranca / autorizacao (gera 401/429)', async () => {
-    await runner.test('admin/state sem token responde 401', async () => {
+    await runner.test('admin/state sem sessao responde 401', async () => {
       const r = await api._fetch('/api/admin/state');
       assertEqual(r.status, 401, 'status');
-      return 'token ausente bloqueado';
+      return 'sessao ausente bloqueada';
     });
 
-    await runner.test('admin/state com token errado responde 401', async () => {
-      const r = await api._fetch('/api/admin/state', { headers: { 'x-admin-token': 'token-claramente-errado-xpto' } });
+    await runner.test('login com senha errada responde 401', async () => {
+      const r = await api._fetch('/api/auth/login', {
+        method: 'POST',
+        body: { username: api.adminUsername || 'sindico', password: 'senha-claramente-errada-xpto' },
+      });
       assertEqual(r.status, 401, 'status');
-      return 'token invalido bloqueado';
+      return 'credencial invalida bloqueada';
     });
 
-    await runner.test('device/snapshot sem device-key responde 401', async () => {
+    await runner.test('device/snapshot sem assinatura HMAC responde 401', async () => {
       const r = await api._fetch('/api/device/snapshot');
       assertEqual(r.status, 401, 'status');
-      return 'device-key ausente bloqueado';
+      return 'assinatura ausente bloqueada';
     });
 
-    await runner.test('device/snapshot com device-key errada responde 401', async () => {
-      const r = await api._fetch('/api/device/snapshot', { headers: { 'x-device-key': 'chave-errada-xpto' } });
+    await runner.test('device/snapshot com HMAC incorreto responde 401', async () => {
+      const r = await api.deviceSnapshot('chave-errada-xpto-com-mais-de-32-bytes');
       assertEqual(r.status, 401, 'status');
-      return 'device-key invalida bloqueada';
+      return 'assinatura invalida bloqueada';
     });
 
     await runner.test('rota inexistente responde 404', async () => {
@@ -556,14 +633,14 @@ async function suiteSecurity(api, runner, args) {
     });
 
     await runner.test('admin/state com sindico nao expoe platform', async () => {
-      if (!api.adminToken) throw new Error('--admin-token nao foi fornecido');
+      if (!api.adminSession) throw new Error('sessao de sindico ausente');
       const r = await api.adminState();
       assert(r.ok, `status ${r.status}`);
       assertEqual(r.json.state.platform, null, 'platform deveria ser null para sindico');
       return 'isolamento ok';
     });
 
-    if (args.rateLimit && api.adminToken) {
+    if (args.rateLimit && api.adminSession) {
       await runner.test('rate limit do admin dispara 429 sob carga', async () => {
         const limit = 220; // > 180 req/min default
         let triggered = false;
@@ -575,7 +652,7 @@ async function suiteSecurity(api, runner, args) {
         assert(triggered, `nao disparou em ${limit} requests — rate limit pode estar desligado`);
         return `disparou na request ${firstAt}`;
       });
-    } else if (api.adminToken) {
+    } else if (api.adminSession) {
       runner.skip('rate limit do admin', '--rate-limit nao fornecido (gera carga)');
     }
   });
@@ -588,8 +665,8 @@ async function suiteWrites(api, runner, args) {
       runner.skip('publicar status do device de teste', '--write nao fornecido');
       return;
     }
-    if (!api.adminToken) {
-      runner.skip('cadastrar e remover apartamento de teste', '--admin-token ausente');
+    if (!api.adminSession) {
+      runner.skip('cadastrar e remover apartamento de teste', 'sessao de sindico ausente');
       return;
     }
 
@@ -653,8 +730,8 @@ async function suiteActuation(api, runner, args) {
       runner.skip('abertura remota end-to-end', '--actuate nao fornecido (porta nao sera aberta)');
       return;
     }
-    if (!api.adminToken || !api.deviceKey) {
-      runner.skip('abertura remota end-to-end', 'precisa de --admin-token e --device-key');
+    if (!api.adminSession || !api.deviceKey) {
+      runner.skip('abertura remota end-to-end', 'precisa de login de sindico e --device-key');
       return;
     }
 
@@ -798,7 +875,7 @@ async function main() {
   header('PREDDITA Locker — Test Agent');
   log(`Base:      ${args.base}`);
   log(`Locker ID: ${args.lockerId}`);
-  log(`Tokens:    admin=${args.adminToken ? 'set' : 'EMPTY'}, super=${args.superAdminToken ? 'set' : 'EMPTY'}, device=${args.deviceKey ? 'set' : 'EMPTY'}`);
+  log(`Acessos:    sindico=${args.adminUsername && args.adminPassword ? 'set' : 'EMPTY'}, super=${args.superAdminUsername && args.superAdminPassword ? 'set' : 'EMPTY'}, device=${args.deviceKey ? 'set' : 'EMPTY'}`);
   log(`Flags:     ${args.write ? `${C.yellow}--write${C.reset}` : ''} ${args.actuate ? `${C.red}--actuate${C.reset}` : ''} ${args.sendEmail ? `${C.red}--send-email${C.reset}` : ''} ${args.rateLimit ? `${C.yellow}--rate-limit${C.reset}` : ''}`.trim() || 'so leitura');
 
   if (args.actuate) {
@@ -809,6 +886,14 @@ async function main() {
   }
 
   const api = new ApiClient(args);
+  if (args.adminUsername && args.adminPassword) {
+    const session = await api.loginAdmin();
+    if (!session) log(`${C.yellow}Login do sindico falhou; suites administrativas serao marcadas como falha ou skip.${C.reset}`);
+  }
+  if (args.superAdminUsername && args.superAdminPassword) {
+    const session = await api.loginSuperAdmin();
+    if (!session) log(`${C.yellow}Login do super_admin falhou; validacao de plataforma sera ignorada.${C.reset}`);
+  }
   const runner = makeRunner(args);
 
   try {

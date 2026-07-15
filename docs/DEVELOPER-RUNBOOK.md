@@ -153,7 +153,7 @@ cd web
 $env:VITE_PREDDITA_REMOTE_URL="https://locker.example.com"
 $env:VITE_PREDDITA_LOCKER_ID="ks1062-aurora"
 $env:VITE_PREDDITA_DEVICE_AUTH_MODE="hmac"
-$env:VITE_PREDDITA_EDGE_APP_VERSION="2.0.12-lab"
+$env:VITE_PREDDITA_EDGE_APP_VERSION="2.0.13-lab"
 npm run build
 Remove-Item Env:VITE_PREDDITA_REMOTE_URL
 Remove-Item Env:VITE_PREDDITA_LOCKER_ID
@@ -196,8 +196,10 @@ Ver versao instalada:
 - `npm run build` passou.
 - `gradlew assembleDebug` passou.
 - O APK `release` foi assinado com a keystore de producao, nunca com a de debug.
-- `PREDDITA_ADMIN_TOKEN`, `PREDDITA_SUPER_ADMIN_TOKEN` e
-  `PREDDITA_DEVICE_KEY` nao usam valores padrao.
+- `PREDDITA_ADMIN_USERS` contem somente hashes scrypt, inclui um
+  `super_admin` ativo e restringe cada conta aos lockers necessarios.
+- Login, logout, CSRF e os papeis administrativos passaram no smoke test.
+- `PREDDITA_DEVICE_KEY` nao usa valor padrao.
 - `PREDDITA_DEVICE_AUTH_MODE=hmac` no servidor e assinador nativo ativo no APK.
 - O build recusou `VITE_PREDDITA_DEVICE_KEY` e o equipamento aparece como
   provisionado no modo diagnostico.
@@ -241,4 +243,4 @@ Painel nao abre porta remotamente:
 - Confirmar que o armario esta online e `deviceFresh`.
 - Confirmar `serialOpen`.
 - Conferir se ja existe comando pendente para a mesma porta.
-- Verificar token do sindico/Admin.
+- Verificar login, papel e locker permitido do usuario administrativo.

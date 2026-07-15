@@ -6,12 +6,19 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { hashAdminPassword } from '../admin-online/adminAuth.mjs';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const ADMIN_DIR = join(ROOT, 'admin-online');
 const SERVER_PATH = join(ADMIN_DIR, 'server.mjs');
-const ADMIN_TOKEN = 'v2-recovery-admin-token';
-const SUPER_ADMIN_TOKEN = 'v2-recovery-super-token';
+const ADMIN_PASSWORD = 'v2-recovery-admin-password';
+const ADMIN_USERS = JSON.stringify([{
+  username: 'recovery-admin',
+  name: 'Recovery Admin',
+  role: 'super_admin',
+  passwordHash: hashAdminPassword(ADMIN_PASSWORD, { salt: 'recovery-admin-salt-001' }),
+  lockerIds: ['*'],
+}]);
 const DEVICE_KEY = 'v2-recovery-device-key';
 
 function delay(ms) {
@@ -30,8 +37,7 @@ function startServer(dataDir, port) {
       NODE_ENV: 'test',
       PORT: String(port),
       PREDDITA_DATA_DIR: dataDir,
-      PREDDITA_ADMIN_TOKEN: ADMIN_TOKEN,
-      PREDDITA_SUPER_ADMIN_TOKEN: SUPER_ADMIN_TOKEN,
+      PREDDITA_ADMIN_USERS: ADMIN_USERS,
       PREDDITA_DEVICE_KEY: DEVICE_KEY,
       PREDDITA_DEVICE_KEYS: JSON.stringify({ 'ks1062-aurora': DEVICE_KEY }),
     },
@@ -80,6 +86,15 @@ async function waitForServer(port, child, getLog) {
     await delay(150);
   }
   throw new Error(`Servidor nao iniciou durante o teste de recuperacao.\n${getLog()}`);
+}
+
+async function login(port) {
+  const { response, payload } = await request(port, '/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ username: 'recovery-admin', password: ADMIN_PASSWORD }),
+  });
+  assert.equal(response.status, 200, payload.error || 'Login de recuperacao falhou.');
+  return { cookie: String(response.headers.get('set-cookie') || '').split(';')[0] };
 }
 
 async function verifyBomStateIsPreserved() {
@@ -144,8 +159,9 @@ async function verifyBomStateIsPreserved() {
 
   try {
     await waitForServer(port, server.child, server.getLog);
+    const adminHeaders = await login(port);
     const { response, payload } = await request(port, '/api/admin/state', {
-      headers: { 'x-admin-token': ADMIN_TOKEN },
+      headers: adminHeaders,
     });
 
     assert.equal(response.status, 200, payload.error || 'Estado com BOM deveria ser aceito.');
@@ -173,8 +189,9 @@ async function verifyInvalidStateFailsClosed() {
 
   try {
     await waitForServer(port, server.child, server.getLog);
+    const adminHeaders = await login(port);
     const { response, payload } = await request(port, '/api/admin/state', {
-      headers: { 'x-admin-token': ADMIN_TOKEN },
+      headers: adminHeaders,
     });
 
     assert.equal(response.status, 500, 'Estado invalido deve bloquear a leitura da API.');

@@ -7,7 +7,25 @@
     <link rel="stylesheet" href="./styles.css?v=20260507-admin-207" />
   </head>
   <body>
-    <main class="admin-app">
+    <main id="login-screen" class="auth-shell" hidden>
+      <section class="auth-panel" aria-labelledby="login-title">
+        <div class="auth-brand">
+          <p class="eyebrow">PREDDITA</p>
+          <h1 id="login-title">Admin Online</h1>
+          <p class="muted">Acesso operacional aos lockers.</p>
+        </div>
+        <form id="login-form" class="auth-form">
+          <label for="login-username">Usuario</label>
+          <input id="login-username" name="username" autocomplete="username" required />
+          <label for="login-password">Senha</label>
+          <input id="login-password" name="password" type="password" autocomplete="current-password" required />
+          <button id="login-button" class="primary-button" type="submit">Entrar</button>
+          <p id="login-message" class="auth-message" role="alert" hidden></p>
+        </form>
+      </section>
+    </main>
+
+    <main id="admin-app" class="admin-app" hidden>
       <aside class="sidebar">
         <div>
           <p class="eyebrow">PREDDITA</p>
@@ -15,10 +33,12 @@
           <p id="panel-description" class="muted">Gestao remota do locker, apartamentos, portas e entregas.</p>
         </div>
         <nav id="nav-list" class="nav-list" aria-label="Navegacao principal"></nav>
-        <section class="login-card">
-          <label id="token-label" for="admin-token">Token de acesso</label>
-          <input id="admin-token" type="password" placeholder="preddita-admin-local" />
-          <button id="save-token" type="button">Salvar token</button>
+        <section class="session-card">
+          <div>
+            <strong id="session-name">Usuario</strong>
+            <span id="session-role">Papel</span>
+          </div>
+          <button id="logout-button" type="button">Sair</button>
         </section>
       </aside>
 
