@@ -3,6 +3,7 @@ package com.preddita.entregaslocker;
 import android.annotation.SuppressLint;
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
@@ -10,8 +11,13 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import android.text.InputType;
 import android.view.View;
 import android.view.WindowManager;
+import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+import android.widget.Toast;
 import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
@@ -38,7 +44,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * Responsibilities:
  *  1. Render the React app inside a fullscreen WebView
  *  2. Expose an Android -> JavaScript bridge for RS-485 commands
- *  3. Probe common serial ports used by the KS1062 and keep the active one open
+ *  3. Keep device credentials inside Android Keystore and sign device requests
+ *  4. Probe common serial ports used by the KS1062 and keep the active one open
  */
 public class MainActivity extends Activity {
 
@@ -66,6 +73,8 @@ public class MainActivity extends Activity {
     private Thread serialThread;
     private final Rs485FrameParser serialFrameParser = new Rs485FrameParser();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private DeviceCredentialStore deviceCredentialStore;
+    private volatile String lastDeviceAuthError = "";
 
     private volatile boolean serialOpen = false;
     private volatile String activeSerialPort = SERIAL_PORT_CANDIDATES[0];
@@ -92,6 +101,7 @@ public class MainActivity extends Activity {
 
         webView = new WebView(this);
         setContentView(webView);
+        deviceCredentialStore = new DeviceCredentialStore(getApplicationContext());
 
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -113,6 +123,7 @@ public class MainActivity extends Activity {
             .build();
 
         webView.addJavascriptInterface(new RS485Bridge(), "Android");
+        webView.addJavascriptInterface(new DeviceAuthBridge(), "PredditaDeviceAuth");
         WebView.setWebContentsDebuggingEnabled(isDebuggableBuild());
 
         webView.setWebChromeClient(new WebChromeClient() {
@@ -182,6 +193,88 @@ public class MainActivity extends Activity {
             }
         }
         return false;
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private void addProvisioningField(LinearLayout form, String label, EditText input) {
+        TextView fieldLabel = new TextView(this);
+        fieldLabel.setText(label);
+        fieldLabel.setTextSize(14);
+        form.addView(fieldLabel);
+        form.addView(input, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+    }
+
+    private EditText newProvisioningInput(int inputType, String value) {
+        EditText input = new EditText(this);
+        input.setInputType(inputType);
+        input.setText(value == null ? "" : value);
+        input.setSingleLine(true);
+        input.setPadding(0, dp(2), 0, dp(12));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            input.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);
+        }
+        return input;
+    }
+
+    private void showDeviceProvisioningDialog(String suggestedBaseUrl, String suggestedLockerId) {
+        LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding(dp(24), dp(8), dp(24), 0);
+
+        EditText baseUrlInput = newProvisioningInput(
+            InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI,
+            deviceCredentialStore.getBaseUrl().isEmpty() ? suggestedBaseUrl : deviceCredentialStore.getBaseUrl()
+        );
+        EditText lockerIdInput = newProvisioningInput(
+            InputType.TYPE_CLASS_TEXT,
+            deviceCredentialStore.getLockerId().isEmpty() ? suggestedLockerId : deviceCredentialStore.getLockerId()
+        );
+        EditText deviceKeyInput = newProvisioningInput(
+            InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD,
+            ""
+        );
+        deviceKeyInput.setHint("Minimo de 32 caracteres");
+
+        addProvisioningField(form, "URL HTTPS do Admin Online", baseUrlInput);
+        addProvisioningField(form, "Identificador do locker", lockerIdInput);
+        addProvisioningField(form, "Chave HMAC do dispositivo", deviceKeyInput);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+            .setTitle("Provisionar conexao segura")
+            .setView(form)
+            .setNegativeButton("Cancelar", null)
+            .setPositiveButton("Salvar", null)
+            .create();
+
+        dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> {
+            try {
+                deviceCredentialStore.provision(
+                    baseUrlInput.getText().toString(),
+                    lockerIdInput.getText().toString(),
+                    deviceKeyInput.getText().toString(),
+                    isDebuggableBuild()
+                );
+                lastDeviceAuthError = "";
+                deviceKeyInput.getText().clear();
+                webView.evaluateJavascript(
+                    "window.dispatchEvent(new Event('preddita-device-auth-changed'))",
+                    null
+                );
+                Toast.makeText(this, "Credencial protegida no Android Keystore.", Toast.LENGTH_LONG).show();
+                dialog.dismiss();
+            } catch (Exception error) {
+                lastDeviceAuthError = error.getMessage() != null ? error.getMessage() : "PROVISIONING_FAILED";
+                Toast.makeText(this, lastDeviceAuthError, Toast.LENGTH_LONG).show();
+            }
+        }));
+        dialog.setOnDismissListener(ignored -> deviceKeyInput.getText().clear());
+        dialog.show();
     }
 
     @Override
@@ -445,6 +538,48 @@ public class MainActivity extends Activity {
         }
     }
 
+    public class DeviceAuthBridge {
+        @JavascriptInterface
+        public String getConfig() {
+            return deviceCredentialStore.getConfigJson();
+        }
+
+        @JavascriptInterface
+        public String signRequest(
+            String method,
+            String path,
+            String timestamp,
+            String nonce,
+            String contentSha256
+        ) {
+            try {
+                String signature = deviceCredentialStore.signRequest(
+                    method,
+                    path,
+                    timestamp,
+                    nonce,
+                    contentSha256
+                );
+                lastDeviceAuthError = "";
+                return signature;
+            } catch (Exception error) {
+                lastDeviceAuthError = error.getMessage() != null ? error.getMessage() : "DEVICE_SIGN_FAILED";
+                Log.w(TAG, "Device request signing failed: " + lastDeviceAuthError);
+                return "";
+            }
+        }
+
+        @JavascriptInterface
+        public String getLastError() {
+            return lastDeviceAuthError;
+        }
+
+        @JavascriptInterface
+        public void openProvisioning(String suggestedBaseUrl, String suggestedLockerId) {
+            mainHandler.post(() -> showDeviceProvisioningDialog(suggestedBaseUrl, suggestedLockerId));
+        }
+    }
+
     public class RS485Bridge {
 
         @JavascriptInterface
@@ -522,7 +657,7 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public String getBridgeVersion() {
-            return "PREDDITA-BRIDGE-1.5.0";
+            return "PREDDITA-BRIDGE-1.6.0";
         }
 
         @JavascriptInterface

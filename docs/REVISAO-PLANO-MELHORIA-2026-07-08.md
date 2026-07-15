@@ -112,6 +112,16 @@ Validacao do segundo lote:
 - O smoke test passou a exercer o contrato real usado pelo kiosk.
 - App, backend e Android foram atualizados para `2.0.11-lab` (`versionCode 11`).
 
+### Credencial movida para Android Keystore em 2026-07-15
+
+- O APK deixou de receber chave de device no build e passou a ser generico.
+- A chave HMAC e provisionada em dialogo Android nativo e importada como chave
+  nao exportavel no Android Keystore.
+- A WebView recebe apenas metadados nao sensiveis e assinaturas para rotas
+  `/api/device/*`; chave legada em `localStorage` e removida no release.
+- CI e Vite falham se `VITE_PREDDITA_DEVICE_KEY` for definida em build.
+- Versao atualizada para `2.0.12-lab`, `versionCode 12` e bridge `1.6.0`.
+
 Primeiro pacote de Fase 0 aplicado apos esta revisao:
 
 - `admin-online`: `nodemailer` atualizado para versao sem vulnerabilidades no

@@ -81,11 +81,6 @@ jobs:
         working-directory: web
 
       - name: Build production web assets
-        env:
-          VITE_PREDDITA_REMOTE_URL: ${{ vars.PREDDITA_EDGE_REMOTE_URL }}
-          VITE_PREDDITA_DEVICE_KEY: ${{ secrets.PREDDITA_EDGE_DEVICE_KEY }}
-          VITE_PREDDITA_LOCKER_ID: ${{ vars.PREDDITA_EDGE_LOCKER_ID }}
-          VITE_PREDDITA_DEVICE_AUTH_MODE: hmac
         run: npm run build
         working-directory: web
 

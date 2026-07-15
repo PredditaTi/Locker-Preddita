@@ -20,17 +20,14 @@ Configure estes GitHub Actions secrets no repositorio:
 - `PREDDITA_RELEASE_KEY_ALIAS`: alias da chave de assinatura.
 - `PREDDITA_RELEASE_KEY_PASSWORD`: senha da chave.
 
-Valores opcionais para conectar o APK ao Admin Online:
+O workflow sempre gera um APK generico, sem URL, `lockerId` ou chave de device.
+Depois da instalacao, abra o modo diagnostico no equipamento e use
+`Provisionar conexao` para gravar esses dados. A chave HMAC e importada como
+nao exportavel no Android Keystore e nunca entra no bundle web ou nos secrets
+de build do GitHub.
 
-- Secret `PREDDITA_EDGE_DEVICE_KEY`: credencial individual do armario.
-- Variable `PREDDITA_EDGE_REMOTE_URL`: URL HTTPS do Admin Online.
-- Variable `PREDDITA_EDGE_LOCKER_ID`: identificador do armario.
-
-O workflow gera o app com `VITE_PREDDITA_DEVICE_AUTH_MODE=hmac`. A mesma chave
-configurada no secret deve existir no mapa `PREDDITA_DEVICE_KEYS` do servidor.
-
-Sem as configuracoes opcionais, o APK release continua operando localmente,
-mas nao sincroniza com o Admin Online.
+O build falha se `VITE_PREDDITA_DEVICE_KEY` estiver definido. Essa variavel e
+permitida somente no servidor de desenvolvimento do Vite, nunca em um APK.
 
 ## Gerar um APK
 

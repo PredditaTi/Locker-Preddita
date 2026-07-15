@@ -99,10 +99,12 @@ No computador de build:
 ```powershell
 powershell -ExecutionPolicy Bypass -File ..\scripts\build-online-release.ps1 `
   -ServerUrl "https://seu-dominio.com" `
-  -DeviceKey "a-chave-desse-armario"
+  -LockerId "ks1062-aurora"
 ```
 
-Depois instale o APK gerado no armario. A partir disso, o app busca moradores, envia status e recebe comandos pelo servidor online.
+Depois instale o APK, abra o modo diagnostico e use `Provisionar conexao` para
+informar URL, `lockerId` e a chave cadastrada no servidor. A partir disso, o app
+busca moradores, envia status e recebe comandos pelo servidor online.
 
 ## Observacoes importantes
 

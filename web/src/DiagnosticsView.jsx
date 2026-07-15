@@ -1,5 +1,9 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { runDiagnostics, summarize } from './diagnostics.js';
+import {
+  getNativeDeviceAuthStatus,
+  openNativeDeviceProvisioning,
+} from './remoteBridge.js';
 
 /**
  * Tela de diagnostico embutida.
@@ -12,12 +16,23 @@ export default function DiagnosticsView({ lockerState, onClose }) {
   const [suites, setSuites] = useState([]);
   const [startedAt, setStartedAt] = useState(null);
   const [finishedAt, setFinishedAt] = useState(null);
+  const [deviceAuth, setDeviceAuth] = useState(() => getNativeDeviceAuthStatus());
   const reportRef = useRef(null);
 
   const summary = useMemo(() => summarize(suites), [suites]);
   const overall = !running && suites.length > 0
     ? (summary.fail > 0 ? 'fail' : 'pass')
     : (running ? 'running' : 'idle');
+
+  useEffect(() => {
+    const refresh = () => setDeviceAuth(getNativeDeviceAuthStatus());
+    window.addEventListener('preddita-device-auth-changed', refresh);
+    window.addEventListener('focus', refresh);
+    return () => {
+      window.removeEventListener('preddita-device-auth-changed', refresh);
+      window.removeEventListener('focus', refresh);
+    };
+  }, []);
 
   async function handleRun() {
     setRunning(true);
@@ -52,6 +67,7 @@ export default function DiagnosticsView({ lockerState, onClose }) {
       finishedAt: finishedAt?.toISOString(),
       summary,
       suites,
+      deviceAuth,
     };
     const text = JSON.stringify(report, null, 2);
     if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
@@ -110,6 +126,30 @@ export default function DiagnosticsView({ lockerState, onClose }) {
             Copiar relatorio
           </button>
         </div>
+      </section>
+
+      <section className="diagnostic-device-auth" aria-label="Credencial segura do dispositivo">
+        <div>
+          <span className="diagnostic-device-auth-label">Conexao com Admin Online</span>
+          <strong className="diagnostic-device-auth-status">
+            {!deviceAuth.available && 'Disponivel somente no Android'}
+            {deviceAuth.available && !deviceAuth.provisioned && 'Pendente de provisionamento'}
+            {deviceAuth.provisioned && 'Protegida no Android Keystore'}
+          </strong>
+          {deviceAuth.provisioned ? (
+            <span className="diagnostic-device-auth-detail">
+              {deviceAuth.lockerId} · {deviceAuth.baseUrl}
+            </span>
+          ) : null}
+        </div>
+        <button
+          className="diagnostic-provision"
+          type="button"
+          disabled={!deviceAuth.available}
+          onClick={openNativeDeviceProvisioning}
+        >
+          {deviceAuth.provisioned ? 'Rotacionar credencial' : 'Provisionar conexao'}
+        </button>
       </section>
 
       <section className="diagnostic-results">

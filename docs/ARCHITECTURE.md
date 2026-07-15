@@ -187,11 +187,14 @@ Servidor:
 Build do app:
 
 - `VITE_PREDDITA_REMOTE_URL`: URL do Admin Online.
-- `VITE_PREDDITA_DEVICE_KEY`: chave do armario.
 - `VITE_PREDDITA_LOCKER_ID`: identificador do locker.
 - `VITE_PREDDITA_DEVICE_AUTH_MODE`: `hmac` por padrao; `legacy` somente para
   conectar temporariamente a um servidor antigo em laboratorio.
 - `VITE_PREDDITA_EDGE_APP_VERSION`: versao reportada no heartbeat.
+
+Em APK, URL, `lockerId` e chave sao provisionados no modo diagnostico. A chave
+fica no Android Keystore e o JavaScript recebe somente assinaturas. Definir
+`VITE_PREDDITA_DEVICE_KEY` em um build de producao causa falha deliberada.
 
 Cada chamada `/api/device/*` assina metodo, rota, `lockerId`, timestamp, nonce e
 SHA-256 do corpo com HMAC-SHA256. O servidor valida a janela de tempo e consome o

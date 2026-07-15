@@ -41,7 +41,7 @@ Saída esperada (exemplo abreviado):
 Base:      https://locker.example.com
 ...
 -- 1. Health & contrato (read-only)
-  PASS GET /api/healthz responde 200 — appVersion=2.0.11-lab schemaVersion=7
+  PASS GET /api/healthz responde 200 — appVersion=2.0.12-lab schemaVersion=7
   PASS GET admin/state com token de sindico devolve estado completo — 24 portas, 3 apartamentos, 0 entregas
   ...
 -- 4. Seguranca / autorizacao (gera 401/429)
@@ -149,7 +149,7 @@ node scripts/test-agent.mjs --only health
 
 ## O que o agente **não** cobre
 
-- UI nativa (WebView Capacitor) — testar com humano olhando, ou escalar para Playwright contra `npm run dev`.
+- UI nativa (WebView Capacitor) — o CI valida o contrato HMAC em Java e simula a ponte nativa, mas o provisionamento no Android Keystore ainda exige teste em aparelho.
 - Comportamento elétrico/mecânico das fechaduras — só testa se o admin recebeu confirmação.
 - Latência sob carga real — `--rate-limit` é um bombardeio simples, não simula uso.
 - Recuperação de `state.json` corrompido — precisa de fixture específica.
