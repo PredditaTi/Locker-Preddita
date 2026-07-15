@@ -10,7 +10,7 @@ const SERVER_PATH = join(ADMIN_DIR, 'server.mjs');
 const ADMIN_TOKEN = 'v2-admin-test-token';
 const SUPER_ADMIN_TOKEN = 'v2-super-admin-test-token';
 const DEVICE_KEY = 'v2-device-test-key';
-const EXPECTED_ADMIN_VERSION = '2.0.9-lab';
+const EXPECTED_ADMIN_VERSION = '2.0.10-lab';
 const PORT = 9897;
 const DATA_DIR = mkdtempSync(join(tmpdir(), 'preddita-v2-smoke-'));
 

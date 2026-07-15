@@ -58,6 +58,7 @@ Testes de idempotencia remota e protocolo serial:
 
 ```powershell
 node scripts\v2-remote-command-journal-test.mjs
+node scripts\v2-device-event-journal-test.mjs
 node scripts\v2-serial-protocol-test.mjs
 ```
 
@@ -142,7 +143,7 @@ cd web
 $env:VITE_PREDDITA_REMOTE_URL="https://locker.example.com"
 $env:VITE_PREDDITA_DEVICE_KEY="cole-a-chave-do-device"
 $env:VITE_PREDDITA_LOCKER_ID="ks1062-aurora"
-$env:VITE_PREDDITA_EDGE_APP_VERSION="2.0.9-lab"
+$env:VITE_PREDDITA_EDGE_APP_VERSION="2.0.10-lab"
 npm run build
 Remove-Item Env:VITE_PREDDITA_REMOTE_URL
 Remove-Item Env:VITE_PREDDITA_DEVICE_KEY

@@ -72,10 +72,16 @@ import {
   ResidentPickupStep,
 } from './publicKioskUi.jsx';
 import {
+  applyDeviceEventSyncResult,
   buildDeliveryCollectedEventId,
   buildDeliveryStoredEventId,
   upsertDeviceEventQueue,
 } from './deviceEventQueue.js';
+import {
+  loadDeviceEventJournal,
+  removeDeviceEventJournalEvents,
+  saveDeviceEventJournalEvents,
+} from './deviceEventJournal.js';
 import DiagnosticsView from './DiagnosticsView.jsx';
 import useDiagnosticGate from './useDiagnosticGate.js';
 
@@ -84,14 +90,13 @@ const COMMANDS = createCommandSet(LOCKER_PROFILE);
 const DOORS_PER_PAGE = 8;
 const DOOR_COUNT_PRESETS = [8, 12, 16, 20, 24];
 const ADMIN_VIEWS = new Set(['admin', 'adminDeposit', 'adminPickup', 'doors', 'system']);
-const APP_VERSION = '2.0.9-lab';
+const APP_VERSION = '2.0.10-lab';
 const POPUP_BANNER_TITLES = new Set([
   'Porta pequena ainda aberta',
   'Sem porta grande disponivel',
   'Portas grandes ocupadas',
 ]);
 const REMOTE_COMPLETIONS_STORAGE_KEY = 'preddita_pending_remote_completions_v1';
-const DEVICE_EVENTS_STORAGE_KEY = 'preddita_pending_device_events_v1';
 const MAX_PENDING_REMOTE_COMPLETIONS = 20;
 const MAX_PENDING_DEVICE_EVENTS = 160;
 const MAX_DEVICE_EVENTS_PER_FLUSH = 4;
@@ -170,58 +175,6 @@ function savePendingRemoteCompletions(items) {
 function createDeviceEventId(type) {
   const suffix = Math.random().toString(36).slice(2, 10);
   return `edge-${type}-${Date.now().toString(36)}-${suffix}`;
-}
-
-function normalizePendingDeviceEvent(item) {
-  if (!item || typeof item !== 'object') return null;
-
-  const id = String(item.id ?? '').trim();
-  const type = String(item.type ?? '').trim();
-  if (!id || !type) return null;
-
-  return {
-    id,
-    type,
-    payload: item.payload && typeof item.payload === 'object' ? item.payload : {},
-    occurredAt: String(item.occurredAt ?? item.at ?? new Date().toISOString()),
-    attempts: Number.isFinite(Number(item.attempts)) ? Math.max(0, Number(item.attempts)) : 0,
-    queuedAt: String(item.queuedAt ?? new Date().toISOString()),
-    lastAttemptAt: String(item.lastAttemptAt ?? ''),
-  };
-}
-
-function loadPendingDeviceEvents() {
-  if (typeof window === 'undefined' || !window.localStorage) return [];
-
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(DEVICE_EVENTS_STORAGE_KEY) || '[]');
-    if (!Array.isArray(parsed)) return [];
-
-    return parsed
-      .map(normalizePendingDeviceEvent)
-      .filter(Boolean)
-      .slice(-MAX_PENDING_DEVICE_EVENTS);
-  } catch (_error) {
-    return [];
-  }
-}
-
-function savePendingDeviceEvents(items) {
-  if (typeof window === 'undefined' || !window.localStorage) return;
-
-  try {
-    const safeItems = Array.isArray(items)
-      ? items.map(normalizePendingDeviceEvent).filter(Boolean).slice(-MAX_PENDING_DEVICE_EVENTS)
-      : [];
-
-    if (safeItems.length === 0) {
-      window.localStorage.removeItem(DEVICE_EVENTS_STORAGE_KEY);
-      return;
-    }
-
-    window.localStorage.setItem(DEVICE_EVENTS_STORAGE_KEY, JSON.stringify(safeItems));
-  } catch (_error) {
-  }
 }
 
 function getDeliveryNotificationText(delivery) {
@@ -419,7 +372,7 @@ export default function App() {
   const labelStreamRef = useRef(null);
   const pendingRemoteCompletionsRef = useRef(loadPendingRemoteCompletions());
   const remoteCommandExecutionsRef = useRef(loadRemoteCommandExecutions());
-  const pendingDeviceEventsRef = useRef(loadPendingDeviceEvents());
+  const pendingDeviceEventsRef = useRef(loadDeviceEventJournal({ maxItems: MAX_PENDING_DEVICE_EVENTS }));
   const remoteResidentsRevisionRef = useRef(initialState.remoteResidentsRevision || '');
   const packedAlignmentRef = useRef('auto');
   const diagnosticGate = useDiagnosticGate();
@@ -714,14 +667,16 @@ export default function App() {
   }, [credentialDelivery?.qrPayload]);
 
   function queueDeviceEvent(type, payload = {}, options = {}) {
+    const eventId = String(options.id ?? '').trim() || createDeviceEventId(type);
+    const existing = pendingDeviceEventsRef.current.find((item) => item.id === eventId);
     const event = {
-      id: String(options.id ?? '').trim() || createDeviceEventId(type),
+      id: eventId,
       type,
       payload,
       occurredAt: String(options.occurredAt ?? '').trim() || new Date().toISOString(),
-      attempts: 0,
-      queuedAt: new Date().toISOString(),
-      lastAttemptAt: '',
+      attempts: existing?.attempts ?? 0,
+      queuedAt: existing?.queuedAt || new Date().toISOString(),
+      lastAttemptAt: existing?.lastAttemptAt || '',
     };
 
     pendingDeviceEventsRef.current = upsertDeviceEventQueue(
@@ -729,7 +684,7 @@ export default function App() {
       event,
       MAX_PENDING_DEVICE_EVENTS
     );
-    savePendingDeviceEvents(pendingDeviceEventsRef.current);
+    saveDeviceEventJournalEvents([event], { maxItems: MAX_PENDING_DEVICE_EVENTS });
     return event;
   }
 
@@ -1873,10 +1828,10 @@ export default function App() {
   /*
    * Fila offline do armario.
    *
-   * Entregas guardadas, retiradas e aberturas locais sao salvas em localStorage
-   * antes de serem enviadas ao Admin Online. Se o locker perder internet ou
-   * reiniciar, flushPendingDeviceEvents reenvia tudo ao servidor. O servidor
-   * usa o id do evento para manter idempotencia, entao reenviar e seguro.
+   * Cada entrega guardada, retirada ou abertura local ocupa um registro isolado
+   * no diario do localStorage antes do envio ao Admin Online. Se o locker perder
+   * internet ou reiniciar, flushPendingDeviceEvents reenvia tudo. O servidor usa
+   * o id do evento para manter idempotencia, entao reenviar e seguro.
    */
   async function flushPendingDeviceEvents() {
     if (deviceEventsInFlightRef.current) return false;
@@ -1890,29 +1845,29 @@ export default function App() {
     try {
       const result = await publishRemoteEvents(batch);
       if (!result?.ok) {
-        pendingDeviceEventsRef.current = pendingDeviceEventsRef.current
+        const updatedBatch = pendingDeviceEventsRef.current
           .map((item) => (batchIds.has(item.id) ? { ...item, attempts: item.attempts + 1, lastAttemptAt: attemptedAt } : item))
           .slice(-MAX_PENDING_DEVICE_EVENTS);
-        savePendingDeviceEvents(pendingDeviceEventsRef.current);
+        pendingDeviceEventsRef.current = updatedBatch;
+        saveDeviceEventJournalEvents(
+          updatedBatch.filter((item) => batchIds.has(item.id)),
+          { maxItems: MAX_PENDING_DEVICE_EVENTS }
+        );
         return false;
       }
 
-      const acceptedIds = new Set(Array.isArray(result.acceptedIds) ? result.acceptedIds : []);
-      const failedIds = new Set(Array.isArray(result.failedEvents) ? result.failedEvents.map((item) => item.id) : []);
-      const stillPending = pendingDeviceEventsRef.current
-        .filter((item) => !acceptedIds.has(item.id))
-        .map((item) => (
-          failedIds.has(item.id)
-            ? { ...item, attempts: item.attempts + 1, lastAttemptAt: attemptedAt }
-            : item
-        ))
-        .filter((item) => item.attempts < 80)
-        .slice(-MAX_PENDING_DEVICE_EVENTS);
+      const syncResult = applyDeviceEventSyncResult(
+        pendingDeviceEventsRef.current,
+        result,
+        attemptedAt,
+        MAX_PENDING_DEVICE_EVENTS
+      );
 
-      pendingDeviceEventsRef.current = stillPending;
-      savePendingDeviceEvents(stillPending);
+      pendingDeviceEventsRef.current = syncResult.pending;
+      removeDeviceEventJournalEvents(syncResult.acceptedIds);
+      saveDeviceEventJournalEvents(syncResult.failed, { maxItems: MAX_PENDING_DEVICE_EVENTS });
       applyRemoteEventNotifications(result.notifications);
-      return acceptedIds.size > 0;
+      return syncResult.acceptedIds.length > 0;
     } finally {
       deviceEventsInFlightRef.current = false;
     }

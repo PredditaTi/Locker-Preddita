@@ -23,6 +23,7 @@ import {
   shouldShowCourierPickupCredential,
 } from '../web/src/touchFlow.js';
 import {
+  applyDeviceEventSyncResult,
   buildDeliveryCollectedEventId,
   buildDeliveryStoredEventId,
   upsertDeviceEventQueue,
@@ -149,6 +150,26 @@ const cappedQueue = ['1', '2', '3', '4', '5', '6'].reduce(
   []
 );
 assert.deepEqual(cappedQueue.map((event) => event.id), ['4', '5', '6'], 'fila offline deve manter somente os eventos mais recentes');
+const syncQueue = [
+  { id: 'accepted', type: 'test', attempts: 0 },
+  { id: 'failed', type: 'test', attempts: 80 },
+  { id: 'waiting', type: 'test', attempts: 0 },
+];
+const syncResult = applyDeviceEventSyncResult(syncQueue, {
+  acceptedIds: ['accepted'],
+  failedEvents: [{ id: 'failed', error: 'falha permanente simulada' }],
+}, '2026-07-15T12:00:00.000Z', 5);
+assert.deepEqual(
+  syncResult.pending.map((event) => event.id),
+  ['waiting', 'failed'],
+  'evento rejeitado deve ir ao fim para nao bloquear os eventos seguintes'
+);
+assert.equal(syncResult.failed[0].attempts, 81, 'evento nao deve ser descartado ao atingir 80 tentativas');
+assert.equal(
+  syncResult.failed[0].lastAttemptAt,
+  '2026-07-15T12:00:00.000Z',
+  'nova tentativa deve ficar auditavel no diario local'
+);
 
 await assert.rejects(
   () => reserveDelivery(baseState, {

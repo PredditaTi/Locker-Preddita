@@ -16,6 +16,9 @@ $npm = $npmCommand.Source
 Write-Host "[PREDDITA v2] Teste de regra de negocio do locker..."
 & $node (Join-Path $root "scripts\v2-workflow-test.mjs")
 
+Write-Host "[PREDDITA v2] Teste do diario duravel de eventos offline..."
+& $node (Join-Path $root "scripts\v2-device-event-journal-test.mjs")
+
 Write-Host "[PREDDITA v2] Teste do diario idempotente de comandos remotos..."
 & $node (Join-Path $root "scripts\v2-remote-command-journal-test.mjs")
 

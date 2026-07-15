@@ -87,7 +87,10 @@ Validacao desta etapa:
 - A bridge Android passou a acumular chunks, validar BCC, separar frames colados
   e resincronizar depois de ruido serial.
 - O JavaScript passou a correlacionar resposta por comando, placa e canal.
-- Versoes atualizadas para app/backend `2.0.9-lab`, schema 7 e bridge 1.5.
+- Versoes atualizadas para app/backend `2.0.10-lab`, schema 7 e bridge 1.5.
+- A fila offline monolitica foi substituida por diario v2 com um registro por
+  evento, migracao segura da v1, isolamento de corrupcao e remocao apenas depois
+  do aceite idempotente do servidor.
 
 Validacao do segundo lote:
 
@@ -329,7 +332,8 @@ Prazo sugerido: 1 semana.
 
 Prazo sugerido: 2 a 3 semanas.
 
-- Criar diario local append-only no armario para eventos criticos.
+- [Concluido] Criar diario local isolado por evento no armario para eventos
+  criticos, com replay idempotente e migracao da fila v1.
 - Persistir evento antes de abrir porta sempre que possivel.
 - Implementar fila de sync idempotente com `event_id`.
 - Manter outbox local para e-mails pendentes quando offline.

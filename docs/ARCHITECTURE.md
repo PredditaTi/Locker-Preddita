@@ -89,7 +89,10 @@ Endpoints criticos:
 No app do armario:
 
 - Estado operacional fica em `localStorage` (`preddita_entregas_locker_state_v1`).
-- Eventos offline ficam em `preddita_pending_device_events_v1`.
+- Eventos offline usam um registro por evento sob o prefixo
+  `preddita_device_event_journal_v2:`. A fila monolitica
+  `preddita_pending_device_events_v1` e migrada automaticamente e so e removida
+  depois que todos os registros validos forem gravados.
 - Confirmacoes de comando remoto ficam em
   `preddita_pending_remote_completions_v1`.
 - O diario de execucao fisica fica em
@@ -106,6 +109,9 @@ Garantia pratica:
 - Se o armario abrir uma porta sem internet, o evento fica local.
 - Se o armario reiniciar antes de sincronizar, o evento continua no
   `localStorage`.
+- Se um registro local ficar corrompido, os outros eventos continuam legiveis.
+- Um evento so sai do diario depois que o servidor devolve seu ID como aceito;
+  falhas de validacao voltam ao fim da fila sem descarte por tentativas.
 - Se o mesmo evento for enviado duas vezes, o servidor aceita o replay sem
   duplicar e-mail ou retirada.
 
