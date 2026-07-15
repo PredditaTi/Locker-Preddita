@@ -2838,6 +2838,44 @@ button {
 }
 .diagnostic-copy:disabled { opacity: 0.4; cursor: not-allowed; }
 
+.diagnostic-device-auth {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  min-height: 76px;
+  padding: 14px 4px;
+  border-top: 1px solid rgba(238, 246, 255, 0.18);
+  border-bottom: 1px solid rgba(238, 246, 255, 0.18);
+}
+.diagnostic-device-auth-label,
+.diagnostic-device-auth-detail {
+  display: block;
+  color: rgba(238, 246, 255, 0.68);
+  font-size: 13px;
+}
+.diagnostic-device-auth-status {
+  display: block;
+  margin: 3px 0;
+  font-size: 17px;
+}
+.diagnostic-provision {
+  appearance: none;
+  min-width: 190px;
+  border: 1px solid #9ee8ff;
+  border-radius: 8px;
+  background: transparent;
+  color: #eef6ff;
+  padding: 12px 18px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.diagnostic-provision:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
 .diagnostic-results { display: flex; flex-direction: column; gap: 12px; }
 .diagnostic-empty {
   padding: 40px 20px;

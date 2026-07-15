@@ -84,6 +84,7 @@ jobs:
           node scripts/v2-qr-scanner-test.mjs
           node scripts/v2-serial-protocol-test.mjs
           node scripts/v2-state-recovery-test.mjs
+          node scripts/v2-native-device-auth-test.mjs
           node scripts/v2-smoke-test.mjs
           node scripts/v2-postgres-smoke-test.mjs
 
@@ -101,10 +102,28 @@ jobs:
             scripts/Rs485FrameParserTest.java
           java -cp "$output_dir" Rs485FrameParserTest
 
+      - name: Test native device auth contract
+        run: |
+          output_dir="$(mktemp -d)"
+          trap 'rm -rf "$output_dir"' EXIT
+          javac -d "$output_dir" \
+            android/app/src/main/java/com/preddita/entregaslocker/DeviceAuthContract.java \
+            scripts/DeviceAuthContractTest.java
+          java -cp "$output_dir" DeviceAuthContractTest
+
       - name: Audit production dependencies
         run: |
           npm audit --omit=dev --audit-level=high --prefix admin-online
           npm audit --omit=dev --audit-level=high --prefix web
+
+      - name: Reject bundled device credentials
+        run: |
+          if VITE_PREDDITA_DEVICE_KEY=ci-secret-must-not-bundle npm run build > /tmp/preddita-secret-guard.log 2>&1; then
+            echo "Production build accepted a bundled device credential." >&2
+            exit 1
+          fi
+          grep -q "must not be bundled" /tmp/preddita-secret-guard.log
+        working-directory: web
 
       - name: Build locker web assets
         run: npm run build

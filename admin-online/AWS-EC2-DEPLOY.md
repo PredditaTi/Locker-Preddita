@@ -97,5 +97,9 @@ Depois que o dominio estiver no ar, compile o APK apontando para a nuvem:
 ```powershell
 powershell -ExecutionPolicy Bypass -File "C:\Users\Usuario\Documents\App armário preddita\preddita-entregas-retiradas\scripts\build-online-release.ps1" `
   -ServerUrl "https://locker.preddita.com" `
-  -DeviceKey "a-mesma-chave-do-armario"
+  -LockerId "ks1062-aurora"
 ```
+
+O APK nao contem a chave. Depois de instalar, use `Provisionar conexao` no modo
+diagnostico do equipamento e informe a chave correspondente em
+`PREDDITA_DEVICE_KEYS`.

@@ -54,32 +54,56 @@ async function sha256Hex(value) {
   return bytesToHex(new Uint8Array(digest));
 }
 
-export async function createDeviceRequestAuthHeaders({
+export async function createDeviceRequestAuthPayload({
   method = 'GET',
   path,
   lockerId,
-  deviceKey,
   body = '',
   timestamp = Date.now(),
   nonce = createNonce(),
 }) {
   const normalizedLockerId = String(lockerId ?? '').trim();
-  const normalizedDeviceKey = String(deviceKey ?? '').trim();
   const bodyText = typeof body === 'string' ? body : body == null ? '' : JSON.stringify(body);
 
-  if (!normalizedLockerId || !normalizedDeviceKey) {
-    throw new Error('Locker e chave do dispositivo sao obrigatorios para assinar a requisicao.');
+  if (!normalizedLockerId) {
+    throw new Error('Locker obrigatorio para assinar a requisicao.');
   }
 
   const contentSha256 = await sha256Hex(bodyText);
+  const normalizedMethod = String(method || 'GET').toUpperCase();
+  const normalizedPath = normalizeDeviceRequestPath(path);
   const canonical = createDeviceRequestCanonical({
-    method,
-    path,
+    method: normalizedMethod,
+    path: normalizedPath,
     lockerId: normalizedLockerId,
     timestamp,
     nonce,
     contentSha256,
   });
+
+  return {
+    method: normalizedMethod,
+    path: normalizedPath,
+    lockerId: normalizedLockerId,
+    timestamp: String(timestamp),
+    nonce: String(nonce),
+    contentSha256,
+    canonical,
+    headers: {
+      'x-locker-id': normalizedLockerId,
+      'x-preddita-timestamp': String(timestamp),
+      'x-preddita-nonce': String(nonce),
+      'x-preddita-content-sha256': contentSha256,
+    },
+  };
+}
+
+export async function createDeviceRequestAuthHeaders(options) {
+  const normalizedDeviceKey = String(options?.deviceKey ?? '').trim();
+  if (!normalizedDeviceKey) {
+    throw new Error('Chave do dispositivo obrigatoria para assinar a requisicao.');
+  }
+  const payload = await createDeviceRequestAuthPayload(options);
   const signingKey = await getCrypto().subtle.importKey(
     'raw',
     encoder.encode(normalizedDeviceKey),
@@ -87,13 +111,10 @@ export async function createDeviceRequestAuthHeaders({
     false,
     ['sign']
   );
-  const signature = await getCrypto().subtle.sign('HMAC', signingKey, encoder.encode(canonical));
+  const signature = await getCrypto().subtle.sign('HMAC', signingKey, encoder.encode(payload.canonical));
 
   return {
-    'x-locker-id': normalizedLockerId,
-    'x-preddita-timestamp': String(timestamp),
-    'x-preddita-nonce': String(nonce),
-    'x-preddita-content-sha256': contentSha256,
+    ...payload.headers,
     'x-preddita-signature': `v1=${bytesToHex(new Uint8Array(signature))}`,
   };
 }

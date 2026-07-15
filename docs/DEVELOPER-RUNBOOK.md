@@ -143,21 +143,19 @@ cd web
 npm run dev -- --host 127.0.0.1 --port 5174
 ```
 
-## Build com Admin Online embutido no APK
+## Build com defaults do Admin Online
 
-Antes de gerar APK para o armario real, injete a URL e chave do dispositivo no
-build web:
+URL e `lockerId` podem preencher o dialogo de provisionamento. A chave nunca
+deve entrar no build web:
 
 ```powershell
 cd web
 $env:VITE_PREDDITA_REMOTE_URL="https://locker.example.com"
-$env:VITE_PREDDITA_DEVICE_KEY="cole-a-chave-do-device"
 $env:VITE_PREDDITA_LOCKER_ID="ks1062-aurora"
 $env:VITE_PREDDITA_DEVICE_AUTH_MODE="hmac"
-$env:VITE_PREDDITA_EDGE_APP_VERSION="2.0.11-lab"
+$env:VITE_PREDDITA_EDGE_APP_VERSION="2.0.12-lab"
 npm run build
 Remove-Item Env:VITE_PREDDITA_REMOTE_URL
-Remove-Item Env:VITE_PREDDITA_DEVICE_KEY
 Remove-Item Env:VITE_PREDDITA_LOCKER_ID
 Remove-Item Env:VITE_PREDDITA_DEVICE_AUTH_MODE
 Remove-Item Env:VITE_PREDDITA_EDGE_APP_VERSION
@@ -180,6 +178,10 @@ $apk = Join-Path (Get-Location) "android\app\build\outputs\apk\debug\app-debug.a
 & $adb shell am start -n com.preddita.entregaslocker/.MainActivity
 ```
 
+No equipamento, abra o modo diagnostico, toque em `Provisionar conexao` e
+informe a URL HTTPS, o `lockerId` e a chave individual cadastrada em
+`PREDDITA_DEVICE_KEYS` no servidor. A chave fica no Android Keystore.
+
 Ver versao instalada:
 
 ```powershell
@@ -196,7 +198,9 @@ Ver versao instalada:
 - O APK `release` foi assinado com a keystore de producao, nunca com a de debug.
 - `PREDDITA_ADMIN_TOKEN`, `PREDDITA_SUPER_ADMIN_TOKEN` e
   `PREDDITA_DEVICE_KEY` nao usam valores padrao.
-- `PREDDITA_DEVICE_AUTH_MODE=hmac` no servidor e no build do APK.
+- `PREDDITA_DEVICE_AUTH_MODE=hmac` no servidor e assinador nativo ativo no APK.
+- O build recusou `VITE_PREDDITA_DEVICE_KEY` e o equipamento aparece como
+  provisionado no modo diagnostico.
 - `PREDDITA_ALLOWED_ORIGINS` inclui o dominio do painel e
   `https://appassets.androidplatform.net`, usado pelo APK.
 - SMTP configurado e testado.

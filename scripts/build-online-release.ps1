@@ -2,9 +2,6 @@ param(
   [Parameter(Mandatory = $true)]
   [string]$ServerUrl,
 
-  [Parameter(Mandatory = $true)]
-  [string]$DeviceKey,
-
   [string]$LockerId = 'ks1062-aurora'
 )
 
@@ -17,8 +14,8 @@ $DeployScript = Join-Path $ScriptDir 'deploy.ps1'
 
 $env:Path = 'C:\Program Files\nodejs;' + $env:Path
 $env:VITE_PREDDITA_REMOTE_URL = $ServerUrl.TrimEnd('/')
-$env:VITE_PREDDITA_DEVICE_KEY = $DeviceKey
 $env:VITE_PREDDITA_LOCKER_ID = $LockerId
+Remove-Item Env:VITE_PREDDITA_DEVICE_KEY -ErrorAction SilentlyContinue
 
 Push-Location $WebDir
 try {
@@ -32,3 +29,4 @@ finally {
 }
 
 powershell -ExecutionPolicy Bypass -File $DeployScript build-release
+Write-Host 'APK gerado sem credencial. Provisione a chave no modo diagnostico do equipamento.'

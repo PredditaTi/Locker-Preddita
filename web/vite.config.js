@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 
 const KIOSK_CSP = [
@@ -28,15 +28,30 @@ const kioskCspPlugin = {
   },
 }
 
-export default defineConfig({
-  plugins: [react(), kioskCspPlugin],
-  base: './',          // caminhos relativos — essencial para WebView Android
-  build: {
-    outDir: '../android/app/src/main/assets/www',
-    emptyOutDir: true,
-    rollupOptions: {
-      output: {
-        manualChunks: undefined   // bundle único para WebView offline
+export function assertNoBundledDeviceCredential(value) {
+  if (String(value ?? '').trim()) {
+    throw new Error('VITE_PREDDITA_DEVICE_KEY must not be bundled; provision it through Android Keystore.')
+  }
+}
+
+export default defineConfig(({ command, mode }) => {
+  const env = loadEnv(mode, process.cwd(), '')
+  if (command === 'build') {
+    assertNoBundledDeviceCredential(
+      process.env.VITE_PREDDITA_DEVICE_KEY || env.VITE_PREDDITA_DEVICE_KEY
+    )
+  }
+
+  return {
+    plugins: [react(), kioskCspPlugin],
+    base: './',          // caminhos relativos — essencial para WebView Android
+    build: {
+      outDir: '../android/app/src/main/assets/www',
+      emptyOutDir: true,
+      rollupOptions: {
+        output: {
+          manualChunks: undefined   // bundle único para WebView offline
+        }
       }
     }
   }
