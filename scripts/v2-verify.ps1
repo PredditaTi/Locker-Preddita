@@ -34,6 +34,9 @@ Write-Host "[PREDDITA v2] Teste de correlacao do protocolo RS-485..."
 Write-Host "[PREDDITA v2] Teste de confirmacao fisica das portas..."
 & $node (Join-Path $root "scripts\v2-door-safety-test.mjs")
 
+Write-Host "[PREDDITA v2] Teste do assistente de comissionamento..."
+& $node (Join-Path $root "scripts\v2-commissioning-test.mjs")
+
 Write-Host "[PREDDITA v2] Teste do parser nativo de frames RS-485..."
 $javac = (Get-Command javac -ErrorAction Stop).Source
 $java = (Get-Command java -ErrorAction Stop).Source

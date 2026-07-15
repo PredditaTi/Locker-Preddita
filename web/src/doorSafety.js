@@ -1,7 +1,7 @@
 export const DOOR_READING_MAX_AGE_MS = 20_000;
 export const DEFAULT_SENSOR_POLARITY = 'zeroOpen';
 
-const VALID_OPERATIONS = new Set(['dropoff', 'pickup', 'remote-admin']);
+const VALID_OPERATIONS = new Set(['dropoff', 'pickup', 'remote-admin', 'commissioning']);
 const VALID_POLARITIES = new Set(['zeroOpen', 'zeroClosed']);
 
 function cleanText(value) {

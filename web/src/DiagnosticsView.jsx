@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import CommissioningPanel from './CommissioningPanel.jsx';
 import { runDiagnostics, summarize } from './diagnostics.js';
 import {
   getNativeDeviceAuthStatus,
@@ -11,7 +12,8 @@ import {
  * Renderiza como overlay full-screen (z-index alto), nao mexe no roteamento
  * do App. Pode ser fechada com o botao "Fechar" ou via API exposta no hook.
  */
-export default function DiagnosticsView({ lockerState, onClose }) {
+export default function DiagnosticsView({ lockerState, onClose, onCommissioningComplete }) {
+  const [mode, setMode] = useState('diagnostics');
   const [running, setRunning] = useState(false);
   const [suites, setSuites] = useState([]);
   const [startedAt, setStartedAt] = useState(null);
@@ -95,7 +97,9 @@ export default function DiagnosticsView({ lockerState, onClose }) {
       <header className="diagnostic-header">
         <div>
           <p className="diagnostic-eyebrow">Modo diagnostico</p>
-          <h1 className="diagnostic-title">Test agent embutido</h1>
+          <h1 className="diagnostic-title">
+            {mode === 'diagnostics' ? 'Test agent embutido' : 'Comissionamento do locker'}
+          </h1>
           <p className="diagnostic-subtitle">
             Locker {lockerState?.tenant?.lockerId || 'desconhecido'} · Board {lockerState?.deviceConfig?.board} · {lockerState?.deviceConfig?.doorCount} portas
           </p>
@@ -103,6 +107,17 @@ export default function DiagnosticsView({ lockerState, onClose }) {
         <button className="diagnostic-close" type="button" onClick={onClose}>Fechar</button>
       </header>
 
+      <nav className="diagnostic-mode-tabs" aria-label="Ferramentas tecnicas">
+        <button type="button" className={mode === 'diagnostics' ? 'is-active' : ''} onClick={() => setMode('diagnostics')}>
+          Diagnostico
+        </button>
+        <button type="button" className={mode === 'commissioning' ? 'is-active' : ''} onClick={() => setMode('commissioning')}>
+          Comissionamento
+        </button>
+      </nav>
+
+      {mode === 'diagnostics' ? (
+      <>
       <section className={`diagnostic-summary diagnostic-summary--${overall}`}>
         <div>
           <strong className="diagnostic-summary-text">
@@ -200,6 +215,13 @@ export default function DiagnosticsView({ lockerState, onClose }) {
           </article>
         ))}
       </section>
+      </>
+      ) : (
+        <CommissioningPanel
+          lockerState={lockerState}
+          onComplete={onCommissioningComplete}
+        />
+      )}
 
       <textarea ref={reportRef} className="diagnostic-clipboard" readOnly />
     </div>

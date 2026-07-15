@@ -84,6 +84,7 @@ jobs:
           node scripts/v2-qr-scanner-test.mjs
           node scripts/v2-serial-protocol-test.mjs
           node scripts/v2-door-safety-test.mjs
+          node scripts/v2-commissioning-test.mjs
           node scripts/v2-state-recovery-test.mjs
           node scripts/AdminAuthTest.mjs
           node scripts/v2-native-device-auth-test.mjs

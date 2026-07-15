@@ -99,7 +99,9 @@ function deliveryStatusLabel(status) {
 }
 
 function doorSizeLabel(size) {
-  return size === 'G' ? 'Grande' : 'Pequena';
+  if (size === 'G') return 'Grande';
+  if (size === 'M') return 'Media';
+  return 'Pequena';
 }
 
 function doorSensorLabel(status) {
@@ -485,7 +487,8 @@ function renderStats() {
     <div class="grid stats">
       <article class="stat-card"><span class="muted">Apartamentos no painel</span><strong>${residents.length}</strong></article>
       <article class="stat-card"><span class="muted">No armario</span><strong>${deviceResidentCount}</strong></article>
-      <article class="stat-card"><span class="muted">Pequenas livres</span><strong>${escapeHtml(health.freeSmallDoorCount ?? doors.filter((door) => door.size !== 'G' && door.occupancy !== 'busy').length)}</strong></article>
+      <article class="stat-card"><span class="muted">Pequenas livres</span><strong>${escapeHtml(health.freeSmallDoorCount ?? doors.filter((door) => door.size === 'P' && door.occupancy !== 'busy').length)}</strong></article>
+      <article class="stat-card"><span class="muted">Medias livres</span><strong>${escapeHtml(health.freeMediumDoorCount ?? doors.filter((door) => door.size === 'M' && door.occupancy !== 'busy').length)}</strong></article>
       <article class="stat-card"><span class="muted">Grandes livres</span><strong>${escapeHtml(health.freeLargeDoorCount ?? doors.filter((door) => door.size === 'G' && door.occupancy !== 'busy').length)}</strong></article>
       <article class="stat-card"><span class="muted">Entregas ativas</span><strong>${activeDeliveries.length}</strong></article>
       <article class="stat-card"><span class="muted">Mais de 24h</span><strong>${escapeHtml(health.reminder24hCount ?? 0)}</strong></article>
@@ -516,6 +519,7 @@ function renderOverview() {
           <div><span class="muted">Serial</span><strong>${state.data.device?.serialOpen ? 'OK' : 'Falha'}</strong></div>
           <div><span class="muted">SMTP</span><strong>${health.smtpConfigured ? 'Configurado' : 'Pendente'}</strong></div>
           <div><span class="muted">Fila</span><strong>${escapeHtml(health.pendingCommandCount ?? 0)}</strong></div>
+          <div><span class="muted">Comissionamento</span><strong>${state.data.device?.commissioningStatus === 'complete' ? 'Concluido' : 'Pendente'}</strong></div>
         </div>
         ${renderSecurityWarnings()}
       </section>
@@ -530,6 +534,7 @@ function renderOverview() {
         </div>
         <p class="muted">Serial: ${escapeHtml(state.data.device?.serialPath || 'aguardando status')}</p>
         <p class="muted">App do armario: ${escapeHtml(state.data.device?.edgeAppVersion || 'aguardando versao')}</p>
+        <p class="muted">Acionamento: ${escapeHtml(state.data.device?.unlockTimeoutSeconds || '--')}s | Comissionamento: ${state.data.device?.commissioningStatus === 'complete' ? 'concluido' : 'pendente'}</p>
         <p class="muted">Ultimo sinal: ${escapeHtml(state.data.device?.lastSeenAt || 'sem leitura')}</p>
         <p class="muted">${escapeHtml(formatResidentSyncStatus())}</p>
       </section>
@@ -596,9 +601,11 @@ function renderPlatform() {
               <div class="locker-metrics">
                 <span>${escapeHtml(locker.freeDoorCount)} livres</span>
                 <span>${escapeHtml(locker.freeSmallDoorCount ?? 0)} pequenas livres</span>
+                <span>${escapeHtml(locker.freeMediumDoorCount ?? 0)} medias livres</span>
                 <span>${escapeHtml(locker.freeLargeDoorCount ?? 0)} grandes livres</span>
                 <span>${escapeHtml(locker.occupiedDoorCount)} ocupadas</span>
                 <span>${escapeHtml(locker.activeDeliveryCount)} entregas</span>
+                <span>Comissionamento ${locker.commissioningStatus === 'complete' ? 'concluido' : 'pendente'}</span>
                 <span>${escapeHtml(formatAge(locker.deviceAgeMs))}</span>
               </div>
             </article>
@@ -633,7 +640,8 @@ function renderDoors() {
   title.textContent = 'Portas e abertura remota';
   const doors = state.data.doors || [];
   const ready = isDeviceReady();
-  const smallFree = doors.filter((door) => door.size !== 'G' && door.occupancy !== 'busy').length;
+  const smallFree = doors.filter((door) => door.size === 'P' && door.occupancy !== 'busy').length;
+  const mediumFree = doors.filter((door) => door.size === 'M' && door.occupancy !== 'busy').length;
   const largeFree = doors.filter((door) => door.size === 'G' && door.occupancy !== 'busy').length;
   root.innerHTML = `
     ${ready ? '' : '<div class="message is-error">Armario sem confirmacao operacional recente. A abertura remota pode ficar pendente ate o dispositivo voltar a sincronizar.</div>'}
@@ -641,17 +649,18 @@ function renderDoors() {
     <section class="door-summary panel">
       <div>
         <p class="eyebrow">Mapa fisico</p>
-        <h3>Portas 1 e 2 grandes; demais pequenas</h3>
+        <h3>Mapa configurado no comissionamento do locker</h3>
       </div>
       <div class="door-summary-metrics">
         <span>${escapeHtml(largeFree)} grandes livres</span>
+        <span>${escapeHtml(mediumFree)} medias livres</span>
         <span>${escapeHtml(smallFree)} pequenas livres</span>
         <span>${escapeHtml(doors.filter((door) => door.occupancy === 'busy').length)} ocupadas</span>
       </div>
     </section>
     <div class="door-grid">
       ${doors.map((door) => `
-        <article class="door-card ${door.status === 'open' ? 'is-open' : ''} ${door.occupancy === 'busy' ? 'is-busy' : ''} ${door.size === 'G' ? 'is-large-door' : 'is-small-door'}">
+        <article class="door-card ${door.status === 'open' ? 'is-open' : ''} ${door.occupancy === 'busy' ? 'is-busy' : ''} ${door.size === 'G' ? 'is-large-door' : door.size === 'M' ? 'is-medium-door' : 'is-small-door'}">
           <div class="door-top">
             <h3 class="door-title">Porta ${escapeHtml(door.channel)}</h3>
             <span class="tag">${escapeHtml(doorSizeLabel(door.size))}</span>

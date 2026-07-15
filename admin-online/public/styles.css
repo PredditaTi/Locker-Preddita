@@ -548,6 +548,15 @@ input:focus {
   border-color: rgba(5, 135, 255, 0.3);
 }
 
+.door-card.is-medium-door {
+  border-color: rgba(181, 118, 0, 0.35);
+}
+
+.door-card.is-medium-door .tag {
+  color: #805800;
+  background: rgba(255, 212, 59, 0.2);
+}
+
 .door-card.is-small-door .tag {
   color: #0a7b67;
   background: rgba(10, 184, 149, 0.12);

@@ -6,6 +6,14 @@ import {
   normalizeDoorOpenCycle,
   normalizeSensorPolarity,
 } from './doorSafety.js';
+import {
+  DEFAULT_UNLOCK_TIMEOUT_SECONDS,
+  buildCommissioningRecord,
+  createPendingCommissioning,
+  normalizeCommissioningRecord,
+  normalizeDoorSizes,
+  normalizeUnlockTimeoutSeconds,
+} from './commissioning.js';
 
 const STORAGE_KEY = 'preddita_entregas_locker_state_v1';
 const EDGE_SECRET = 'PREDDITA-EDGE-LOCAL-2025';
@@ -237,18 +245,29 @@ function ensureAuditTrail(items) {
     .slice(0, EVENT_LIMIT);
 }
 
-export function createDoorCatalog(doorCount = 24) {
+export function createDoorCatalog(doorCount = 24, configuredSizes = []) {
   const safeCount = clampNumber(doorCount, 1, 24, 24);
+  const doorSizes = normalizeDoorSizes(configuredSizes, safeCount);
 
   return Array.from({ length: safeCount }, (_, index) => {
     const channel = index + 1;
-    const size = channel <= 2 ? 'G' : 'P';
+    const size = doorSizes[index];
 
     return { channel, size, label: `Porta ${channel}` };
   });
 }
 
 export function createInitialState() {
+  const doorCount = 24;
+  const doorSizes = normalizeDoorSizes([], doorCount);
+  const deviceConfig = {
+    board: 1,
+    doorCount,
+    sensorPolarity: DEFAULT_SENSOR_POLARITY,
+    unlockTimeoutSeconds: DEFAULT_UNLOCK_TIMEOUT_SECONDS,
+    doorSizes,
+  };
+
   return {
     tenant: {
       id: 'tenant-demo',
@@ -257,9 +276,8 @@ export function createInitialState() {
       deviceLabel: 'Locker Entregas Torre Norte',
     },
     deviceConfig: {
-      board: 1,
-      doorCount: 24,
-      sensorPolarity: DEFAULT_SENSOR_POLARITY,
+      ...deviceConfig,
+      commissioning: createPendingCommissioning(deviceConfig),
     },
     recipients: [...DEMO_RECIPIENTS],
     remoteResidentsRevision: '',
@@ -283,13 +301,29 @@ export function loadLockerState() {
 
     const parsed = JSON.parse(rawValue);
     const fallback = createInitialState();
+    const board = clampNumber(parsed?.deviceConfig?.board, 1, 31, 1);
+    const doorCount = clampNumber(parsed?.deviceConfig?.doorCount, 1, 24, 24);
+    const sensorPolarity = normalizeSensorPolarity(parsed?.deviceConfig?.sensorPolarity);
+    const unlockTimeoutSeconds = normalizeUnlockTimeoutSeconds(
+      parsed?.deviceConfig?.unlockTimeoutSeconds
+    );
+    const doorSizes = normalizeDoorSizes(parsed?.deviceConfig?.doorSizes, doorCount);
+    const deviceConfig = {
+      board,
+      doorCount,
+      sensorPolarity,
+      unlockTimeoutSeconds,
+      doorSizes,
+    };
 
     return {
       tenant: parsed.tenant && typeof parsed.tenant === 'object' ? { ...fallback.tenant, ...parsed.tenant } : fallback.tenant,
       deviceConfig: {
-        board: clampNumber(parsed?.deviceConfig?.board, 1, 31, 1),
-        doorCount: clampNumber(parsed?.deviceConfig?.doorCount, 1, 24, 24),
-        sensorPolarity: normalizeSensorPolarity(parsed?.deviceConfig?.sensorPolarity),
+        ...deviceConfig,
+        commissioning: normalizeCommissioningRecord(
+          parsed?.deviceConfig?.commissioning,
+          deviceConfig,
+        ),
       },
       recipients: ensureRecipients(parsed.recipients),
       remoteResidentsRevision: cleanText(parsed.remoteResidentsRevision),
@@ -320,15 +354,78 @@ export function updateDeviceConfig(state, updates) {
   const sensorPolarity = normalizeSensorPolarity(
     updates?.sensorPolarity ?? state.deviceConfig.sensorPolarity
   );
+  const unlockTimeoutSeconds = normalizeUnlockTimeoutSeconds(
+    updates?.unlockTimeoutSeconds ?? state.deviceConfig.unlockTimeoutSeconds
+  );
+  const doorSizes = normalizeDoorSizes(
+    updates?.doorSizes ?? state.deviceConfig.doorSizes,
+    doorCount,
+  );
+  const nextDeviceConfig = {
+    board,
+    doorCount,
+    sensorPolarity,
+    unlockTimeoutSeconds,
+    doorSizes,
+  };
+  const currentDoorSizes = normalizeDoorSizes(state.deviceConfig.doorSizes, state.deviceConfig.doorCount);
+  const configurationChanged =
+    board !== state.deviceConfig.board ||
+    doorCount !== state.deviceConfig.doorCount ||
+    sensorPolarity !== normalizeSensorPolarity(state.deviceConfig.sensorPolarity) ||
+    unlockTimeoutSeconds !== normalizeUnlockTimeoutSeconds(state.deviceConfig.unlockTimeoutSeconds) ||
+    doorSizes.some((size, index) => size !== currentDoorSizes[index]);
+  const commissioning = configurationChanged
+    ? createPendingCommissioning(nextDeviceConfig)
+    : normalizeCommissioningRecord(state.deviceConfig.commissioning, nextDeviceConfig);
 
   return withEvent(
     {
       ...state,
-      deviceConfig: { board, doorCount, sensorPolarity },
+      deviceConfig: { ...nextDeviceConfig, commissioning },
     },
     'config',
     `Configuracao aplicada: board ${board} com ${doorCount} portas.`,
-    { board, doorCount, sensorPolarity }
+    { board, doorCount, sensorPolarity, unlockTimeoutSeconds }
+  );
+}
+
+export function applyDeviceCommissioning(state, payload = {}) {
+  const board = clampNumber(payload.board, 1, 31, state.deviceConfig.board);
+  const doorCount = clampNumber(payload.doorCount, 1, 24, state.deviceConfig.doorCount);
+  const sensorPolarity = normalizeSensorPolarity(payload.sensorPolarity);
+  const unlockTimeoutSeconds = normalizeUnlockTimeoutSeconds(payload.unlockTimeoutSeconds);
+  const doorSizes = normalizeDoorSizes(payload.doorSizes, doorCount);
+  const commissioning = buildCommissioningRecord({
+    ...payload,
+    board,
+    doorCount,
+    sensorPolarity,
+    unlockTimeoutSeconds,
+    doorSizes,
+  });
+
+  return withEvent(
+    {
+      ...state,
+      deviceConfig: {
+        board,
+        doorCount,
+        sensorPolarity,
+        unlockTimeoutSeconds,
+        doorSizes,
+        commissioning,
+      },
+    },
+    'commissioning-complete',
+    `Comissionamento concluido: ${doorCount} portas validadas no board ${board}.`,
+    {
+      board,
+      doorCount,
+      sensorPolarity,
+      unlockTimeoutSeconds,
+      completedAt: commissioning.completedAt,
+    },
   );
 }
 
@@ -435,7 +532,9 @@ export async function reserveDelivery(state, payload) {
     throw new Error('Escolha o tamanho do volume antes de abrir a porta.');
   }
 
-  const catalog = Array.isArray(payload.doorCatalog) && payload.doorCatalog.length > 0 ? payload.doorCatalog : createDoorCatalog(state.deviceConfig.doorCount);
+  const catalog = Array.isArray(payload.doorCatalog) && payload.doorCatalog.length > 0
+    ? payload.doorCatalog
+    : createDoorCatalog(state.deviceConfig.doorCount, state.deviceConfig.doorSizes);
   const assignedDoor = findAvailableDoor(state, size, catalog);
 
   if (!assignedDoor) {

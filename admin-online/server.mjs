@@ -17,7 +17,7 @@ const PUBLIC_DIR = join(ROOT_DIR, 'public');
 const DATA_DIR = process.env.PREDDITA_DATA_DIR ? normalize(process.env.PREDDITA_DATA_DIR) : join(ROOT_DIR, 'data');
 const DB_PATH = join(DATA_DIR, 'state.json');
 const BACKUP_DIR = join(DATA_DIR, 'backups');
-const APP_VERSION = '2.0.14-lab';
+const APP_VERSION = '2.0.15-lab';
 const SCHEMA_VERSION = 7;
 const DEFAULT_ADMIN_TOKEN = 'preddita-admin-local';
 const DEFAULT_SUPER_ADMIN_TOKEN = 'preddita-super-admin-local';
@@ -313,6 +313,11 @@ function doorSizeForChannel(channel) {
   return number === 1 || number === 2 ? 'G' : 'P';
 }
 
+function normalizeDoorSize(value, channel) {
+  const size = cleanText(value).toUpperCase();
+  return ['P', 'M', 'G'].includes(size) ? size : doorSizeForChannel(channel);
+}
+
 function isActiveDeliveryStatus(status) {
   return ['door_opened_for_dropoff', 'stored', 'pickup_opened'].includes(cleanText(status));
 }
@@ -425,7 +430,7 @@ function normalizeDoorRecord(door, fallbackDoor) {
     ...door,
     channel: safeChannel,
     label: cleanText(door?.label) || fallbackDoor.label,
-    size: doorSizeForChannel(safeChannel),
+    size: normalizeDoorSize(door?.size, safeChannel),
     status: cleanText(door?.status) || fallbackDoor.status,
     occupancy: cleanText(door?.occupancy) || fallbackDoor.occupancy,
     lastSeenAt: cleanText(door?.lastSeenAt),
@@ -831,7 +836,8 @@ function getRuntimeSummary(state) {
   const pendingCommands = commands.filter((command) => isActiveCommandStatus(command.status));
   const failedCommands = commands.filter((command) => command.status === 'failed').slice(0, 8);
   const largeDoors = doors.filter((door) => door.size === 'G');
-  const smallDoors = doors.filter((door) => door.size !== 'G');
+  const mediumDoors = doors.filter((door) => door.size === 'M');
+  const smallDoors = doors.filter((door) => door.size === 'P');
 
   return {
     appVersion: APP_VERSION,
@@ -849,8 +855,10 @@ function getRuntimeSummary(state) {
     occupiedDoorCount: doors.filter((door) => door.occupancy === 'busy').length,
     freeDoorCount: doors.filter((door) => door.occupancy !== 'busy').length,
     largeDoorCount: largeDoors.length,
+    mediumDoorCount: mediumDoors.length,
     smallDoorCount: smallDoors.length,
     freeLargeDoorCount: largeDoors.filter((door) => door.occupancy !== 'busy').length,
+    freeMediumDoorCount: mediumDoors.filter((door) => door.occupancy !== 'busy').length,
     freeSmallDoorCount: smallDoors.filter((door) => door.occupancy !== 'busy').length,
     failedCommands,
     smtpConfigured: isSmtpConfigured(),
@@ -878,11 +886,16 @@ function getLockerSummary(state) {
     serialPath: cleanText(state.device?.serialPath),
     bridgeVersion: cleanText(state.device?.bridgeVersion),
     edgeAppVersion: cleanText(state.device?.edgeAppVersion),
+    commissioningStatus: cleanText(state.device?.commissioningStatus) || 'pending',
+    commissionedAt: cleanText(state.device?.commissionedAt),
+    unlockTimeoutSeconds: Number.parseInt(state.device?.unlockTimeoutSeconds, 10) || 0,
     board: state.device?.board ?? 1,
     doorCount: doors.length || state.device?.doorCount || 0,
     largeDoorCount: runtime.largeDoorCount,
+    mediumDoorCount: runtime.mediumDoorCount,
     smallDoorCount: runtime.smallDoorCount,
     freeLargeDoorCount: runtime.freeLargeDoorCount,
+    freeMediumDoorCount: runtime.freeMediumDoorCount,
     freeSmallDoorCount: runtime.freeSmallDoorCount,
     occupiedDoorCount: runtime.occupiedDoorCount,
     freeDoorCount: runtime.freeDoorCount,
@@ -2626,7 +2639,7 @@ async function handleApi(request, response) {
       return {
         channel,
         label: cleanText(door.label) || `Porta ${channel}`,
-        size: doorSizeForChannel(channel),
+        size: normalizeDoorSize(door.size, channel),
         status: cleanText(door.status) || 'unknown',
         occupancy: door.delivery ? 'busy' : 'free',
         delivery: door.delivery ?? null,
