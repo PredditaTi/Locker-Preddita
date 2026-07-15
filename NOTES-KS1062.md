@@ -68,6 +68,19 @@ The Android sample code in the document reinforces these points:
 - `0` in the packed bitfield means open.
 - `1` means closed or no feedback signal.
 
+Field behavior and the manual conflict on the single-channel bytes. The
+installed controller was previously observed returning `0x00` while open and
+`0x11` while closed, the inverse of the Android sample. The app therefore has
+two explicit profiles:
+
+- `zeroOpen`: `0x00` open and `0x11` closed; current field default.
+- `zeroClosed`: `0x00` closed and `0x11` open; manual/sample profile.
+
+Do not choose a profile from documentation alone. During commissioning, read
+one channel while closed, open it, read it again, close it and read it a third
+time. Operations fail closed unless the app observes all three individual
+readings with valid checksums and different open/closed bytes.
+
 ## Practical app direction
 
 The front-end should therefore prioritize:

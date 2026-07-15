@@ -13,6 +13,7 @@
  */
 
 import Serial, {
+  normalizeSensorPolarity,
   parseHexFrame,
   parseResponse,
   validateFrame,
@@ -24,6 +25,7 @@ import {
   createInitialState,
   deliveryCanBeCollected,
   findAvailableDoor,
+  markDepositDoorOpened,
   reserveDelivery,
   resolvePickupRequest,
 } from './lockerWorkflow.js';
@@ -60,6 +62,34 @@ function makeRecipient() {
     phone: '',
     email: 'diagnostico@preddita.local',
   };
+}
+
+function confirmSimulatedDeposit(reservation) {
+  const baselineReadAt = '2026-07-15T12:00:00.000Z';
+  const openedAt = '2026-07-15T12:00:01.000Z';
+  const cycle = {
+    version: 1,
+    operation: 'dropoff',
+    channel: reservation.delivery.door,
+    sensorPolarity: 'zeroOpen',
+    closedStateByte: 0x11,
+    openStateByte: 0x00,
+    baselineReadAt,
+    openedAt,
+  };
+  const openedState = markDepositDoorOpened(
+    reservation.state,
+    reservation.delivery.id,
+    cycle
+  );
+  return confirmDeposit(openedState, reservation.delivery.id, {}, {
+    version: 1,
+    channel: reservation.delivery.door,
+    sensorPolarity: 'zeroOpen',
+    stateByte: 0x11,
+    openedAt,
+    closedAt: '2026-07-15T12:00:02.000Z',
+  });
 }
 
 function makeRunner(onProgress) {
@@ -136,7 +166,7 @@ async function suiteHardware(runner, options) {
   await runner.test('readAll devolve packed states de todas as portas', async () => {
     const r = await Serial.readAll(options.board, PROFILE);
     if (!r.ok) throw new Error(`falhou: ${r.error}`);
-    const parsed = parseResponse(r.hex);
+    const parsed = parseResponse(r.hex, { sensorPolarity: options.sensorPolarity });
     if (!parsed) throw new Error('resposta nao parseada');
     if (parsed.type !== 'all') throw new Error(`tipo inesperado: ${parsed.type}`);
     if (!parsed.validChecksum) throw new Error('BCC invalido na resposta packed');
@@ -152,7 +182,7 @@ async function suiteHardware(runner, options) {
     for (let ch = 1; ch <= limit; ch += 1) {
       const r = await Serial.readStatus(options.board, ch, PROFILE);
       if (r.ok) {
-        const parsed = parseResponse(r.hex);
+        const parsed = parseResponse(r.hex, { sensorPolarity: options.sensorPolarity });
         responses.push(`ch${ch}=${parsed?.state ?? parsed?.type ?? '??'}`);
       } else {
         responses.push(`ch${ch}=err(${r.error})`);
@@ -166,7 +196,9 @@ async function suiteHardware(runner, options) {
 
   await runner.test('Numero de portas reportado bate com config', async () => {
     const r = await Serial.readAll(options.board, PROFILE);
-    const parsed = r.ok ? parseResponse(r.hex) : null;
+    const parsed = r.ok
+      ? parseResponse(r.hex, { sensorPolarity: options.sensorPolarity })
+      : null;
     if (parsed?.type !== 'all') {
       throw new Error('readAll nao devolveu packed — nao da pra comparar');
     }
@@ -192,7 +224,11 @@ async function suiteCourier(runner, options) {
     ...createInitialState(),
     recipients: [recipient],
     deliveries: [],
-    deviceConfig: { board: options.board, doorCount: options.doorCount },
+    deviceConfig: {
+      board: options.board,
+      doorCount: options.doorCount,
+      sensorPolarity: options.sensorPolarity,
+    },
   };
   const catalog = createDoorCatalog(options.doorCount);
 
@@ -241,7 +277,7 @@ async function suiteCourier(runner, options) {
       packageSize: 'M',
       doorCatalog: catalog,
     });
-    const after = confirmDeposit(result.state, result.delivery.id);
+    const after = confirmSimulatedDeposit(result);
     const stored = after.deliveries.find((d) => d.id === result.delivery.id);
     assertEq(stored.status, 'stored', 'status apos confirm');
     assertEq(stored.notificationStatus, 'pending', 'notificacao deveria estar pending com e-mail');
@@ -290,7 +326,11 @@ async function suiteResident(runner, options) {
     ...createInitialState(),
     recipients: [recipient],
     deliveries: [],
-    deviceConfig: { board: options.board, doorCount: options.doorCount },
+    deviceConfig: {
+      board: options.board,
+      doorCount: options.doorCount,
+      sensorPolarity: options.sensorPolarity,
+    },
   };
   const catalog = createDoorCatalog(options.doorCount);
 
@@ -300,7 +340,7 @@ async function suiteResident(runner, options) {
     packageSize: 'M',
     doorCatalog: catalog,
   });
-  const stateWithStored = confirmDeposit(reserved.state, reserved.delivery.id);
+  const stateWithStored = confirmSimulatedDeposit(reserved);
 
   await runner.test('PIN correto autoriza retirada', () => {
     const r = resolvePickupRequest(stateWithStored, 'pin', reserved.delivery.pin);
@@ -390,6 +430,7 @@ async function suiteRemote(runner, options) {
           bridgeVersion: info.bridgeVersion,
           doorCount: options.doorCount,
           board: options.board,
+          sensorPolarity: options.sensorPolarity,
           edgeAppVersion: 'diagnostics',
         },
         doors: [],
@@ -412,6 +453,7 @@ export async function runDiagnostics(options, onProgress) {
   const safeOptions = {
     board: Number.isFinite(options?.board) ? options.board : 1,
     doorCount: Number.isFinite(options?.doorCount) ? options.doorCount : 24,
+    sensorPolarity: normalizeSensorPolarity(options?.sensorPolarity),
   };
   const runner = makeRunner(onProgress);
 

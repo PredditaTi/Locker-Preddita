@@ -8,11 +8,13 @@ import {
   createInitialState,
   findAvailableDoor,
   getDoorOccupancyMap,
+  markDepositDoorOpened,
   markPickupDoorOpened,
   releaseDoorOccupancy,
   reserveDelivery,
   resolvePickupRequest,
 } from '../web/src/lockerWorkflow.js';
+import { createPhysicalDoorProofs } from './door-safety-fixtures.mjs';
 import {
   applyBackspaceKey,
   applyDigitKey,
@@ -50,6 +52,21 @@ const baseState = {
   deviceConfig: { board: 1, doorCount: 10 },
   deliveries: [],
 };
+
+let physicalSequence = 0;
+function storeReservation(reservation, evidence = {}) {
+  const physical = createPhysicalDoorProofs(
+    reservation.delivery.door,
+    'dropoff',
+    physicalSequence++
+  );
+  const openedState = markDepositDoorOpened(
+    reservation.state,
+    reservation.delivery.id,
+    physical.cycle
+  );
+  return confirmDeposit(openedState, reservation.delivery.id, evidence, physical.closeProof);
+}
 
 const catalog = createDoorCatalog(10);
 const smallDoorCatalog = catalog.filter((door) => door.size === 'P');
@@ -202,7 +219,12 @@ const labelEvidence = {
   labelOcrConfidence: 1,
   labelProofRequired: true,
 };
-const storedSmallState = confirmDeposit(smallReservation.state, smallReservation.delivery.id, labelEvidence);
+await assert.rejects(
+  async () => confirmDeposit(smallReservation.state, smallReservation.delivery.id, labelEvidence),
+  /abertura fisica/,
+  'deposito sem prova de abertura deve ser bloqueado'
+);
+const storedSmallState = storeReservation(smallReservation, labelEvidence);
 const storedSmallDelivery = storedSmallState.deliveries.find((delivery) => delivery.id === smallReservation.delivery.id);
 assert.equal(storedSmallDelivery.labelPhotoDataUrl, labelEvidence.labelPhotoDataUrl, 'confirmacao deve persistir foto da etiqueta');
 assert.equal(storedSmallDelivery.labelOcrApartment, '101', 'confirmacao deve persistir apartamento validado pela etiqueta');
@@ -215,7 +237,12 @@ const pickupByQr = resolvePickupRequest(storedSmallState, 'predditaQr', smallRes
 assert.equal(pickupByQr.ok, true, 'QR PREDDITA gerado deve localizar entrega ativa');
 assert.equal(pickupByQr.delivery.id, smallReservation.delivery.id);
 
-const pickupOpenedState = markPickupDoorOpened(storedSmallState, smallReservation.delivery.id);
+const pickupPhysical = createPhysicalDoorProofs(smallReservation.delivery.door, 'pickup', physicalSequence++);
+const pickupOpenedState = markPickupDoorOpened(
+  storedSmallState,
+  smallReservation.delivery.id,
+  pickupPhysical.cycle
+);
 const pickupOpenedDelivery = pickupOpenedState.deliveries.find((delivery) => delivery.id === smallReservation.delivery.id);
 assert.equal(pickupOpenedDelivery.status, 'pickup_opened', 'retirada deve ficar pendente apos abrir a porta');
 assert.equal(
@@ -224,7 +251,16 @@ assert.equal(
   'porta deve continuar ocupada ate finalizar a retirada'
 );
 
-const pickupCompletedState = completePickup(pickupOpenedState, smallReservation.delivery.id);
+assert.throws(
+  () => completePickup(pickupOpenedState, smallReservation.delivery.id),
+  /fechamento fisico/,
+  'retirada sem prova de fechamento deve permanecer ocupada'
+);
+const pickupCompletedState = completePickup(
+  pickupOpenedState,
+  smallReservation.delivery.id,
+  pickupPhysical.closeProof
+);
 const pickupCompletedDelivery = pickupCompletedState.deliveries.find((delivery) => delivery.id === smallReservation.delivery.id);
 assert.equal(pickupCompletedDelivery.status, 'collected', 'retirada so libera apos confirmacao final');
 assert.equal(
@@ -236,7 +272,28 @@ assert.equal(
 const invalidQr = resolvePickupRequest(storedSmallState, 'predditaQr', 'qr-invalido');
 assert.equal(invalidQr.ok, false, 'QR fora do formato PREDDITA deve falhar sem excecao');
 
-const releasedState = releaseDoorOccupancy(storedSmallState, smallReservation.delivery.door, 'remote-admin');
+const remotePhysical = createPhysicalDoorProofs(
+  smallReservation.delivery.door,
+  'remote-admin',
+  physicalSequence++
+);
+const remotelyOpenedState = markPickupDoorOpened(
+  storedSmallState,
+  smallReservation.delivery.id,
+  remotePhysical.cycle,
+  { source: 'remote-admin' }
+);
+assert.throws(
+  () => releaseDoorOccupancy(remotelyOpenedState, smallReservation.delivery.door, 'remote-admin'),
+  /fechamento fisico/,
+  'abertura remota nao deve liberar ocupacao antes do fechamento'
+);
+const releasedState = releaseDoorOccupancy(
+  remotelyOpenedState,
+  smallReservation.delivery.door,
+  'remote-admin',
+  remotePhysical.closeProof
+);
 const releasedDelivery = releasedState.deliveries.find((delivery) => delivery.id === smallReservation.delivery.id);
 assert.equal(releasedDelivery.status, 'collected', 'abertura admin de porta ocupada deve liberar entrega');
 assert.equal(getDoorOccupancyMap(releasedState.deliveries)[smallReservation.delivery.door], undefined, 'porta liberada deve sair do mapa de ocupacao');
@@ -292,7 +349,7 @@ for (const largeDoor of largeDoorCatalog) {
     orderCode: `FILL-LARGE-${largeDoor.channel}`,
     doorCatalog: [largeDoor],
   });
-  noLargeDoorsState = confirmDeposit(reservation.state, reservation.delivery.id);
+  noLargeDoorsState = storeReservation(reservation);
 }
 assert.equal(
   findAvailableDoor(noLargeDoorsState, 'G', largeDoorCatalog),
@@ -314,7 +371,7 @@ for (const smallDoor of smallDoorCatalog) {
     orderCode: `FILL-SMALL-${smallDoor.channel}`,
     doorCatalog: [smallDoor],
   });
-  noSmallDoorsState = confirmDeposit(reservation.state, reservation.delivery.id);
+  noSmallDoorsState = storeReservation(reservation);
 }
 await assert.rejects(
   () => reserveDelivery(noSmallDoorsState, {

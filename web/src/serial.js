@@ -6,6 +6,13 @@
  *   2. Browser simulation with in-memory locker state
  */
 
+import {
+  DEFAULT_SENSOR_POLARITY,
+  normalizeSensorPolarity,
+} from './doorSafety.js';
+
+export { DEFAULT_SENSOR_POLARITY, normalizeSensorPolarity };
+
 const SIM_MIN_DOORS = 24;
 const DEFAULT_PROTOCOL = 'manual2025';
 const DEFAULT_ACTION_MODE = 'unlock';
@@ -22,6 +29,19 @@ export const HARDWARE_BACKENDS = {
     id: 'zysj',
     label: 'GPIO ZYSJ',
     description: 'Vendor system service for GPIO and output-channel diagnostics.',
+  },
+};
+
+export const SENSOR_POLARITIES = {
+  zeroOpen: {
+    id: 'zeroOpen',
+    label: '0x00 aberta / 0x11 fechada',
+    description: 'Perfil observado no controlador instalado.',
+  },
+  zeroClosed: {
+    id: 'zeroClosed',
+    label: '0x00 fechada / 0x11 aberta',
+    description: 'Perfil descrito em algumas revisoes do manual KS1062.',
   },
 };
 
@@ -76,6 +96,7 @@ export const ACTION_MODES = {
 export const PROTOCOL_OPTIONS = Object.values(PROTOCOLS);
 export const ACTION_MODE_OPTIONS = Object.values(ACTION_MODES);
 export const HARDWARE_BACKEND_OPTIONS = Object.values(HARDWARE_BACKENDS);
+export const SENSOR_POLARITY_OPTIONS = Object.values(SENSOR_POLARITIES);
 
 const isNative = () => typeof window !== 'undefined' && !!window.Android;
 const getAndroidBridge = () =>
@@ -223,7 +244,7 @@ export function decodePackedStates(stateBytes, options = {}) {
   });
 }
 
-function parseSingleStateByte(command, stateByte) {
+function parseSingleStateByte(command, stateByte, sensorPolarity = DEFAULT_SENSOR_POLARITY) {
   if (stateByte === 0x33) {
     return {
       type: 'echo',
@@ -233,9 +254,11 @@ function parseSingleStateByte(command, stateByte) {
     };
   }
 
-  // Field validation on the installed controller shows 0x00 when the door sensor
-  // is really open and 0x11 when the door is closed.
-  if (stateByte === 0x00) {
+  const normalizedPolarity = normalizeSensorPolarity(sensorPolarity);
+  const openStateByte = normalizedPolarity === 'zeroClosed' ? 0x11 : 0x00;
+  const closedStateByte = normalizedPolarity === 'zeroClosed' ? 0x00 : 0x11;
+
+  if (stateByte === openStateByte) {
     return {
       type: 'single',
       state: 'open',
@@ -245,12 +268,12 @@ function parseSingleStateByte(command, stateByte) {
     };
   }
 
-  if (stateByte === 0x11) {
+  if (stateByte === closedStateByte) {
     return {
       type: 'single',
       state: 'closed',
-      detail: 'Fechada ou sem retorno de sensor',
-      ambiguous: true,
+      detail: 'Fechada confirmada pela leitura individual',
+      ambiguous: false,
       statusKnown: true,
     };
   }
@@ -277,7 +300,7 @@ function encodePackedStates(states) {
   return bytes;
 }
 
-export function parseResponse(hexString) {
+export function parseResponse(hexString, options = {}) {
   const bytes = parseHexFrame(hexString);
   if (bytes.length === 0) {
     return null;
@@ -288,7 +311,8 @@ export function parseResponse(hexString) {
   const validChecksum = validateFrame(bytes);
 
   if ([0x80, 0x8a, 0x9a, 0x9b].includes(command) && bytes.length === 5) {
-    const parsedState = parseSingleStateByte(command, bytes[3]);
+    const sensorPolarity = normalizeSensorPolarity(options.sensorPolarity);
+    const parsedState = parseSingleStateByte(command, bytes[3], sensorPolarity);
 
     if (parsedState.type === 'echo') {
       return {
@@ -299,6 +323,7 @@ export function parseResponse(hexString) {
         stateByte: bytes[3],
         detail: parsedState.detail,
         validChecksum,
+        sensorPolarity,
         bytes,
       };
     }
@@ -315,6 +340,7 @@ export function parseResponse(hexString) {
         ambiguous: parsedState.ambiguous,
         statusKnown: parsedState.statusKnown,
         validChecksum,
+        sensorPolarity,
         bytes,
       };
     }
@@ -327,6 +353,7 @@ export function parseResponse(hexString) {
       stateByte: bytes[3],
       detail: parsedState.detail,
       validChecksum,
+      sensorPolarity,
       bytes,
     };
   }

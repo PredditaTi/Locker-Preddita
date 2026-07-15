@@ -140,7 +140,7 @@ printf '\x8A\x01\x01\x33\xB9' > /dev/ttyS5
 timeout 1 cat /dev/ttyS1 | xxd
 # Resultado esperado:
 # 00000000: 8a01 0111 9b                     .....
-# (11 = aberta confirmada pela placa)
+# O byte aberto/fechado depende do perfil comissionado; valide os dois estados.
 ```
 
 **Se não tiver permissão na serial:**
@@ -231,6 +231,11 @@ Abrir o painel Admin → aba **Diagnóstico → RS-485 Terminal**:
 2. Clicar em **"Status canal"** → deve retornar `80 01 01 XX XX`
 3. Clicar em **"Abrir canal"** → trava física do canal 1 deve abrir
 4. Verificar **feedback ativo**: ligar e testar fechar a trava manualmente
+
+Antes de operar entregas, abra `Sistema` e selecione o perfil que corresponda
+as tres leituras individuais da mesma porta: fechada, aberta e fechada. O perfil
+de campo `zeroOpen` usa `0x00` aberta/`0x11` fechada; o perfil de manual
+`zeroClosed` usa o inverso. Nao publique o APK no armario sem repetir esse teste.
 
 ---
 

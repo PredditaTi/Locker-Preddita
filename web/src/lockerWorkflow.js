@@ -1,3 +1,12 @@
+import {
+  DEFAULT_SENSOR_POLARITY,
+  isValidDoorCloseProof,
+  isValidDoorOpenCycle,
+  normalizeDoorCloseProof,
+  normalizeDoorOpenCycle,
+  normalizeSensorPolarity,
+} from './doorSafety.js';
+
 const STORAGE_KEY = 'preddita_entregas_locker_state_v1';
 const EDGE_SECRET = 'PREDDITA-EDGE-LOCAL-2025';
 const EXPIRATION_HOURS = 72;
@@ -189,6 +198,20 @@ function ensureDeliveries(items) {
       cancelledAt: cleanText(delivery.cancelledAt),
       cancelReason: cleanText(delivery.cancelReason),
       expiresAt: cleanText(delivery.expiresAt),
+      dropoffDoorCycle: isValidDoorOpenCycle(delivery.dropoffDoorCycle, {
+        channel: delivery.door,
+        operation: 'dropoff',
+      }) ? normalizeDoorOpenCycle(delivery.dropoffDoorCycle) : null,
+      dropoffCloseProof: isValidDoorCloseProof(delivery.dropoffDoorCycle, delivery.dropoffCloseProof)
+        ? normalizeDoorCloseProof(delivery.dropoffCloseProof)
+        : null,
+      pickupDoorCycle: isValidDoorOpenCycle(delivery.pickupDoorCycle, {
+        channel: delivery.door,
+      }) ? normalizeDoorOpenCycle(delivery.pickupDoorCycle) : null,
+      pickupCloseProof: isValidDoorCloseProof(delivery.pickupDoorCycle, delivery.pickupCloseProof)
+        ? normalizeDoorCloseProof(delivery.pickupCloseProof)
+        : null,
+      pickupSource: cleanText(delivery.pickupSource),
       ...normalizeDeliveryEvidence(delivery),
       reminderLevel: clampNumber(delivery.reminderLevel, 0, 3, 0),
       reminderLastQueuedAt: cleanText(delivery.reminderLastQueuedAt),
@@ -236,6 +259,7 @@ export function createInitialState() {
     deviceConfig: {
       board: 1,
       doorCount: 24,
+      sensorPolarity: DEFAULT_SENSOR_POLARITY,
     },
     recipients: [...DEMO_RECIPIENTS],
     remoteResidentsRevision: '',
@@ -265,6 +289,7 @@ export function loadLockerState() {
       deviceConfig: {
         board: clampNumber(parsed?.deviceConfig?.board, 1, 31, 1),
         doorCount: clampNumber(parsed?.deviceConfig?.doorCount, 1, 24, 24),
+        sensorPolarity: normalizeSensorPolarity(parsed?.deviceConfig?.sensorPolarity),
       },
       recipients: ensureRecipients(parsed.recipients),
       remoteResidentsRevision: cleanText(parsed.remoteResidentsRevision),
@@ -292,15 +317,18 @@ export function persistLockerState(state) {
 export function updateDeviceConfig(state, updates) {
   const board = clampNumber(updates?.board ?? state.deviceConfig.board, 1, 31, state.deviceConfig.board);
   const doorCount = clampNumber(updates?.doorCount ?? state.deviceConfig.doorCount, 1, 24, state.deviceConfig.doorCount);
+  const sensorPolarity = normalizeSensorPolarity(
+    updates?.sensorPolarity ?? state.deviceConfig.sensorPolarity
+  );
 
   return withEvent(
     {
       ...state,
-      deviceConfig: { board, doorCount },
+      deviceConfig: { board, doorCount, sensorPolarity },
     },
     'config',
     `Configuracao aplicada: board ${board} com ${doorCount} portas.`,
-    { board, doorCount }
+    { board, doorCount, sensorPolarity }
   );
 }
 
@@ -458,6 +486,11 @@ export async function reserveDelivery(state, payload) {
     cancelledAt: '',
     cancelReason: '',
     expiresAt,
+    dropoffDoorCycle: null,
+    dropoffCloseProof: null,
+    pickupDoorCycle: null,
+    pickupCloseProof: null,
+    pickupSource: '',
     ...normalizeDeliveryEvidence(),
     reminderLevel: 0,
     reminderLastQueuedAt: '',
@@ -478,10 +511,47 @@ export async function reserveDelivery(state, payload) {
   return { state: nextState, delivery };
 }
 
-export function confirmDeposit(state, deliveryId, evidence = {}) {
+export function markDepositDoorOpened(state, deliveryId, cycle) {
+  const target = state.deliveries.find((delivery) => delivery.id === deliveryId);
+  if (!target) return state;
+  if (target.status !== 'door_opened_for_dropoff') {
+    throw new Error('A entrega nao esta aguardando deposito.');
+  }
+  if (!isValidDoorOpenCycle(cycle, { channel: target.door, operation: 'dropoff' })) {
+    throw new Error('A abertura fisica da porta nao foi confirmada pelo sensor.');
+  }
+
+  return withEvent(
+    {
+      ...state,
+      deliveries: state.deliveries.map((delivery) =>
+        delivery.id === deliveryId
+          ? { ...delivery, dropoffDoorCycle: normalizeDoorOpenCycle(cycle) }
+          : delivery
+      ),
+    },
+    'dropoff-door-opened',
+    `Abertura fisica confirmada na porta ${target.door}.`,
+    { deliveryId, door: target.door }
+  );
+}
+
+export function confirmDeposit(state, deliveryId, evidence = {}, closeProof = null) {
   const target = state.deliveries.find((delivery) => delivery.id === deliveryId);
   if (!target) {
     return state;
+  }
+  if (target.status !== 'door_opened_for_dropoff') {
+    throw new Error('A entrega nao esta aguardando confirmacao de deposito.');
+  }
+  if (!isValidDoorOpenCycle(target.dropoffDoorCycle, {
+    channel: target.door,
+    operation: 'dropoff',
+  })) {
+    throw new Error('A abertura fisica da porta nao foi registrada.');
+  }
+  if (!isValidDoorCloseProof(target.dropoffDoorCycle, closeProof)) {
+    throw new Error('O fechamento fisico da porta nao foi confirmado pelo sensor.');
   }
 
   const normalizedEvidence = normalizeDeliveryEvidence(evidence);
@@ -494,10 +564,11 @@ export function confirmDeposit(state, deliveryId, evidence = {}) {
           ? {
               ...delivery,
               status: 'stored',
-              depositedAt: delivery.depositedAt || nowIso(),
+              depositedAt: delivery.depositedAt || normalizeDoorCloseProof(closeProof).closedAt,
               notificationStatus: delivery.recipientEmail ? 'pending' : 'skipped',
               notificationRequestedAt: delivery.notificationRequestedAt || nowIso(),
               notificationError: delivery.recipientEmail ? '' : 'Apartamento sem e-mail cadastrado.',
+              dropoffCloseProof: normalizeDoorCloseProof(closeProof),
               ...normalizedEvidence,
             }
           : delivery
@@ -624,10 +695,16 @@ export function resolvePickupRequest(state, mode, rawValue) {
   return { ok: true, delivery };
 }
 
-export function markPickupDoorOpened(state, deliveryId) {
+export function markPickupDoorOpened(state, deliveryId, cycle, options = {}) {
   const target = state.deliveries.find((delivery) => delivery.id === deliveryId);
   if (!target) {
     return state;
+  }
+  if (!['stored', 'pickup_opened'].includes(target.status)) {
+    throw new Error('A entrega nao esta disponivel para retirada.');
+  }
+  if (!isValidDoorOpenCycle(cycle, { channel: target.door })) {
+    throw new Error('A abertura fisica da porta nao foi confirmada pelo sensor.');
   }
 
   return withEvent(
@@ -635,7 +712,14 @@ export function markPickupDoorOpened(state, deliveryId) {
       ...state,
       deliveries: state.deliveries.map((delivery) =>
         delivery.id === deliveryId
-          ? { ...delivery, status: 'pickup_opened', pickupOpenedAt: nowIso() }
+          ? {
+              ...delivery,
+              status: 'pickup_opened',
+              pickupOpenedAt: normalizeDoorOpenCycle(cycle).openedAt,
+              pickupDoorCycle: normalizeDoorOpenCycle(cycle),
+              pickupCloseProof: null,
+              pickupSource: cleanText(options.source) || 'local',
+            }
           : delivery
       ),
     },
@@ -645,10 +729,19 @@ export function markPickupDoorOpened(state, deliveryId) {
   );
 }
 
-export function completePickup(state, deliveryId) {
+export function completePickup(state, deliveryId, closeProof = null) {
   const target = state.deliveries.find((delivery) => delivery.id === deliveryId);
   if (!target) {
     return state;
+  }
+  if (target.status !== 'pickup_opened') {
+    throw new Error('A retirada nao esta aguardando fechamento da porta.');
+  }
+  if (!isValidDoorOpenCycle(target.pickupDoorCycle, { channel: target.door })) {
+    throw new Error('A abertura fisica da retirada nao foi registrada.');
+  }
+  if (!isValidDoorCloseProof(target.pickupDoorCycle, closeProof)) {
+    throw new Error('O fechamento fisico da porta nao foi confirmado pelo sensor.');
   }
 
   return withEvent(
@@ -656,7 +749,12 @@ export function completePickup(state, deliveryId) {
       ...state,
       deliveries: state.deliveries.map((delivery) =>
         delivery.id === deliveryId
-          ? { ...delivery, status: 'collected', collectedAt: nowIso() }
+          ? {
+              ...delivery,
+              status: 'collected',
+              collectedAt: normalizeDoorCloseProof(closeProof).closedAt,
+              pickupCloseProof: normalizeDoorCloseProof(closeProof),
+            }
           : delivery
       ),
     },
@@ -666,7 +764,7 @@ export function completePickup(state, deliveryId) {
   );
 }
 
-export function releaseDoorOccupancy(state, door, source = 'admin') {
+export function releaseDoorOccupancy(state, door, source = 'admin', closeProof = null) {
   const safeDoor = clampNumber(door, 1, 24, 0);
   const target = state.deliveries.find(
     (delivery) => delivery.door === safeDoor && ACTIVE_DOOR_STATUSES.has(delivery.status)
@@ -686,12 +784,11 @@ export function releaseDoorOccupancy(state, door, source = 'admin') {
           ? 'Porta liberada por abertura remota do administrador.'
           : 'Porta liberada antes da confirmacao de deposito.',
       }
-    : {
-        ...target,
-        status: 'collected',
-        pickupOpenedAt: target.pickupOpenedAt || nowIso(),
-        collectedAt: nowIso(),
-      };
+    : null;
+
+  if (!isUnfinishedDeposit) {
+    return completePickup(state, target.id, closeProof);
+  }
 
   return withEvent(
     {

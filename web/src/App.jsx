@@ -1,6 +1,7 @@
 import React, { startTransition, useDeferredValue, useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import Serial, {
+  SENSOR_POLARITY_OPTIONS,
   createCommandSet,
   decodePackedStates,
   formatHex,
@@ -21,13 +22,18 @@ import {
   getDoorOccupancyMap,
   loadLockerState,
   markDeliveryNotification,
+  markDepositDoorOpened,
   markPickupDoorOpened,
   persistLockerState,
-  releaseDoorOccupancy,
   reserveDelivery,
   resolvePickupRequest,
   updateDeviceConfig,
 } from './lockerWorkflow.js';
+import {
+  createDoorCloseProof,
+  createDoorOpenCycle,
+  validateDirectDoorReading,
+} from './doorSafety.js';
 import {
   AuditCard,
   DeliveryCard,
@@ -60,7 +66,6 @@ import {
   getCourierSuccessPresentation,
   getPickupEntryPresentation,
   isCompletePin,
-  isDoorClosedForCompletion,
   shouldShowCourierPickupCredential,
 } from './touchFlow.js';
 import {
@@ -90,7 +95,7 @@ const COMMANDS = createCommandSet(LOCKER_PROFILE);
 const DOORS_PER_PAGE = 8;
 const DOOR_COUNT_PRESETS = [8, 12, 16, 20, 24];
 const ADMIN_VIEWS = new Set(['admin', 'adminDeposit', 'adminPickup', 'doors', 'system']);
-const APP_VERSION = '2.0.13-lab';
+const APP_VERSION = '2.0.14-lab';
 const POPUP_BANNER_TITLES = new Set([
   'Porta pequena ainda aberta',
   'Sem porta grande disponivel',
@@ -216,6 +221,13 @@ function createDoorStates(doorCount) {
     channel: index + 1,
     status: 'unknown',
     detail: 'Aguardando leitura da placa.',
+    source: 'none',
+    stateByte: null,
+    statusKnown: false,
+    validChecksum: false,
+    ambiguous: true,
+    sensorPolarity: '',
+    readAt: '',
   }));
 }
 
@@ -227,11 +239,22 @@ function normalizeDoorStates(previous, nextDoorCount) {
 
   return Array.from({ length: nextDoorCount }, (_, index) => {
     const channel = index + 1;
-    return map[channel] ?? { channel, status: 'unknown', detail: 'Aguardando leitura da placa.' };
+    return map[channel] ?? {
+      channel,
+      status: 'unknown',
+      detail: 'Aguardando leitura da placa.',
+      source: 'none',
+      stateByte: null,
+      statusKnown: false,
+      validChecksum: false,
+      ambiguous: true,
+      sensorPolarity: '',
+      readAt: '',
+    };
   });
 }
 
-function mergeReadAll(previous, parsed, doorCount, alignment = 'right') {
+function mergeReadAll(previous, parsed, doorCount, alignment = 'right', sensorPolarity = 'zeroOpen') {
   if (!parsed || parsed.type !== 'all') {
     return normalizeDoorStates(previous, doorCount);
   }
@@ -248,6 +271,13 @@ function mergeReadAll(previous, parsed, doorCount, alignment = 'right') {
       channel: item.channel,
       status: item.state ?? 'unknown',
       detail: item.detail ?? 'Sem detalhe adicional.',
+      source: 'packed',
+      stateByte: null,
+      statusKnown: Boolean(item.state),
+      validChecksum: Boolean(parsed.validChecksum),
+      ambiguous: Boolean(item.ambiguous),
+      sensorPolarity,
+      readAt: new Date().toISOString(),
     };
     return accumulator;
   }, {});
@@ -258,6 +288,13 @@ function mergeReadAll(previous, parsed, doorCount, alignment = 'right') {
       channel,
       status: 'unknown',
       detail: 'Canal fora do retorno da leitura em bloco.',
+      source: 'none',
+      stateByte: null,
+      statusKnown: false,
+      validChecksum: false,
+      ambiguous: true,
+      sensorPolarity,
+      readAt: '',
     };
   });
 }
@@ -267,6 +304,12 @@ function markDoorStatesUnknown(previous, doorCount, detail = 'Sem resposta recen
     ...door,
     status: 'unknown',
     detail,
+    source: 'none',
+    stateByte: null,
+    statusKnown: false,
+    validChecksum: false,
+    ambiguous: true,
+    readAt: '',
   }));
 }
 
@@ -276,17 +319,56 @@ function getDoorState(doorStates, channel) {
       channel,
       status: 'unknown',
       detail: 'Sem leitura registrada.',
+      source: 'none',
+      stateByte: null,
+      statusKnown: false,
+      validChecksum: false,
+      ambiguous: true,
+      sensorPolarity: '',
+      readAt: '',
     }
   );
 }
 
-function filterDoorCatalogByPhysicalAvailability(catalog, doorStates) {
-  const hasAnyKnownReading = doorStates.some((door) => door.status === 'open' || door.status === 'closed');
-  if (!hasAnyKnownReading) {
-    return catalog;
+function createSingleDoorReading(parsed, readAt = new Date().toISOString()) {
+  if (parsed?.type !== 'single') {
+    return null;
   }
 
-  return catalog.filter((door) => getDoorState(doorStates, door.channel).status !== 'open');
+  return {
+    channel: parsed.channel,
+    status: parsed.state ?? 'unknown',
+    detail: parsed.detail ?? 'Sem detalhe adicional.',
+    source: 'single',
+    stateByte: Number.isInteger(parsed.stateByte) ? parsed.stateByte : null,
+    statusKnown: Boolean(parsed.statusKnown),
+    validChecksum: Boolean(parsed.validChecksum),
+    ambiguous: Boolean(parsed.ambiguous),
+    sensorPolarity: parsed.sensorPolarity ?? '',
+    readAt,
+  };
+}
+
+function createUnknownDoorReading(channel, sensorPolarity, detail) {
+  return {
+    channel,
+    status: 'unknown',
+    detail,
+    source: 'none',
+    stateByte: null,
+    statusKnown: false,
+    validChecksum: false,
+    ambiguous: true,
+    sensorPolarity,
+    readAt: '',
+  };
+}
+
+function filterDoorCatalogByPhysicalAvailability(catalog, doorStates) {
+  return catalog.filter((door) => {
+    const reading = getDoorState(doorStates, door.channel);
+    return validateDirectDoorReading(reading, 'closed', { channel: door.channel }).ok;
+  });
 }
 
 function buildDoorPresentation(door, physicalState, delivery) {
@@ -343,6 +425,7 @@ export default function App() {
   const [deviceForm, setDeviceForm] = useState({
     board: String(initialState.deviceConfig.board),
     doorCount: String(initialState.deviceConfig.doorCount),
+    sensorPolarity: initialState.deviceConfig.sensorPolarity,
   });
   const [deliveryForm, setDeliveryForm] = useState({
     courierName: 'Portaria principal',
@@ -358,6 +441,7 @@ export default function App() {
   const doorStatesRef = useRef(doorStates);
   const syncInFlightRef = useRef(false);
   const remoteInFlightRef = useRef(false);
+  const remoteCloseInFlightRef = useRef(false);
   const deviceEventsInFlightRef = useRef(false);
   const courierOpenInFlightRef = useRef(false);
   const smallCloseCancelRef = useRef(false);
@@ -416,10 +500,15 @@ export default function App() {
     setDeviceForm({
       board: String(lockerState.deviceConfig.board),
       doorCount: String(lockerState.deviceConfig.doorCount),
+      sensorPolarity: lockerState.deviceConfig.sensorPolarity,
     });
     setDoorStates((previous) => normalizeDoorStates(previous, lockerState.deviceConfig.doorCount));
     packedAlignmentRef.current = 'auto';
-  }, [lockerState.deviceConfig.board, lockerState.deviceConfig.doorCount]);
+  }, [
+    lockerState.deviceConfig.board,
+    lockerState.deviceConfig.doorCount,
+    lockerState.deviceConfig.sensorPolarity,
+  ]);
 
   function commitState(transformer) {
     startTransition(() => {
@@ -445,7 +534,11 @@ export default function App() {
 
     try {
       const result = await Serial.readAll(board, LOCKER_PROFILE);
-      const parsed = result.ok ? parseResponse(result.hex) : null;
+      const parsed = result.ok
+        ? parseResponse(result.hex, {
+            sensorPolarity: lockerStateRef.current.deviceConfig.sensorPolarity,
+          })
+        : null;
       setHardwareInfo(Serial.getHardwareInfo());
 
       if (result.ok && parsed?.type === 'all') {
@@ -460,7 +553,8 @@ export default function App() {
             previous,
             parsed,
             lockerState.deviceConfig.doorCount,
-            packedAlignment
+            packedAlignment,
+            lockerState.deviceConfig.sensorPolarity
           )
         );
         setLastSyncAt(new Date().toISOString());
@@ -513,14 +607,17 @@ export default function App() {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [lockerState.deviceConfig.board, lockerState.deviceConfig.doorCount, isBusy]);
+  }, [
+    lockerState.deviceConfig.board,
+    lockerState.deviceConfig.doorCount,
+    lockerState.deviceConfig.sensorPolarity,
+    isBusy,
+  ]);
 
   const doorCatalog = createDoorCatalog(lockerState.deviceConfig.doorCount);
   const availableDoorCatalog = filterDoorCatalogByPhysicalAvailability(doorCatalog, doorStates);
   const smallDoorCatalog = doorCatalog.filter((door) => door.size === 'P');
   const largeDoorCatalog = doorCatalog.filter((door) => door.size === 'G');
-  const availableSmallDoorCatalog = availableDoorCatalog.filter((door) => door.size === 'P');
-  const availableLargeDoorCatalog = availableDoorCatalog.filter((door) => door.size === 'G');
   const occupancyMap = getDoorOccupancyMap(lockerState.deliveries);
   const selectedRecipient = lockerState.recipients.find((recipient) => recipient.id === selectedRecipientId) ?? null;
   const filteredRecipients = lockerState.recipients.filter((recipient) => {
@@ -696,11 +793,12 @@ export default function App() {
       reason: outcome.reason || '',
       status: outcome.ok ? 'opened' : 'failed',
       message: successText,
+      physicalCycle: outcome.cycle ?? null,
     });
   }
 
-  async function actuateDoor(channel, successText) {
-    const board = lockerState.deviceConfig.board;
+  async function actuateDoor(channel, successText, operation) {
+    const board = lockerStateRef.current.deviceConfig.board;
     setIsBusy(true);
     setLastPreview(formatHex(COMMANDS.unlock(board, channel)));
 
@@ -709,81 +807,59 @@ export default function App() {
         queueDoorOpenedEvent(channel, outcome, successText);
         return outcome;
       };
-      const result = await Serial.unlock(board, channel, LOCKER_PROFILE);
-      const parsed = result.ok ? parseResponse(result.hex) : null;
-      if (parsed?.type === 'single') {
-        setDoorStates((previous) =>
-          previous.map((door) =>
-            door.channel === channel
-              ? { ...door, status: parsed.state ?? door.status, detail: parsed.detail ?? door.detail }
-              : door
-          )
-        );
-      }
-      await wait(550);
-      const confirmation = await Serial.readStatus(board, channel, LOCKER_PROFILE);
-      const confirmationParsed = confirmation.ok ? parseResponse(confirmation.hex) : null;
-      if (confirmationParsed?.type === 'single') {
-        setDoorStates((previous) =>
-          previous.map((door) =>
-            door.channel === channel
-              ? {
-                  ...door,
-                  status: confirmationParsed.state ?? door.status,
-                  detail: confirmationParsed.detail ?? door.detail,
-                }
-              : door
-          )
-        );
-      }
-      await syncHardwareStatus({ silent: true });
-
-      if (confirmationParsed?.type === 'single' && confirmationParsed.state === 'open') {
-        setBanner({ tone: 'success', title: `Porta ${channel} acionada`, text: successText });
-        return rememberOpened({
-          ok: true,
-          confirmed: true,
-          reason: 'confirmed',
-        });
-      }
-
-      if (!result.ok) {
-        if (result.error === 'TIMEOUT') {
-          return rememberOpened({
-            ok: true,
-            confirmed: false,
-            reason: 'timeout',
-          });
-        }
-
-        setBanner({
-          tone: 'danger',
-          title: 'Comando RS-485 falhou',
-          text: `A abertura da porta ${channel} nao foi confirmada: ${result.error}`,
-        });
-        return {
+      const baselineReading = await readDoorPhysicalStatus(channel);
+      const baseline = validateDirectDoorReading(baselineReading, 'closed', { channel });
+      if (!baseline.ok) {
+        const outcome = {
           ok: false,
           confirmed: false,
-          reason: 'error',
-          error: result.error,
+          reason: `unsafe-precondition:${baseline.reason}`,
+          error: 'A porta precisa estar fechada e responder ao sensor antes da abertura.',
         };
-      }
-
-      if (parsed?.type === 'single' && parsed.state === 'open') {
-        setBanner({ tone: 'success', title: `Porta ${channel} acionada`, text: successText });
-        return rememberOpened({
-          ok: true,
-          confirmed: true,
-          reason: 'echo-open',
+        setBanner({
+          tone: 'danger',
+          title: `Porta ${channel} indisponivel`,
+          text: 'A leitura individual nao confirmou que a porta esta fechada. Verifique o sensor e tente novamente.',
         });
+        return rememberOpened(outcome);
       }
 
-      setBanner({ tone: 'success', title: `Porta ${channel} acionada`, text: successText });
-      return rememberOpened({
+      const result = await Serial.unlock(board, channel, LOCKER_PROFILE);
+      let cycleResult = null;
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        await wait(attempt === 0 ? 450 : 350);
+        const openReading = await readDoorPhysicalStatus(channel);
+        cycleResult = createDoorOpenCycle(baseline.reading, openReading, operation);
+        if (cycleResult.ok) break;
+      }
+
+      if (!cycleResult?.ok) {
+        const outcome = {
+          ok: false,
+          confirmed: false,
+          reason: result.ok
+            ? `open-not-confirmed:${cycleResult?.reason || 'no-reading'}`
+            : `unlock-${String(result.error || 'error').toLowerCase()}:${cycleResult?.reason || 'no-reading'}`,
+          error: result.ok
+            ? 'O sensor nao confirmou a transicao de fechada para aberta.'
+            : `O comando retornou ${result.error} e o sensor nao confirmou a abertura.`,
+        };
+        setBanner({
+          tone: 'danger',
+          title: `Abertura da porta ${channel} nao confirmada`,
+          text: 'O fluxo foi interrompido porque o sensor nao confirmou a abertura. Verifique a porta antes de tentar novamente.',
+        });
+        return rememberOpened(outcome);
+      }
+
+      const outcome = {
         ok: true,
-        confirmed: false,
-        reason: 'unverified',
-      });
+        confirmed: true,
+        reason: 'physical-cycle-opened',
+        cycle: cycleResult.cycle,
+      };
+      setBanner({ tone: 'success', title: `Porta ${channel} acionada`, text: successText });
+      return rememberOpened(outcome);
     } finally {
       setIsBusy(false);
     }
@@ -791,27 +867,36 @@ export default function App() {
 
   async function readDoorPhysicalStatus(channel) {
     const board = lockerStateRef.current.deviceConfig.board;
+    const sensorPolarity = lockerStateRef.current.deviceConfig.sensorPolarity;
     const result = await Serial.readStatus(board, channel, LOCKER_PROFILE);
-    const parsed = result.ok ? parseResponse(result.hex) : null;
+    const parsed = result.ok ? parseResponse(result.hex, { sensorPolarity }) : null;
+    const reading = createSingleDoorReading(parsed);
 
-    if (parsed?.type === 'single') {
+    if (reading && parsed.board === board && parsed.channel === channel) {
       setDoorStates((previous) => {
         const nextStates = previous.map((door) =>
-          door.channel === channel
-            ? { ...door, status: parsed.state ?? door.status, detail: parsed.detail ?? door.detail }
-            : door
+          door.channel === channel ? reading : door
         );
         doorStatesRef.current = nextStates;
         return nextStates;
       });
-      return parsed.state ?? 'unknown';
+      return reading;
     }
 
-    await syncHardwareStatus({ silent: true });
-    return getDoorState(doorStatesRef.current, channel).status;
+    const unknown = createUnknownDoorReading(
+      channel,
+      sensorPolarity,
+      result.ok ? 'Resposta individual invalida da placa.' : `Sem resposta individual: ${result.error}`
+    );
+    setDoorStates((previous) => {
+      const nextStates = previous.map((door) => door.channel === channel ? unknown : door);
+      doorStatesRef.current = nextStates;
+      return nextStates;
+    });
+    return unknown;
   }
 
-  async function waitForDoorClosed(channel, options = {}) {
+  async function waitForDoorClosed(channel, cycle, options = {}) {
     const timeoutMs =
       typeof options === 'number' ? options : options.timeoutMs ?? SMALL_DOOR_CLOSE_TIMEOUT_MS;
     const onTick = typeof options === 'object' && typeof options.onTick === 'function' ? options.onTick : null;
@@ -821,38 +906,34 @@ export default function App() {
 
     while (Date.now() < deadline) {
       if (isCancelled?.()) {
-        return 'cancelled';
+        return { status: 'cancelled', proof: null };
       }
-      const status = await readDoorPhysicalStatus(channel);
-      if (status === 'closed') {
+      const reading = await readDoorPhysicalStatus(channel);
+      const closeResult = createDoorCloseProof(cycle, reading);
+      if (closeResult.ok) {
         onTick?.(0);
-        return 'closed';
+        return { status: 'closed', proof: closeResult.proof };
       }
       onTick?.(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
       await wait(SMALL_DOOR_CLOSE_POLL_MS);
     }
 
-    return isCancelled?.() ? 'cancelled' : 'timeout';
+    return { status: isCancelled?.() ? 'cancelled' : 'timeout', proof: null };
   }
 
-  async function waitForCompletionDoorClosed(channel, messages = {}) {
-    const currentStatus = getDoorState(doorStatesRef.current, channel).status;
-    if (isDoorClosedForCompletion(currentStatus)) {
-      return true;
-    }
-
+  async function waitForCompletionDoorClosed(channel, cycle, messages = {}) {
     setBanner({
       tone: 'success',
       title: messages.waitingTitle || 'Feche a porta',
       text: messages.waitingText || `Feche a porta ${channel} para concluir a operacao com seguranca.`,
     });
 
-    const finalStatus = await waitForDoorClosed(channel, {
+    const finalResult = await waitForDoorClosed(channel, cycle, {
       timeoutMs: messages.timeoutMs ?? DOOR_COMPLETION_CLOSE_TIMEOUT_MS,
     });
 
-    if (isDoorClosedForCompletion(finalStatus)) {
-      return true;
+    if (finalResult.status === 'closed') {
+      return finalResult.proof;
     }
 
     setBanner({
@@ -860,7 +941,25 @@ export default function App() {
       title: messages.timeoutTitle || 'Porta ainda aberta',
       text: messages.timeoutText || `A porta ${channel} ainda nao apareceu como fechada. Feche a porta e toque novamente para concluir.`,
     });
-    return false;
+    return null;
+  }
+
+  async function findPhysicallySafeAvailableDoor(state, packageSize, catalog) {
+    let remainingCatalog = [...catalog];
+
+    while (remainingCatalog.length > 0) {
+      const candidate = findAvailableDoor(state, packageSize, remainingCatalog);
+      if (!candidate) return null;
+
+      const reading = await readDoorPhysicalStatus(candidate.channel);
+      if (validateDirectDoorReading(reading, 'closed', { channel: candidate.channel }).ok) {
+        return candidate;
+      }
+
+      remainingCatalog = remainingCatalog.filter((door) => door.channel !== candidate.channel);
+    }
+
+    return null;
   }
 
   async function resolvePackedAlignment(parsed) {
@@ -882,7 +981,11 @@ export default function App() {
     const channelsToProbe = Math.min(3, doorCount);
     for (let channel = 1; channel <= channelsToProbe; channel += 1) {
       const probeResult = await Serial.readStatus(board, channel, LOCKER_PROFILE);
-      const probeParsed = probeResult.ok ? parseResponse(probeResult.hex) : null;
+      const probeParsed = probeResult.ok
+        ? parseResponse(probeResult.hex, {
+            sensorPolarity: lockerStateRef.current.deviceConfig.sensorPolarity,
+          })
+        : null;
       if (probeParsed?.type !== 'single') {
         continue;
       }
@@ -926,14 +1029,24 @@ export default function App() {
     }
 
     try {
-      const { state: nextState, delivery } = await reserveDelivery(lockerState, {
+      const currentState = lockerStateRef.current;
+      const safeDoor = await findPhysicallySafeAvailableDoor(
+        currentState,
+        deliveryForm.packageSize,
+        doorCatalog
+      );
+      if (!safeDoor) {
+        throw new Error('Nenhuma porta livre confirmou fechamento pelo sensor. Verifique o hardware.');
+      }
+
+      const { state: nextState, delivery } = await reserveDelivery(currentState, {
         recipientId: selectedRecipient.id,
         courierName: deliveryForm.courierName,
         orderCode: deliveryForm.orderCode,
         packageSize: deliveryForm.packageSize,
         externalCode: deliveryForm.externalCode,
         notes: deliveryForm.notes,
-        doorCatalog: availableDoorCatalog,
+        doorCatalog: [safeDoor],
       });
 
       setGeneratedDelivery(null);
@@ -943,7 +1056,8 @@ export default function App() {
 
       const opened = await actuateDoor(
         delivery.door,
-        `Compartimento pronto para o entregador armazenar a encomenda do ${getDeliveryUnitLabel(delivery)}.`
+        `Compartimento pronto para o entregador armazenar a encomenda do ${getDeliveryUnitLabel(delivery)}.`,
+        'dropoff'
       );
 
       if (!opened.ok) {
@@ -952,13 +1066,7 @@ export default function App() {
         return;
       }
 
-      if (!opened.confirmed) {
-        setBanner({
-          tone: 'warn',
-          title: `Porta ${delivery.door} sem confirmacao`,
-          text: 'O comando foi enviado, mas a placa nao confirmou. Se o compartimento abriu fisicamente, continue e confirme o item guardado.',
-        });
-      }
+      commitState((current) => markDepositDoorOpened(current, delivery.id, opened.cycle));
 
       setDeliveryForm((current) => ({ ...current, orderCode: '', packageSize: '', externalCode: '', notes: '' }));
     } catch (error) {
@@ -977,14 +1085,20 @@ export default function App() {
     setBanner(PUBLIC_READY_BANNER);
 
     try {
-      const { state: nextState, delivery } = await reserveDelivery(lockerStateRef.current, {
+      const currentState = lockerStateRef.current;
+      const safeDoor = await findPhysicallySafeAvailableDoor(currentState, 'P', smallDoorCatalog);
+      if (!safeDoor) {
+        throw new Error('Nenhuma porta pequena confirmou fechamento pelo sensor.');
+      }
+
+      const { state: nextState, delivery } = await reserveDelivery(currentState, {
         recipientId,
         courierName: deliveryForm.courierName,
         orderCode: deliveryForm.orderCode,
         packageSize: 'P',
         externalCode: deliveryForm.externalCode,
         notes: deliveryForm.notes,
-        doorCatalog: availableSmallDoorCatalog,
+        doorCatalog: [safeDoor],
       });
 
       commitState(nextState);
@@ -994,7 +1108,8 @@ export default function App() {
 
       const opened = await actuateDoor(
         delivery.door,
-        `Porta pequena liberada para o ${getDeliveryUnitLabel(delivery)}.`
+        `Porta pequena liberada para o ${getDeliveryUnitLabel(delivery)}.`,
+        'dropoff'
       );
 
       if (!opened.ok) {
@@ -1004,13 +1119,7 @@ export default function App() {
         return;
       }
 
-      if (!opened.confirmed) {
-        setBanner({
-          tone: 'warn',
-          title: `Porta ${delivery.door} acionada`,
-          text: 'Se a porta abriu, guarde o item ou escolha a opcao para usar uma porta grande.',
-        });
-      }
+      commitState((current) => markDepositDoorOpened(current, delivery.id, opened.cycle));
     } catch (_error) {
       setActiveDepositId('');
       setCourierStep('recipient');
@@ -1028,7 +1137,7 @@ export default function App() {
     if (!activeDeposit || isBusy) return;
 
     const previousDeposit = activeDeposit;
-    const availableLargeDoor = findAvailableDoor(lockerStateRef.current, 'G', availableLargeDoorCatalog);
+    const availableLargeDoor = findAvailableDoor(lockerStateRef.current, 'G', largeDoorCatalog);
     if (!availableLargeDoor) {
       setBanner({
         tone: 'warn',
@@ -1047,15 +1156,19 @@ export default function App() {
       text: `Feche a porta ${previousDeposit.door}. Assim que o sensor indicar fechada, uma porta grande sera aberta.`,
     });
 
-    const closed = await waitForDoorClosed(previousDeposit.door, {
+    const closed = await waitForDoorClosed(
+      previousDeposit.door,
+      previousDeposit.dropoffDoorCycle,
+      {
       timeoutMs: SMALL_DOOR_CLOSE_TIMEOUT_MS,
       onTick: setSmallCloseSecondsLeft,
       isCancelled: () => smallCloseCancelRef.current,
-    });
-    if (closed === 'cancelled') {
+      }
+    );
+    if (closed.status === 'cancelled') {
       return;
     }
-    if (closed !== 'closed') {
+    if (closed.status !== 'closed') {
       setCourierDepositStage('small');
       setSmallCloseSecondsLeft(0);
       setBanner({
@@ -1074,6 +1187,15 @@ export default function App() {
     );
 
     try {
+      const safeDoor = await findPhysicallySafeAvailableDoor(
+        stateAfterSmallCancel,
+        'G',
+        largeDoorCatalog
+      );
+      if (!safeDoor) {
+        throw new Error('Nenhuma porta grande confirmou fechamento pelo sensor.');
+      }
+
       const { state: nextState, delivery } = await reserveDelivery(stateAfterSmallCancel, {
         recipientId: previousDeposit.recipientId,
         courierName: previousDeposit.courierName,
@@ -1081,7 +1203,7 @@ export default function App() {
         packageSize: 'G',
         externalCode: previousDeposit.externalCode,
         notes: previousDeposit.notes,
-        doorCatalog: availableLargeDoorCatalog,
+        doorCatalog: [safeDoor],
       });
 
       commitState(nextState);
@@ -1090,7 +1212,8 @@ export default function App() {
 
       const opened = await actuateDoor(
         delivery.door,
-        `Porta grande liberada para o ${getDeliveryUnitLabel(delivery)}.`
+        `Porta grande liberada para o ${getDeliveryUnitLabel(delivery)}.`,
+        'dropoff'
       );
 
       if (!opened.ok) {
@@ -1100,13 +1223,7 @@ export default function App() {
         return;
       }
 
-      if (!opened.confirmed) {
-        setBanner({
-          tone: 'warn',
-          title: `Porta ${delivery.door} acionada`,
-          text: 'Se a porta abriu, guarde o item e toque em Item guardado.',
-        });
-      }
+      commitState((current) => markDepositDoorOpened(current, delivery.id, opened.cycle));
     } catch (_error) {
       commitState(stateAfterSmallCancel);
       setActiveDepositId('');
@@ -1132,14 +1249,18 @@ export default function App() {
     }
 
     try {
-      const doorClosed = await waitForCompletionDoorClosed(deliveryToConfirm.door, {
+      const closeProof = await waitForCompletionDoorClosed(
+        deliveryToConfirm.door,
+        deliveryToConfirm.dropoffDoorCycle,
+        {
         waitingTitle: 'Feche a porta para concluir',
         waitingText: `Feche a porta ${deliveryToConfirm.door}. Assim que o sensor confirmar, o PIN e o QR serao gerados.`,
         timeoutTitle: 'Porta ainda aberta',
         timeoutText: `A porta ${deliveryToConfirm.door} ainda nao apareceu como fechada. Feche a porta e toque em Item guardado novamente.`,
-      });
+        }
+      );
 
-      if (!doorClosed) {
+      if (!closeProof) {
         if (isCourierDeposit) {
           setCourierDepositStage(previousCourierStage);
         }
@@ -1151,10 +1272,11 @@ export default function App() {
       const confirmedDelivery = {
         ...deliveryToConfirm,
         status: 'stored',
-        depositedAt: deliveryToConfirm.depositedAt || notificationRequestedAt,
+        depositedAt: deliveryToConfirm.depositedAt || closeProof.closedAt,
         notificationStatus: deliveryToConfirm.recipientEmail ? 'pending' : 'skipped',
         notificationRequestedAt,
         notificationError: deliveryToConfirm.recipientEmail ? '' : 'Apartamento sem e-mail cadastrado.',
+        dropoffCloseProof: closeProof,
         ...labelEvidence,
       };
 
@@ -1166,7 +1288,7 @@ export default function App() {
       }
       commitState((current) =>
         markDeliveryNotification(
-          confirmDeposit(current, deliveryToConfirm.id, labelEvidence),
+          confirmDeposit(current, deliveryToConfirm.id, labelEvidence, closeProof),
           deliveryToConfirm.id,
           {
             status: confirmedDelivery.notificationStatus,
@@ -1450,21 +1572,18 @@ export default function App() {
     }
 
     const delivery = resolution.delivery;
-    const opened = await actuateDoor(delivery.door, `Porta ${delivery.door} aberta para retirada do ${getDeliveryUnitLabel(delivery)}.`);
+    const opened = await actuateDoor(
+      delivery.door,
+      `Porta ${delivery.door} aberta para retirada do ${getDeliveryUnitLabel(delivery)}.`,
+      'pickup'
+    );
     if (!opened.ok) return;
 
-    commitState((current) => markPickupDoorOpened(current, delivery.id));
+    commitState((current) =>
+      markPickupDoorOpened(current, delivery.id, opened.cycle, { source: 'local' })
+    );
     setActivePickupId(delivery.id);
     setPickupValue('');
-
-    if (!opened.confirmed) {
-      setBanner({
-        tone: 'warn',
-        title: 'Retirada liberada sem confirmacao da placa',
-        text: `O comando da porta ${delivery.door} foi enviado. Retire a encomenda e toque em Finalizar retirada para liberar o compartimento.`,
-      });
-      return;
-    }
 
     setBanner({
       tone: 'success',
@@ -1572,23 +1691,28 @@ export default function App() {
     setIsBusy(true);
 
     try {
-      const doorClosed = await waitForCompletionDoorClosed(pickupToComplete.door, {
+      const closeProof = await waitForCompletionDoorClosed(
+        pickupToComplete.door,
+        pickupToComplete.pickupDoorCycle,
+        {
         waitingTitle: 'Feche a porta',
         waitingText: `Feche a porta ${pickupToComplete.door}. Assim que o sensor confirmar, a retirada sera finalizada.`,
         timeoutTitle: 'Porta ainda aberta',
         timeoutText: `A porta ${pickupToComplete.door} ainda nao apareceu como fechada. Feche a porta e toque novamente para finalizar.`,
-      });
+        }
+      );
 
-      if (!doorClosed) {
+      if (!closeProof) {
         return;
       }
 
-      commitState((current) => completePickup(current, pickupToComplete.id));
+      commitState((current) => completePickup(current, pickupToComplete.id, closeProof));
       queueDeviceEvent('delivery-collected', {
         delivery: {
           ...pickupToComplete,
           status: 'collected',
-          collectedAt: new Date().toISOString(),
+          collectedAt: closeProof.closedAt,
+          pickupCloseProof: closeProof,
         },
         door: pickupToComplete.door,
         source: 'pickup-confirmed',
@@ -1618,13 +1742,14 @@ export default function App() {
     const nextState = updateDeviceConfig(lockerState, {
       board: deviceForm.board,
       doorCount: deviceForm.doorCount,
+      sensorPolarity: deviceForm.sensorPolarity,
     });
     commitState(nextState);
     setDoorPage(0);
     setBanner({
       tone: 'success',
       title: 'Configuracao aplicada',
-      text: `Board ${nextState.deviceConfig.board} com ${nextState.deviceConfig.doorCount} portas.`,
+      text: `Board ${nextState.deviceConfig.board} com ${nextState.deviceConfig.doorCount} portas e perfil de sensor aplicado.`,
     });
   }
 
@@ -1769,6 +1894,11 @@ export default function App() {
       cancelledAt: delivery.cancelledAt,
       cancelReason: delivery.cancelReason,
       expiresAt: delivery.expiresAt,
+      dropoffDoorCycle: delivery.dropoffDoorCycle,
+      dropoffCloseProof: delivery.dropoffCloseProof,
+      pickupDoorCycle: delivery.pickupDoorCycle,
+      pickupCloseProof: delivery.pickupCloseProof,
+      pickupSource: delivery.pickupSource,
     }));
   }
 
@@ -1917,6 +2047,7 @@ export default function App() {
         edgeAppVersion: APP_VERSION,
         board: lockerState.deviceConfig.board,
         doorCount: lockerState.deviceConfig.doorCount,
+        sensorPolarity: lockerState.deviceConfig.sensorPolarity,
         residentCount: lockerState.recipients.length,
         residentsSyncedAt: lockerState.residentsSyncedAt || '',
         remoteResidentsRevision: lockerState.remoteResidentsRevision || '',
@@ -2008,14 +2139,25 @@ export default function App() {
       });
       if (!execution) continue;
 
-      const opened = await actuateDoor(door, `Porta ${door} acionada por comando remoto do sindico.`);
-      const occupiedDelivery = lockerState.deliveries.find(
+      const opened = await actuateDoor(
+        door,
+        `Porta ${door} acionada por comando remoto do sindico.`,
+        'remote-admin'
+      );
+      const occupiedDelivery = lockerStateRef.current.deliveries.find(
         (delivery) =>
           delivery.door === door &&
           ['door_opened_for_dropoff', 'stored', 'pickup_opened'].includes(delivery.status)
       );
-      if (opened.ok && occupiedDelivery) {
-        commitState((current) => releaseDoorOccupancy(current, door, 'remote-admin'));
+      const pickupPendingClose = Boolean(
+        opened.ok && occupiedDelivery && ['stored', 'pickup_opened'].includes(occupiedDelivery.status)
+      );
+      if (pickupPendingClose) {
+        commitState((current) =>
+          markPickupDoorOpened(current, occupiedDelivery.id, opened.cycle, {
+            source: 'remote-admin',
+          })
+        );
       }
       const completion = {
         ok: opened.ok,
@@ -2023,8 +2165,10 @@ export default function App() {
         reason: opened.reason,
         executionId: execution.executionId,
         door,
-        releasedDoor: opened.ok && !!occupiedDelivery,
-        releasedDeliveryId: opened.ok && occupiedDelivery ? occupiedDelivery.id : '',
+        releasedDoor: false,
+        releasedDeliveryId: '',
+        pendingPhysicalClose: pickupPendingClose,
+        physicalOpenCycle: opened.cycle ?? null,
         at: new Date().toISOString(),
       };
       setRemoteCommandExecution(command.id, {
@@ -2033,6 +2177,54 @@ export default function App() {
         completedAt: completion.at,
       });
       await submitRemoteCommandCompletion(command.id, completion);
+    }
+  }
+
+  async function reconcileRemotePickupClosures() {
+    if (remoteCloseInFlightRef.current || isBusy) return false;
+
+    const delivery = lockerStateRef.current.deliveries.find(
+      (item) =>
+        item.status === 'pickup_opened' &&
+        item.pickupSource === 'remote-admin' &&
+        item.pickupDoorCycle
+    );
+    if (!delivery) return false;
+
+    remoteCloseInFlightRef.current = true;
+    try {
+      const reading = await readDoorPhysicalStatus(delivery.door);
+      const closeResult = createDoorCloseProof(delivery.pickupDoorCycle, reading);
+      if (!closeResult.ok) return false;
+
+      const completedDelivery = {
+        ...delivery,
+        status: 'collected',
+        collectedAt: closeResult.proof.closedAt,
+        pickupCloseProof: closeResult.proof,
+      };
+      commitState((current) => completePickup(current, delivery.id, closeResult.proof));
+      queueDeviceEvent(
+        'delivery-collected',
+        {
+          delivery: completedDelivery,
+          door: delivery.door,
+          source: 'remote-admin-physical-close',
+        },
+        {
+          id: buildDeliveryCollectedEventId(delivery.id),
+          occurredAt: closeResult.proof.closedAt,
+        }
+      );
+      void flushPendingDeviceEvents();
+      setBanner({
+        tone: 'success',
+        title: `Porta ${delivery.door} fechada`,
+        text: 'A abertura remota foi finalizada apos confirmacao fisica do sensor.',
+      });
+      return true;
+    } finally {
+      remoteCloseInFlightRef.current = false;
     }
   }
 
@@ -2068,6 +2260,7 @@ export default function App() {
       if (isBusy || remoteInFlightRef.current) return;
       remoteInFlightRef.current = true;
       try {
+        await reconcileRemotePickupClosures();
         await processRemoteBridge();
       } finally {
         remoteInFlightRef.current = false;
@@ -2973,6 +3166,22 @@ export default function App() {
                       <label className="field-label" htmlFor="door-count-input">Quantidade de portas</label>
                       <input id="door-count-input" className="text-input" type="number" min="1" max="24" value={deviceForm.doorCount} onChange={(event) => setDeviceForm((current) => ({ ...current, doorCount: event.target.value }))} />
                     </div>
+                    <div className="field">
+                      <label className="field-label" htmlFor="sensor-polarity-input">Polaridade do sensor</label>
+                      <select
+                        id="sensor-polarity-input"
+                        className="text-input"
+                        value={deviceForm.sensorPolarity}
+                        onChange={(event) => setDeviceForm((current) => ({
+                          ...current,
+                          sensorPolarity: event.target.value,
+                        }))}
+                      >
+                        {SENSOR_POLARITY_OPTIONS.map((option) => (
+                          <option key={option.id} value={option.id}>{option.label}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                   <div className="preset-row">
                     {DOOR_COUNT_PRESETS.map((count) => (
@@ -2993,7 +3202,7 @@ export default function App() {
                     <StatCard label="Serial" value={hardwareInfo.serialOpen ? 'OK' : 'Falha'} hint={hardwareInfo.serialOpen ? hardwareInfo.serialPath : 'Sem resposta'} />
                     <StatCard label="Bridge" value={trimCode(hardwareInfo.bridgeVersion)} hint="Camada nativa ativa." />
                     <StatCard label="Portas" value={lockerState.deviceConfig.doorCount} hint="Quantidade configurada." />
-                    <StatCard label="Leitura" value={lastSyncAt ? formatDateTime(lastSyncAt) : '--'} hint="Ultimo retorno valido." />
+                    <StatCard label="Sensor" value={lockerState.deviceConfig.sensorPolarity === 'zeroClosed' ? '0x00 fechada' : '0x00 aberta'} hint="Perfil individual ativo." />
                   </div>
                   <div className="preview-shell">Ultimo frame: {lastPreview || 'Nenhum frame enviado nesta sessao.'}</div>
                 </section>
