@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PREDDITA Admin Online</title>
+    <link rel="stylesheet" href="./styles.css?v=20260507-admin-207" />
+  </head>
+  <body>
+    <main class="admin-app">
+      <aside class="sidebar">
+        <div>
+          <p class="eyebrow">PREDDITA</p>
+          <h1 id="panel-name">Admin Online</h1>
+          <p id="panel-description" class="muted">Gestao remota do locker, apartamentos, portas e entregas.</p>
+        </div>
+        <nav id="nav-list" class="nav-list" aria-label="Navegacao principal"></nav>
+        <section class="login-card">
+          <label id="token-label" for="admin-token">Token de acesso</label>
+          <input id="admin-token" type="password" placeholder="preddita-admin-local" />
+          <button id="save-token" type="button">Salvar token</button>
+        </section>
+      </aside>
+
+      <section class="content-shell">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow" id="site-name">Residencial Aurora</p>
+            <h2 id="view-title">Resumo do locker</h2>
+          </div>
+          <div class="top-actions">
+            <span id="device-status" class="status-pill">Aguardando armario</span>
+            <button id="refresh-button" type="button">Atualizar</button>
+          </div>
+        </header>
+
+        <section id="message" class="message" hidden></section>
+        <section id="view-root" class="view-root"></section>
+      </section>
+    </main>
+
+    <template id="resident-form-template">
+      <form class="resident-form">
+        <input name="id" type="hidden" />
+        <div class="form-grid">
+          <label>Apartamento<input name="apartment" required /></label>
+          <label>Andar<input name="floor" /></label>
+          <label>Bloco / Torre<input name="building" placeholder="Torre A" /></label>
+          <label>E-mail<input name="email" type="email" /></label>
+          <label>Telefone<input name="phone" /></label>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="primary-button">Salvar apartamento</button>
+          <button type="button" class="ghost-button" data-cancel-form>Cancelar</button>
+        </div>
+      </form>
+    </template>
+
+    <script type="module" src="./app.js?v=20260507-admin-207"></script>
+  </body>
+</html>

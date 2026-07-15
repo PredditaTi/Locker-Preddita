@@ -1,0 +1,4 @@
+{$PREDDITA_DOMAIN} {
+  encode gzip zstd
+  reverse_proxy preddita-admin-online:8787
+}

@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-preddita_locker}
+      POSTGRES_USER: ${POSTGRES_USER:-preddita}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-troque-esta-senha}
+    volumes:
+      - preddita-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-preddita} -d ${POSTGRES_DB:-preddita_locker}"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+
+  preddita-admin-online:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "80:8787"
+    env_file:
+      - .env
+    environment:
+      PREDDITA_STORAGE: ${PREDDITA_STORAGE:-postgres}
+      PREDDITA_DATABASE_URL: ${PREDDITA_DATABASE_URL:-postgresql://preddita:troque-esta-senha@postgres:5432/preddita_locker}
+    volumes:
+      - preddita-admin-data:/data
+
+volumes:
+  preddita-postgres-data:
+  preddita-admin-data:

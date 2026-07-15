@@ -1,0 +1,64 @@
+plugins {
+    id 'com.android.application'
+}
+
+def releaseSigning = [
+    keystore: System.getenv('PREDDITA_RELEASE_KEYSTORE'),
+    storePassword: System.getenv('PREDDITA_RELEASE_STORE_PASSWORD'),
+    keyAlias: System.getenv('PREDDITA_RELEASE_KEY_ALIAS'),
+    keyPassword: System.getenv('PREDDITA_RELEASE_KEY_PASSWORD'),
+]
+def hasReleaseSigning = releaseSigning.values().every { value -> value != null && !value.trim().isEmpty() }
+def requestedReleasePackage = gradle.startParameter.taskNames.any { taskName ->
+    taskName.toLowerCase() ==~ /.*(assemble|bundle|package).*release.*/
+}
+
+if (requestedReleasePackage && !hasReleaseSigning) {
+    throw new GradleException('Configure PREDDITA_RELEASE_KEYSTORE, PREDDITA_RELEASE_STORE_PASSWORD, PREDDITA_RELEASE_KEY_ALIAS e PREDDITA_RELEASE_KEY_PASSWORD para gerar um release assinado.')
+}
+
+android {
+    namespace 'com.preddita.entregaslocker'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.preddita.entregaslocker"
+        minSdk 26            // Android 8 — RK3562 roda Android 11+
+        targetSdk 34
+        versionCode 10
+        versionName "2.0.10-lab"
+    }
+
+    signingConfigs {
+        release {
+            if (hasReleaseSigning) {
+                storeFile file(releaseSigning.keystore)
+                storePassword releaseSigning.storePassword
+                keyAlias releaseSigning.keyAlias
+                keyPassword releaseSigning.keyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            debuggable true
+        }
+        release {
+            minifyEnabled false   // desabilitar até estabilizar
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'androidx.webkit:webkit:1.16.0'
+}
