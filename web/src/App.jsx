@@ -73,7 +73,7 @@ const COMMANDS = createCommandSet(LOCKER_PROFILE);
 const DOORS_PER_PAGE = 8;
 const DOOR_COUNT_PRESETS = [8, 12, 16, 20, 24];
 const ADMIN_VIEWS = new Set(['admin', 'adminDeposit', 'adminPickup', 'doors', 'system']);
-const APP_VERSION = '2.0.22-lab';
+const APP_VERSION = '2.0.23-lab';
 const POPUP_BANNER_TITLES = new Set([
   'Porta pequena ainda aberta',
   'Sem porta grande disponivel',
@@ -374,6 +374,8 @@ export default function App() {
   const labelStreamRef = useRef(null);
   const remoteResidentsRevisionRef = useRef(initialState.remoteResidentsRevision || '');
   const packedAlignmentRef = useRef('auto');
+  const remoteCycleRunnerRef = useRef(null);
+  const remotePickupReconcileRef = useRef(null);
   const diagnosticGate = useDiagnosticGate();
   const bannerKey = `${banner.tone || ''}:${banner.title}:${banner.text}`;
 
@@ -2003,20 +2005,65 @@ export default function App() {
     }
   }
 
+  remoteCycleRunnerRef.current = async () => {
+    if (isBusy) return;
+    await reconcileRemotePickupClosures();
+    await processRemoteBridge();
+  };
+  remotePickupReconcileRef.current = async () => {
+    if (isBusy) return;
+    await reconcileRemotePickupClosures();
+  };
+
   useEffect(() => {
-    const run = async () => {
-      if (isBusy) return;
-      await reconcileRemotePickupClosures();
-      await processRemoteBridge();
+    const timer = window.setInterval(() => {
+      void remotePickupReconcileRef.current?.();
+    }, 6000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    let stopped = false;
+    let running = false;
+    let wakeQueued = false;
+    let timer = null;
+
+    const schedule = (run) => {
+      const wakeup = edgeAgent.getCommandWakeupStatus();
+      const delay = wakeup.connected ? wakeup.healthyPollMs : wakeup.fallbackPollMs;
+      timer = window.setTimeout(run, Math.max(1000, Number(delay) || 6000));
+    };
+    const run = async (trigger = 'poll') => {
+      if (stopped) return;
+      if (running) {
+        if (trigger === 'wake') wakeQueued = true;
+        return;
+      }
+      running = true;
+      if (timer) window.clearTimeout(timer);
+      timer = null;
+      try {
+        await remoteCycleRunnerRef.current?.();
+      } finally {
+        running = false;
+        if (stopped) return;
+        if (wakeQueued) {
+          wakeQueued = false;
+          timer = window.setTimeout(() => void run('wake'), 0);
+        } else {
+          schedule(() => void run('poll'));
+        }
+      }
     };
 
-    const timer = setInterval(run, 6000);
-    const initialTimer = setTimeout(run, 1800);
+    void edgeAgent.startCommandWakeup({ onWake: () => run('wake') });
+    timer = window.setTimeout(() => void run('initial'), 1800);
     return () => {
-      clearInterval(timer);
-      clearTimeout(initialTimer);
+      stopped = true;
+      if (timer) window.clearTimeout(timer);
+      edgeAgent.stopCommandWakeup();
     };
-  }, [doorStates, hardwareInfo, isBusy, lockerState, view]);
+  }, []);
 
   useEffect(() => {
     if (view !== 'courier' || !activeDeposit || courierDepositStage !== 'large') {

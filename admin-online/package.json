@@ -1,6 +1,6 @@
 {
   "name": "preddita-admin-online",
-  "version": "2.0.22-lab",
+  "version": "2.0.23-lab",
   "private": true,
   "type": "module",
   "engines": {
@@ -13,6 +13,12 @@
     "test:remote-journal": "node ../scripts/v2-remote-command-journal-test.mjs"
   },
   "dependencies": {
+    "@aws-crypto/sha256-js": "^5.2.0",
+    "@aws-sdk/client-iot-data-plane": "^3.1088.0",
+    "@aws-sdk/client-sts": "^3.1088.0",
+    "@aws-sdk/util-format-url": "^3.972.35",
+    "@smithy/protocol-http": "^5.5.9",
+    "@smithy/signature-v4": "^5.6.5",
     "nodemailer": "^9.0.3",
     "pg": "^8.22.0",
     "qrcode": "^1.5.4"

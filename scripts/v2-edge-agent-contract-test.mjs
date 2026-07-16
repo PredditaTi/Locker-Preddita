@@ -271,6 +271,46 @@ async function testSafeAppUpdateHandoff() {
   assert.deepEqual(requested, [manifest]);
 }
 
+async function testCommandWakeupContract() {
+  const calls = [];
+  const commandWakeup = {
+    start: async (options) => {
+      calls.push({ type: 'start', options });
+      return { connected: true };
+    },
+    stop: () => calls.push({ type: 'stop' }),
+    getStatus: () => ({
+      enabled: true,
+      state: 'connected',
+      connected: true,
+      transport: 'mqtt-wss',
+      healthyPollMs: 30000,
+      fallbackPollMs: 6000,
+    }),
+  };
+  const publishedStatuses = [];
+  const agent = new EdgeAgentRuntime({
+    storage: new MemoryStorage(),
+    hardware: createHardware(),
+    commandWakeup,
+    remote: createRemote({
+      publishRemoteStatus: async (status) => {
+        publishedStatuses.push(status);
+        return true;
+      },
+    }),
+  });
+
+  await agent.startCommandWakeup({ onWake: () => {} });
+  await agent.runRemoteCycle({ doorCount: 8, onOpenDoor: async () => ({ ok: true }) });
+  agent.stopCommandWakeup();
+
+  assert.equal(calls[0].type, 'start');
+  assert.equal(calls.at(-1).type, 'stop');
+  assert.equal(publishedStatuses[0].device.commandWakeup.state, 'connected');
+  assert.equal(JSON.stringify(publishedStatuses[0]).includes('url'), false);
+}
+
 async function testUpdateWaitsForRemoteCommand() {
   let updateRequests = 0;
   const agent = new EdgeAgentRuntime({
@@ -316,6 +356,7 @@ await testIdempotentRemoteCommand();
 await testUnknownExecutionAfterRestart();
 await testConcurrentCycles();
 await testSafeAppUpdateHandoff();
+await testCommandWakeupContract();
 await testUpdateWaitsForRemoteCommand();
 await testKioskBoundary();
 

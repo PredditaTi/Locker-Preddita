@@ -1075,6 +1075,9 @@ function renderSystem() {
     root.innerHTML = '<section class="panel"><h3>Acesso restrito</h3><p class="muted">Esta area e reservada ao Admin Geral PREDDITA.</p></section>';
     return;
   }
+  const commandWakeupConnected = Boolean(runtime().deviceCommandWakeupConnected);
+  const commandTransport = runtime().iotConfigured ? 'AWS IoT Core' : 'Polling HTTP';
+  const commandWakeupState = runtime().deviceCommandWakeupState || 'disabled';
   root.innerHTML = `
     <div class="grid two">
       <section class="panel">
@@ -1086,6 +1089,22 @@ function renderSystem() {
         <p class="eyebrow">Seguranca</p>
         <h3>Sessoes administrativas</h3>
         <p class="muted">Usuarios usam senha derivada por scrypt, cookie HttpOnly e protecao CSRF.</p>
+      </section>
+      <section class="panel ${runtime().iotConfigured && !commandWakeupConnected ? 'is-warning' : ''}">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Entrega de comandos</p>
+            <h3>${escapeHtml(commandTransport)}</h3>
+          </div>
+          <span class="tag">${commandWakeupConnected ? 'MQTT conectado' : 'Contingencia ativa'}</span>
+        </div>
+        <div class="health-grid">
+          <div><span class="muted">Backend</span><strong>${runtime().iotConfigured ? 'Configurado' : 'Desativado'}</strong></div>
+          <div><span class="muted">Armario</span><strong>${escapeHtml(commandWakeupState)}</strong></div>
+          <div><span class="muted">Ultima conexao</span><strong>${escapeHtml(runtime().deviceCommandWakeupLastConnectedAt || '--')}</strong></div>
+          <div><span class="muted">Ultimo aviso</span><strong>${escapeHtml(runtime().deviceCommandWakeupLastMessageAt || '--')}</strong></div>
+        </div>
+        <p class="muted">O polling HTTP permanece ativo como contingencia para comandos e sincronizacoes.</p>
       </section>
       ${session().canExportData ? `<section class="panel">
         <p class="eyebrow">Exportacao</p>
@@ -1163,13 +1182,13 @@ function renderUpdates() {
             <input name="rolloutPercentage" type="number" min="0" max="100" step="1" value="${escapeHtml(policy.rolloutPercentage ?? 0)}" required>
           </label>
           <label>Release
-            <input name="releaseId" maxlength="120" value="${escapeHtml(policy.releaseId || '')}" placeholder="v2.0.22-lab">
+            <input name="releaseId" maxlength="120" value="${escapeHtml(policy.releaseId || '')}" placeholder="v2.0.23-lab">
           </label>
           <label>Version code
-            <input name="versionCode" type="number" min="1" max="2147483647" step="1" value="${escapeHtml(policy.versionCode || '')}" placeholder="22">
+            <input name="versionCode" type="number" min="1" max="2147483647" step="1" value="${escapeHtml(policy.versionCode || '')}" placeholder="23">
           </label>
           <label>Version name
-            <input name="versionName" maxlength="80" value="${escapeHtml(policy.versionName || '')}" placeholder="2.0.22-lab">
+            <input name="versionName" maxlength="80" value="${escapeHtml(policy.versionName || '')}" placeholder="2.0.23-lab">
           </label>
           <label class="update-field-wide">URL HTTPS do APK
             <input name="apkUrl" type="url" maxlength="2048" value="${escapeHtml(policy.apkUrl || '')}" placeholder="https://github.com/.../PREDDITA-Locker.apk">

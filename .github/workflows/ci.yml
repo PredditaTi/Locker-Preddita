@@ -82,6 +82,8 @@ jobs:
           node scripts/v2-device-event-journal-test.mjs
           node scripts/v2-remote-command-journal-test.mjs
           node scripts/v2-edge-agent-contract-test.mjs
+          node scripts/CommandWakeupTest.mjs
+          node scripts/IotCommandBusTest.mjs
           node scripts/v2-qr-scanner-test.mjs
           node scripts/v2-serial-protocol-test.mjs
           node scripts/v2-door-safety-test.mjs
@@ -103,6 +105,7 @@ jobs:
           node --check admin-online/operationalStore.mjs
           node --check admin-online/operationalLogStore.mjs
           node --check admin-online/commandStore.mjs
+          node --check admin-online/iotCommandBus.mjs
           node --check admin-online/public/app.js
 
       - name: Test native RS-485 parser

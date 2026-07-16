@@ -52,6 +52,11 @@ import {
   pruneOperationalLogs,
   queryOperationalLogs,
 } from './operationalLogStore.mjs';
+import {
+  createIotCommandBus,
+  getIotStartupConfigErrors,
+  normalizeIotConfig,
+} from './iotCommandBus.mjs';
 
 const ROOT_DIR = fileURLToPath(new URL('.', import.meta.url));
 const PUBLIC_DIR = join(ROOT_DIR, 'public');
@@ -59,7 +64,7 @@ const DATA_DIR = process.env.PREDDITA_DATA_DIR ? normalize(process.env.PREDDITA_
 const DB_PATH = join(DATA_DIR, 'state.json');
 const BACKUP_DIR = join(DATA_DIR, 'backups');
 const OPERATIONAL_LOG_PATH = join(DATA_DIR, 'operational-logs.jsonl');
-const APP_VERSION = '2.0.22-lab';
+const APP_VERSION = '2.0.23-lab';
 const SCHEMA_VERSION = 11;
 const DEFAULT_ADMIN_TOKEN = 'preddita-admin-local';
 const DEFAULT_SUPER_ADMIN_TOKEN = 'preddita-super-admin-local';
@@ -161,6 +166,11 @@ const jsonOperationalLogStore = createJsonOperationalLogStore({
   filePath: OPERATIONAL_LOG_PATH,
   maxEntries: MAX_JSON_OPERATIONAL_LOGS,
 });
+const IOT_CONFIG = normalizeIotConfig(process.env);
+const iotCommandBus = createIotCommandBus({
+  config: IOT_CONFIG,
+  createEventId: () => createId('wake'),
+});
 
 function nowIso() {
   return new Date().toISOString();
@@ -199,6 +209,44 @@ async function recordOperationalLog(entry) {
     }));
   }
   return normalized;
+}
+
+async function publishIotWakeup(state, reason, context = {}) {
+  if (!iotCommandBus.getStatus().configured) return false;
+  const tenantId = normalizeTenantId(state?.tenant?.tenantId);
+  const lockerId = normalizeLockerId(state?.tenant?.lockerId || state?.device?.lockerId);
+  try {
+    const result = await iotCommandBus.publishWakeup({
+      tenantId,
+      lockerId,
+      reason,
+      eventId: context.eventId,
+    });
+    void recordOperationalLog({
+      level: 'info',
+      event: 'iot-device-wakeup-published',
+      message: 'Aviso MQTT publicado para antecipar a sincronizacao do armario.',
+      source: 'server',
+      tenantId,
+      lockerId,
+      context: { reason, eventId: result.eventId },
+    });
+    return true;
+  } catch (error) {
+    void recordOperationalLog({
+      level: 'warn',
+      event: 'iot-device-wakeup-failed',
+      message: 'Falha ao publicar aviso MQTT; o polling HTTP permanece ativo.',
+      source: 'server',
+      tenantId,
+      lockerId,
+      context: {
+        reason,
+        errorCode: cleanText(error?.code || error?.name || 'IOT_PUBLISH_FAILED').slice(0, 120),
+      },
+    });
+    return false;
+  }
 }
 
 function updateRequestOperationalContext(request, values = {}) {
@@ -362,7 +410,7 @@ function parseDeviceKeys(rawValue, legacyKey) {
 }
 
 function getStartupConfigErrors() {
-  const errors = [];
+  const errors = [...getIotStartupConfigErrors(IOT_CONFIG)];
   if (adminUsersConfigError) {
     errors.push(adminUsersConfigError);
   }
@@ -600,6 +648,27 @@ function normalizeAppUpdaterStatus(status = {}, current = {}) {
       ? cleanText(current.lastError).slice(0, 300)
       : cleanText(status.lastError).slice(0, 300),
     updatedAt: cleanText(status.updatedAt) || nowIso(),
+  };
+}
+
+function normalizeCommandWakeupStatus(status = {}, current = {}) {
+  const allowedStates = new Set(['disabled', 'connecting', 'connected', 'disconnected', 'error']);
+  const incomingState = cleanText(status.state).toLowerCase();
+  const state = allowedStates.has(incomingState)
+    ? incomingState
+    : cleanText(current.state) || 'disabled';
+  return {
+    enabled: status.enabled === undefined ? Boolean(current.enabled) : Boolean(status.enabled),
+    state,
+    connected: state === 'connected' && Boolean(status.connected),
+    transport: cleanText(status.transport) === 'mqtt-wss' ? 'mqtt-wss' : 'http-polling',
+    lastConnectedAt: cleanText(status.lastConnectedAt || current.lastConnectedAt).slice(0, 40),
+    lastMessageAt: cleanText(status.lastMessageAt || current.lastMessageAt).slice(0, 40),
+    lastError: status.lastError === undefined
+      ? cleanText(current.lastError).slice(0, 120)
+      : cleanText(status.lastError).slice(0, 120),
+    reconnectAttempt: Math.max(0, Number.parseInt(status.reconnectAttempt, 10) || 0),
+    updatedAt: nowIso(),
   };
 }
 
@@ -1866,6 +1935,11 @@ function getRuntimeSummary(state) {
   const largeDoors = doors.filter((door) => door.size === 'G');
   const mediumDoors = doors.filter((door) => door.size === 'M');
   const smallDoors = doors.filter((door) => door.size === 'P');
+  const iotStatus = iotCommandBus.getStatus();
+  const deviceCommandWakeup = normalizeCommandWakeupStatus(
+    state.device?.commandWakeup,
+    state.device?.commandWakeup,
+  );
 
   return {
     appVersion: APP_VERSION,
@@ -1897,6 +1971,15 @@ function getRuntimeSummary(state) {
     appUpdateRolloutPercentage: Number.parseInt(state.appUpdate?.rolloutPercentage, 10) || 0,
     deviceAppUpdateStatus: cleanText(state.device?.appUpdater?.status) || 'unknown',
     deviceAuthMode: DEVICE_AUTH_MODE,
+    iotMode: iotStatus.mode,
+    iotConfigured: iotStatus.configured,
+    commandWakeupTransport: iotStatus.transport,
+    commandWakeupLastPublishAt: iotStatus.lastPublishAt,
+    commandWakeupLastPublishError: iotStatus.lastPublishError,
+    deviceCommandWakeupState: deviceCommandWakeup.state,
+    deviceCommandWakeupConnected: deviceCommandWakeup.connected,
+    deviceCommandWakeupLastConnectedAt: deviceCommandWakeup.lastConnectedAt,
+    deviceCommandWakeupLastMessageAt: deviceCommandWakeup.lastMessageAt,
     storageMode: STORAGE_MODE,
     operationalStorage: isPostgresStorage() ? 'normalized-postgres' : 'snapshot',
     operationalSchemaVersion: isPostgresStorage() ? OPERATIONAL_SCHEMA_VERSION : 0,
@@ -1995,6 +2078,9 @@ function getSecurityWarnings() {
   }
   if (ALLOWED_ORIGINS.length === 0) {
     warnings.push('PREDDITA_ALLOWED_ORIGINS nao foi definido; CORS esta permissivo.');
+  }
+  if (!iotCommandBus.getStatus().configured) {
+    warnings.push('Wake-up MQTT nao esta configurado; comandos remotos dependem do polling HTTP de contingencia.');
   }
   return warnings;
 }
@@ -3653,6 +3739,7 @@ async function handleApi(request, response) {
       appUpdate: policy,
       runtime: getRuntimeSummary(next),
     });
+    void publishIotWakeup(next, 'app-update-policy-changed');
     return;
   }
 
@@ -3730,6 +3817,7 @@ async function handleApi(request, response) {
     );
     await writeState(next, requestLockerId);
     sendJson(response, 201, { ok: true, resident });
+    void publishIotWakeup(next, 'residents-changed');
     return;
   }
 
@@ -3766,6 +3854,7 @@ async function handleApi(request, response) {
     );
     await writeState(next, requestLockerId);
     sendJson(response, 200, { ok: true, resident });
+    void publishIotWakeup(next, 'residents-changed');
     return;
   }
 
@@ -3784,6 +3873,7 @@ async function handleApi(request, response) {
     );
     await writeState(next, requestLockerId);
     sendJson(response, 200, { ok: true });
+    void publishIotWakeup(next, 'residents-changed');
     return;
   }
 
@@ -3876,6 +3966,9 @@ async function handleApi(request, response) {
       sendError(response, creationResult.status, creationResult.error);
     } else {
       sendJson(response, creationResult.status, creationResult.payload);
+      void publishIotWakeup(state, 'command-created', {
+        eventId: creationResult.payload.command.id,
+      });
     }
     return;
   }
@@ -3956,6 +4049,31 @@ async function handleApi(request, response) {
     return;
   }
 
+  if (method === 'GET' && path === '/api/device/mqtt-ticket') {
+    try {
+      const ticket = await iotCommandBus.createDeviceTicket({
+        tenantId: state.tenant?.tenantId ?? DEFAULT_TENANT_ID,
+        lockerId: requestLockerId,
+      });
+      sendJson(response, 200, { ok: true, ...ticket });
+    } catch (error) {
+      await recordOperationalLog({
+        level: 'warn',
+        event: 'iot-device-ticket-failed',
+        message: 'Nao foi possivel emitir o ticket MQTT; o dispositivo continuara usando polling HTTP.',
+        source: 'server',
+        tenantId: state.tenant?.tenantId,
+        lockerId: requestLockerId,
+        requestId: request.predditaOperational?.requestId,
+        context: {
+          errorCode: cleanText(error?.code || error?.name || 'IOT_TICKET_FAILED').slice(0, 120),
+        },
+      });
+      sendError(response, 503, 'Wake-up MQTT indisponivel; polling HTTP permanece ativo.');
+    }
+    return;
+  }
+
   if (method === 'POST' && path === '/api/device/status') {
     const body = await readBody(request);
     const lockerValidation = validateDeviceLocker(state, request, body);
@@ -3993,6 +4111,10 @@ async function handleApi(request, response) {
         remoteResidentsRevision: cleanText(body.device?.remoteResidentsRevision) || state.device?.remoteResidentsRevision || '',
         remoteBaseUrl: cleanText(body.device?.remoteBaseUrl ?? body.bridgeBaseUrl) || state.device?.remoteBaseUrl || '',
         appUpdater: normalizeAppUpdaterStatus(body.device?.appUpdater, state.device?.appUpdater),
+        commandWakeup: normalizeCommandWakeupStatus(
+          body.device?.commandWakeup,
+          state.device?.commandWakeup,
+        ),
         lastSeenAt: nowIso(),
       },
     };

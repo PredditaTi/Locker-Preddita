@@ -1,6 +1,6 @@
 {
   "name": "preddita-entregas-locker",
-  "version": "2.0.22-lab",
+  "version": "2.0.23-lab",
   "type": "module",
   "description": "PREDDITA Entregas Locker - Kiosk App",
   "scripts": {
@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "jsqr": "^1.4.0",
+    "mqtt": "^5.15.2",
     "qrcode": "^1.5.4",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"

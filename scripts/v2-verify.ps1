@@ -25,6 +25,12 @@ Write-Host "[PREDDITA v2] Teste do diario idempotente de comandos remotos..."
 Write-Host "[PREDDITA v2] Teste do contrato entre Edge Agent e Kiosk UI..."
 & $node (Join-Path $root "scripts\v2-edge-agent-contract-test.mjs")
 
+Write-Host "[PREDDITA v2] Teste do wake-up MQTT no app do armario..."
+& $node (Join-Path $root "scripts\CommandWakeupTest.mjs")
+
+Write-Host "[PREDDITA v2] Teste da politica e tickets do AWS IoT Core..."
+& $node (Join-Path $root "scripts\IotCommandBusTest.mjs")
+
 Write-Host "[PREDDITA v2] Teste de leitura QR do app do armario..."
 & $node (Join-Path $root "scripts\v2-qr-scanner-test.mjs")
 
@@ -91,6 +97,7 @@ Write-Host "[PREDDITA v2] Checagem de sintaxe do servidor e painel..."
 & $node --check (Join-Path $root "admin-online\adminMfa.mjs")
 & $node --check (Join-Path $root "admin-online\operationalStore.mjs")
 & $node --check (Join-Path $root "admin-online\commandStore.mjs")
+& $node --check (Join-Path $root "admin-online\iotCommandBus.mjs")
 & $node --check (Join-Path $root "admin-online\public\app.js")
 
 Write-Host "[PREDDITA v2] Auditoria de dependencias do admin..."
