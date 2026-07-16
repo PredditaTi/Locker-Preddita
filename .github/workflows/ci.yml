@@ -91,6 +91,7 @@ jobs:
           node scripts/v2-state-recovery-test.mjs
           node scripts/AdminAuthTest.mjs
           node scripts/AdminMfaTest.mjs
+          node scripts/PrivacyLifecycleTest.mjs
           node scripts/OperationalStoreTest.mjs
           node scripts/OperationalLogStoreTest.mjs
           node scripts/CommandStoreTest.mjs
@@ -107,6 +108,7 @@ jobs:
           node --check admin-online/operationalLogStore.mjs
           node --check admin-online/commandStore.mjs
           node --check admin-online/iotCommandBus.mjs
+          node --check admin-online/privacyLifecycle.mjs
           node --check admin-online/public/app.js
 
       - name: Test native RS-485 parser

@@ -232,6 +232,8 @@ try {
     size: 'P',
     pin: '123456',
     token: `TOKEN-${RUN_SUFFIX}`,
+    qrPayload: `preddita://collect?id=delivery-postgres-${RUN_SUFFIX}&token=TOKEN-${RUN_SUFFIX}`,
+    externalCode: `EXTERNAL-${RUN_SUFFIX}`,
     status: 'stored',
     createdAt: new Date().toISOString(),
     depositedAt: new Date().toISOString(),
@@ -258,6 +260,22 @@ try {
     method: 'POST',
     headers: deviceHeaders,
     body: statusBody,
+  });
+
+  const collectedAt = new Date().toISOString();
+  await requestDeviceOk('/api/device/events', {
+    method: 'POST',
+    body: JSON.stringify({
+      events: [{
+        id: `event-postgres-collected-${RUN_SUFFIX}`,
+        type: 'delivery-collected',
+        occurredAt: collectedAt,
+        payload: {
+          delivery: { ...normalizedDelivery, status: 'collected', collectedAt },
+          source: 'postgres-smoke',
+        },
+      }],
+    }),
   });
 
   secondaryServer = spawnServer({ port: SECONDARY_PORT });
@@ -359,12 +377,26 @@ try {
     throw new Error('Runtime deveria informar dados operacionais, logs e comandos transacionais no Postgres.');
   }
   if (
-    !state.state.deliveries.some((delivery) => delivery.id === normalizedDelivery.id)
+    !state.state.deliveries.some((delivery) =>
+      delivery.id === normalizedDelivery.id
+      && delivery.status === 'collected'
+      && !delivery.pin
+      && !delivery.token
+      && !delivery.qrPayload
+      && delivery.credentialsErasedAt
+    )
     || !state.state.commands.some((command) =>
       command.id === createdCommand.command.id && command.status === 'completed' && command.executionId === executionId
     )
   ) {
-    throw new Error('API deveria hidratar entregas e comandos a partir das tabelas normalizadas.');
+    throw new Error('API deveria hidratar dados normalizados com credenciais terminais apagadas.');
+  }
+  const privacySummary = await requestOk(
+    `/api/admin/privacy?lockerId=${encodeURIComponent(LOCKER_ID)}`,
+    { headers: adminHeaders }
+  );
+  if (privacySummary.privacy?.metrics?.terminalCredentialsPending !== 0) {
+    throw new Error('Resumo de privacidade Postgres nao deveria encontrar credenciais terminais.');
   }
   const mfaOperationalLogs = await requestOk(
     `/api/admin/logs?lockerId=${encodeURIComponent(LOCKER_ID)}&event=admin-mfa-enrolled`,
@@ -421,6 +453,25 @@ try {
   const counts = normalizedCounts.rows[0] || {};
   if (counts.residents < 1 || counts.deliveries !== 1 || counts.commands !== 1 || counts.audit_events < 2) {
     throw new Error(`Tabelas operacionais incompletas: ${JSON.stringify(counts)}`);
+  }
+  const deliveryRowResult = await databaseClient.query(
+    `
+      select status, data
+      from preddita_deliveries
+      where tenant_id = $1 and locker_id = $2 and delivery_id = $3
+    `,
+    ['tenant-postgres-smoke', LOCKER_ID, normalizedDelivery.id]
+  );
+  const deliveryRow = deliveryRowResult.rows[0] || {};
+  if (
+    deliveryRow.status !== 'collected'
+    || deliveryRow.data?.pin
+    || deliveryRow.data?.token
+    || deliveryRow.data?.qrPayload
+    || deliveryRow.data?.externalCode
+    || !deliveryRow.data?.credentialsErasedAt
+  ) {
+    throw new Error('Postgres nao deveria persistir credenciais de uma entrega encerrada.');
   }
   const commandRowResult = await databaseClient.query(
     `

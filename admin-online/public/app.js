@@ -23,6 +23,10 @@ const state = {
     retentionDays: 30,
     filters: { level: '', source: '', event: '', query: '' },
   },
+  privacy: {
+    summary: null,
+    loading: false,
+  },
 };
 
 const root = document.querySelector('#view-root');
@@ -67,6 +71,7 @@ const NAV_BY_ROLE = {
     ['residents', 'Apartamentos'],
     ['deliveries', 'Entregas'],
     ['audit', 'Auditoria'],
+    ['privacy', 'Privacidade'],
   ],
   operador: [
     ['overview', 'Resumo'],
@@ -93,6 +98,7 @@ const NAV_BY_ROLE = {
     ['audit', 'Auditoria'],
     ['updates', 'Atualizacoes'],
     ['logs', 'Logs'],
+    ['privacy', 'Privacidade'],
     ['system', 'Sistema'],
   ],
 };
@@ -534,6 +540,9 @@ function setView(view) {
   if (view === 'logs' && !state.operationalLogs.loaded) {
     void loadOperationalLogs().catch((error) => showMessage(error.message, true));
   }
+  if (view === 'privacy') {
+    void loadPrivacySummary().catch((error) => showMessage(error.message, true));
+  }
 }
 
 function operationalLogQuery(options = {}) {
@@ -566,6 +575,19 @@ async function loadOperationalLogs(options = {}) {
   } finally {
     state.operationalLogs.loading = false;
     if (state.view === 'logs') renderLogs();
+  }
+}
+
+async function loadPrivacySummary() {
+  if (!session().canManagePrivacy || state.privacy.loading) return;
+  state.privacy.loading = true;
+  if (state.view === 'privacy') renderPrivacy();
+  try {
+    const payload = await api('/api/admin/privacy');
+    state.privacy.summary = payload.privacy;
+  } finally {
+    state.privacy.loading = false;
+    if (state.view === 'privacy') renderPrivacy();
   }
 }
 
@@ -933,7 +955,9 @@ function renderDeliveries() {
               <span>${escapeHtml(deliveryReminderLabel(delivery))}</span>
             </div>
             <div class="delivery-actions">
-              <button class="ghost-button" data-notify-delivery="${escapeHtml(delivery.id)}">Reenviar PIN e QR</button>
+              ${isActiveDelivery(delivery) && delivery.status === 'stored' && delivery.pin && delivery.qrPayload
+                ? `<button class="ghost-button" data-notify-delivery="${escapeHtml(delivery.id)}">Reenviar PIN e QR</button>`
+                : '<span class="muted">Credenciais indisponiveis</span>'}
             </div>
           </div>
         </article>
@@ -1120,6 +1144,92 @@ function renderSystem() {
   `;
 }
 
+function renderPrivacy() {
+  title.textContent = 'Privacidade e retencao';
+  if (!session().canManagePrivacy) {
+    root.innerHTML = '<section class="panel"><h3>Acesso restrito</h3><p class="muted">Esta area exige permissao de privacidade.</p></section>';
+    return;
+  }
+  const summary = state.privacy.summary;
+  if (!summary) {
+    root.innerHTML = `<section class="panel"><h3>${state.privacy.loading ? 'Carregando politica...' : 'Politica indisponivel'}</h3></section>`;
+    return;
+  }
+  const policy = summary.policy || {};
+  const metrics = summary.metrics || {};
+  const pending = Number(metrics.terminalCredentialsPending || 0)
+    + Number(metrics.personalDataPastRetention || 0)
+    + Number(metrics.evidencePastRetention || 0)
+    + Number(metrics.deliveryRecordsPastRetention || 0)
+    + Number(metrics.auditEntriesPastRetention || 0)
+    + Number(metrics.commandsPastRetention || 0)
+    + Number(metrics.notificationsPastRetention || 0)
+    + Number(metrics.processedEventsPastRetention || 0);
+  const residents = state.data.residents || [];
+  root.innerHTML = `
+    <div class="grid">
+      <div class="grid stats">
+        <article class="stat-card"><span class="muted">Apartamentos</span><strong>${escapeHtml(metrics.residentCount ?? 0)}</strong></article>
+        <article class="stat-card"><span class="muted">Entregas ativas</span><strong>${escapeHtml(metrics.activeDeliveryCount ?? 0)}</strong></article>
+        <article class="stat-card"><span class="muted">Historico anonimizado</span><strong>${escapeHtml(metrics.anonymizedDeliveryCount ?? 0)}</strong></article>
+        <article class="stat-card"><span class="muted">Itens vencidos</span><strong>${escapeHtml(pending)}</strong></article>
+      </div>
+      <section class="panel ${pending ? 'is-warning' : ''}">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Politica ativa</p>
+            <h3>${pending ? `${escapeHtml(pending)} itens aguardando limpeza` : 'Retencao em dia'}</h3>
+          </div>
+          <button class="primary-button" type="button" data-run-privacy-retention ${state.privacy.loading ? 'disabled' : ''}>Executar agora</button>
+        </div>
+        <div class="health-grid">
+          <div><span class="muted">Controlador</span><strong>${escapeHtml(policy.controllerName || 'Nao configurado')}</strong></div>
+          <div class="privacy-contact"><span class="muted">Contato LGPD</span><strong>${escapeHtml(policy.contactEmail || 'Nao configurado')}</strong></div>
+          <div><span class="muted">Ultima execucao</span><strong>${escapeHtml(summary.lastAppliedAt || 'Sem alteracoes ainda')}</strong></div>
+          <div><span class="muted">Credenciais encerradas</span><strong>Imediata</strong></div>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Prazos configurados</p>
+            <h3>Ciclo de vida</h3>
+          </div>
+          <span class="tag">Politica ${escapeHtml(policy.schemaVersion || 1)}</span>
+        </div>
+        <div class="health-grid">
+          <div><span class="muted">Fotos e OCR</span><strong>${escapeHtml(policy.deliveryEvidenceRetentionDays)} dias</strong></div>
+          <div><span class="muted">Dados de entregas</span><strong>${escapeHtml(policy.deliveryPersonalDataRetentionDays)} dias</strong></div>
+          <div><span class="muted">Historico anonimizado</span><strong>${escapeHtml(policy.deliveryRecordRetentionDays)} dias</strong></div>
+          <div><span class="muted">Auditoria</span><strong>${escapeHtml(policy.auditRetentionDays)} dias</strong></div>
+          <div><span class="muted">Comandos</span><strong>${escapeHtml(policy.commandRetentionDays)} dias</strong></div>
+          <div><span class="muted">Notificacoes</span><strong>${escapeHtml(policy.notificationRetentionDays)} dias</strong></div>
+          <div><span class="muted">Eventos idempotentes</span><strong>${escapeHtml(policy.processedEventRetentionDays)} dias</strong></div>
+          <div><span class="muted">Backups locais</span><strong>${escapeHtml(policy.backupRetentionDays)} dias</strong></div>
+          <div><span class="muted">Logs tecnicos</span><strong>${escapeHtml(policy.operationalLogRetentionDays)} dias</strong></div>
+        </div>
+      </section>
+      <section class="resident-list">
+        ${residents.length ? residents.map((resident) => `
+          <article class="resident-card">
+            <div class="resident-top">
+              <div>
+                <h3>${escapeHtml(residentTitle(resident))}</h3>
+                <p class="muted">${escapeHtml(unitLabel(resident))}</p>
+              </div>
+              <span class="tag">Titular</span>
+            </div>
+            <div class="resident-actions">
+              <button class="ghost-button" type="button" data-export-resident-data="${escapeHtml(resident.id)}">Exportar dados</button>
+              <button class="danger-button" type="button" data-delete-resident="${escapeHtml(resident.id)}">Eliminar cadastro</button>
+            </div>
+          </article>
+        `).join('') : '<div class="empty">Nenhum apartamento cadastrado.</div>'}
+      </section>
+    </div>
+  `;
+}
+
 function renderUpdates() {
   title.textContent = 'Atualizacoes do app';
   if (!session().canManageUpdates) {
@@ -1182,13 +1292,13 @@ function renderUpdates() {
             <input name="rolloutPercentage" type="number" min="0" max="100" step="1" value="${escapeHtml(policy.rolloutPercentage ?? 0)}" required>
           </label>
           <label>Release
-            <input name="releaseId" maxlength="120" value="${escapeHtml(policy.releaseId || '')}" placeholder="v2.0.24-lab">
+            <input name="releaseId" maxlength="120" value="${escapeHtml(policy.releaseId || '')}" placeholder="v2.0.25-lab">
           </label>
           <label>Version code
-            <input name="versionCode" type="number" min="1" max="2147483647" step="1" value="${escapeHtml(policy.versionCode || '')}" placeholder="24">
+            <input name="versionCode" type="number" min="1" max="2147483647" step="1" value="${escapeHtml(policy.versionCode || '')}" placeholder="25">
           </label>
           <label>Version name
-            <input name="versionName" maxlength="80" value="${escapeHtml(policy.versionName || '')}" placeholder="2.0.24-lab">
+            <input name="versionName" maxlength="80" value="${escapeHtml(policy.versionName || '')}" placeholder="2.0.25-lab">
           </label>
           <label class="update-field-wide">URL HTTPS do APK
             <input name="apkUrl" type="url" maxlength="2048" value="${escapeHtml(policy.apkUrl || '')}" placeholder="https://github.com/.../PREDDITA-Locker.apk">
@@ -1220,6 +1330,7 @@ function render() {
   if (state.view === 'audit') renderAudit();
   if (state.view === 'logs') renderLogs();
   if (state.view === 'updates') renderUpdates();
+  if (state.view === 'privacy') renderPrivacy();
   if (state.view === 'system') renderSystem();
 }
 
@@ -1262,6 +1373,38 @@ document.addEventListener('click', async (event) => {
 
   if (event.target.id === 'refresh-button') {
     await refreshState().catch((error) => showMessage(error.message, true));
+    if (state.view === 'privacy') {
+      await loadPrivacySummary().catch((error) => showMessage(error.message, true));
+    }
+    return;
+  }
+
+  const privacyRunButton = event.target.closest('[data-run-privacy-retention]');
+  if (privacyRunButton) {
+    privacyRunButton.disabled = true;
+    const payload = await api('/api/admin/privacy/retention/run', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }).catch((error) => {
+      showMessage(error.message, true);
+      return null;
+    });
+    if (!payload) return;
+    state.privacy.summary = payload.privacy;
+    const changed = Object.values(payload.result || {}).reduce((total, value) => total + Number(value || 0), 0);
+    showMessage(changed ? `${changed} itens de dados foram tratados pela politica.` : 'A politica foi executada e a retencao esta em dia.');
+    await loadState({ skipCapture: true });
+    await loadPrivacySummary();
+    return;
+  }
+
+  const residentDataExport = event.target.closest('[data-export-resident-data]');
+  if (residentDataExport) {
+    const residentId = residentDataExport.dataset.exportResidentData;
+    await downloadAdminFile(
+      `/api/admin/privacy/residents/${encodeURIComponent(residentId)}/export`,
+      `preddita-dados-${residentId}.json`
+    ).catch((error) => showMessage(error.message, true));
     return;
   }
 
@@ -1341,10 +1484,17 @@ document.addEventListener('click', async (event) => {
 
   const deleteButton = event.target.closest('[data-delete-resident]');
   if (deleteButton) {
-    if (!window.confirm('Remover este apartamento?')) return;
-    await api(`/api/admin/residents/${encodeURIComponent(deleteButton.dataset.deleteResident)}`, { method: 'DELETE' });
-    showMessage('Apartamento removido. O armario sincroniza automaticamente em alguns segundos.');
-    await loadState();
+    const confirmation = state.view === 'privacy'
+      ? 'Eliminar este cadastro e anonimizar o historico encerrado associado? Esta acao nao pode ser desfeita.'
+      : 'Remover este apartamento e anonimizar o historico encerrado associado?';
+    if (!window.confirm(confirmation)) return;
+    const payload = await api(`/api/admin/residents/${encodeURIComponent(deleteButton.dataset.deleteResident)}`, { method: 'DELETE' });
+    const historyCount = Number(payload.anonymizedDeliveryCount || 0);
+    showMessage(historyCount
+      ? `Cadastro eliminado e ${historyCount} entrega(s) encerrada(s) anonimizada(s).`
+      : 'Cadastro eliminado. O armario sincroniza automaticamente em alguns segundos.');
+    await loadState({ skipCapture: true });
+    if (state.view === 'privacy') await loadPrivacySummary();
     return;
   }
 

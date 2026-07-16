@@ -106,10 +106,18 @@ Solucoes maduras de smart lockers se posicionam como plataformas completas, nao 
 - O contrato consumidor-servidor agora executa o `remoteBridge` real contra o
   Admin Online. Playwright percorre deposito e retirada no bundle Android com
   leitura RS-485 simulada, provas de fechamento e persistencia apos reload.
+- Credenciais de retirada sao apagadas assim que a entrega termina; evidencias,
+  dados pessoais, auditoria, comandos, notificacoes, eventos, backups e logs
+  seguem uma politica de retencao configuravel nos modos JSON e Postgres.
+- Sindico e Admin Geral ganharam resumo de privacidade, exportacao por titular e
+  eliminacao de cadastro com anonimizacao do historico terminal.
 
 ## Proximas melhorias recomendadas
 
-1. Criar LGPD/data-retention: CPF, telefone, e-mail, auditoria e expiracao de entregas.
+1. Executar piloto controlado, validar os prazos com o controlador e assessoria
+   juridica e registrar o processo de atendimento ao titular.
+2. Medir operacao real de hardware, rede, notificacoes, backup e recuperacao
+   antes de ampliar para outros condominios.
 
 ## Criterio de produto para ficar competitivo
 

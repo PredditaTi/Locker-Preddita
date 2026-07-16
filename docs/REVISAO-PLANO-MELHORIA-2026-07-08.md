@@ -293,6 +293,22 @@ Validacao do segundo lote:
 - Versao atualizada para `2.0.24-lab` e `versionCode 24`; `schemaVersion 11`
   permanece porque a persistencia de produto nao mudou.
 
+### Privacidade e ciclo de vida em 2026-07-16
+
+- PIN, token, QR e codigo externo sao apagados no encerramento da entrega no
+  kiosk e novamente no servidor antes de qualquer persistencia.
+- Fotos/OCR, dados pessoais, historico anonimizado, auditoria, comandos,
+  notificacoes, eventos idempotentes, backups e logs receberam prazos
+  configuraveis e worker periodico nos modos JSON e Postgres.
+- Auditoria e exportacoes foram sanitizadas; o CSV de entregas nao possui mais
+  PIN e notificacoes pendentes sao canceladas quando a entrega termina.
+- Sindico e Admin Geral podem consultar a politica, executar a retencao,
+  exportar dados de um titular sem credenciais e eliminar cadastros sem entrega
+  ativa, anonimizando o historico encerrado.
+- Testes puros, workflow, smoke JSON e smoke Postgres cobrem retencao,
+  idempotencia, papeis, exportacao, bloqueios e persistencia sanitizada.
+- Versao atualizada para `2.0.25-lab`, `versionCode 25` e `schemaVersion 12`.
+
 Primeiro pacote de Fase 0 aplicado apos esta revisao:
 
 - `admin-online`: `nodemailer` atualizado para versao sem vulnerabilidades no

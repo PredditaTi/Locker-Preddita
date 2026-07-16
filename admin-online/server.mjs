@@ -57,6 +57,16 @@ import {
   getIotStartupConfigErrors,
   normalizeIotConfig,
 } from './iotCommandBus.mjs';
+import {
+  PRIVACY_SCHEMA_VERSION,
+  applyPrivacyLifecycle,
+  buildPrivacySummary,
+  buildResidentDataExport,
+  eraseResidentData,
+  normalizePrivacyConfig,
+  sanitizeAuditMessage,
+  sanitizeAuditMeta,
+} from './privacyLifecycle.mjs';
 
 const ROOT_DIR = fileURLToPath(new URL('.', import.meta.url));
 const PUBLIC_DIR = join(ROOT_DIR, 'public');
@@ -64,8 +74,8 @@ const DATA_DIR = process.env.PREDDITA_DATA_DIR ? normalize(process.env.PREDDITA_
 const DB_PATH = join(DATA_DIR, 'state.json');
 const BACKUP_DIR = join(DATA_DIR, 'backups');
 const OPERATIONAL_LOG_PATH = join(DATA_DIR, 'operational-logs.jsonl');
-const APP_VERSION = '2.0.24-lab';
-const SCHEMA_VERSION = 11;
+const APP_VERSION = '2.0.25-lab';
+const SCHEMA_VERSION = 12;
 const DEFAULT_ADMIN_TOKEN = 'preddita-admin-local';
 const DEFAULT_SUPER_ADMIN_TOKEN = 'preddita-super-admin-local';
 const DEFAULT_DEVICE_KEY = 'preddita-device-local';
@@ -125,7 +135,12 @@ const DEVICE_RATE_LIMIT_PER_MINUTE = Number.parseInt(process.env.PREDDITA_DEVICE
 const OPEN_RATE_LIMIT_PER_MINUTE = Number.parseInt(process.env.PREDDITA_OPEN_RATE_LIMIT_PER_MINUTE ?? '18', 10);
 const NOTIFICATION_OUTBOX_INTERVAL_MS = Number.parseInt(process.env.PREDDITA_NOTIFICATION_OUTBOX_INTERVAL_MS ?? '30000', 10);
 const NOTIFICATION_OUTBOX_MAX_ATTEMPTS = Number.parseInt(process.env.PREDDITA_NOTIFICATION_OUTBOX_MAX_ATTEMPTS ?? '8', 10);
-const OPERATIONAL_LOG_RETENTION_DAYS = parsePositiveInteger(process.env.PREDDITA_OPERATIONAL_LOG_RETENTION_DAYS, 30);
+const PRIVACY_CONFIG = normalizePrivacyConfig(process.env);
+const OPERATIONAL_LOG_RETENTION_DAYS = PRIVACY_CONFIG.operationalLogRetentionDays;
+const PRIVACY_SWEEP_INTERVAL_MS = Math.max(
+  60 * 60 * 1000,
+  parsePositiveInteger(process.env.PREDDITA_PRIVACY_SWEEP_INTERVAL_MS, 6 * 60 * 60 * 1000)
+);
 const MAX_JSON_OPERATIONAL_LOGS = parsePositiveInteger(process.env.PREDDITA_MAX_JSON_OPERATIONAL_LOGS, 5000);
 const TRUST_PROXY = String(process.env.PREDDITA_TRUST_PROXY ?? 'false').toLowerCase() === 'true';
 const ALLOWED_ORIGINS = cleanText(process.env.PREDDITA_ALLOWED_ORIGINS)
@@ -504,6 +519,10 @@ function isActiveDeliveryStatus(status) {
   return ['door_opened_for_dropoff', 'stored', 'pickup_opened'].includes(cleanText(status));
 }
 
+function isTerminalDeliveryStatus(status) {
+  return ['collected', 'cancelled', 'expired'].includes(cleanText(status));
+}
+
 function createDoors(count = 24) {
   return Array.from({ length: count }, (_, index) => ({
     channel: index + 1,
@@ -740,6 +759,11 @@ function createInitialState(options = {}) {
     notificationOutbox: [],
     commands: [],
     processedDeviceEvents: [],
+    privacy: {
+      schemaVersion: PRIVACY_SCHEMA_VERSION,
+      lastAppliedAt: '',
+      lastResult: null,
+    },
     auditTrail: [
       {
         id: createId('audit'),
@@ -856,6 +880,15 @@ function migrateState(parsed = {}, options = {}) {
     processedDeviceEvents: Array.isArray(parsed.processedDeviceEvents)
       ? parsed.processedDeviceEvents.slice(0, MAX_PROCESSED_DEVICE_EVENTS)
       : [],
+    privacy: parsed.privacy && typeof parsed.privacy === 'object'
+      ? {
+          schemaVersion: PRIVACY_SCHEMA_VERSION,
+          lastAppliedAt: cleanText(parsed.privacy.lastAppliedAt),
+          lastResult: parsed.privacy.lastResult && typeof parsed.privacy.lastResult === 'object'
+            ? parsed.privacy.lastResult
+            : null,
+        }
+      : fallback.privacy,
     auditTrail: Array.isArray(parsed.auditTrail) ? parsed.auditTrail : fallback.auditTrail,
     updatedAt: cleanText(parsed.updatedAt) || fallback.updatedAt,
   };
@@ -1516,7 +1549,13 @@ function pruneBackups() {
     })
     .sort((left, right) => right.mtimeMs - left.mtimeMs);
 
-  backups.slice(MAX_BACKUPS).forEach((backup) => unlinkSync(backup.path));
+  const cutoff = Date.now() - PRIVACY_CONFIG.backupRetentionDays * 24 * 60 * 60 * 1000;
+  const expired = backups.filter((backup) => backup.mtimeMs < cutoff);
+  const retained = backups.filter((backup) => backup.mtimeMs >= cutoff);
+  const removals = new Map(
+    [...expired, ...retained.slice(MAX_BACKUPS)].map((backup) => [backup.path, backup])
+  );
+  removals.forEach((backup) => unlinkSync(backup.path));
 }
 
 function createStateBackup() {
@@ -1532,7 +1571,9 @@ function createStateBackup() {
 
 async function writeJsonState(state) {
   ensureDb();
-  const next = { ...migrateState(state), updatedAt: nowIso() };
+  const migrated = migrateState(state);
+  const privacy = applyPrivacyLifecycle(migrated, { config: PRIVACY_CONFIG });
+  const next = { ...privacy.state, updatedAt: nowIso() };
   const tempPath = `${DB_PATH}.tmp`;
 
   createStateBackup();
@@ -1550,7 +1591,9 @@ async function writePostgresState(
   const pool = await ensurePostgres();
   const normalizedTenantId = normalizeTenantId(state.tenant?.tenantId ?? tenantId);
   const normalizedLockerId = normalizeLockerId(state.tenant?.lockerId ?? state.device?.lockerId ?? lockerId);
-  const next = { ...migrateState(state, { tenantId: normalizedTenantId, lockerId: normalizedLockerId }), updatedAt: nowIso() };
+  const migrated = migrateState(state, { tenantId: normalizedTenantId, lockerId: normalizedLockerId });
+  const privacy = applyPrivacyLifecycle(migrated, { config: PRIVACY_CONFIG });
+  const next = { ...privacy.state, updatedAt: nowIso() };
   await persistOperationalState(pool, {
     tenantId: normalizedTenantId,
     lockerId: normalizedLockerId,
@@ -1600,7 +1643,13 @@ function withAudit(state, kind, message, meta = {}) {
       } : null,
     })),
     auditTrail: [
-      { id: createId('audit'), kind, message, meta, at: nowIso() },
+      {
+        id: createId('audit'),
+        kind: cleanText(kind) || 'event',
+        message: sanitizeAuditMessage(message),
+        meta: sanitizeAuditMeta(meta),
+        at: nowIso(),
+      },
       ...(state.auditTrail ?? []),
     ].slice(0, 100),
   };
@@ -1612,6 +1661,60 @@ function withResidentsRevision(state, residents) {
     residents,
     residentsUpdatedAt: nowIso(),
   };
+}
+
+async function runPrivacyLifecycleForLocker(options = {}) {
+  const lockerId = normalizeLockerId(options.lockerId);
+  const tenantId = normalizeTenantId(options.tenantId);
+  return withLockerStateMutation(lockerId, tenantId, async () => {
+    const current = await readState(lockerId, tenantId);
+    const applied = applyPrivacyLifecycle(current, {
+      config: PRIVACY_CONFIG,
+      force: options.force === true,
+    });
+    if (!applied.changed) {
+      return {
+        changed: false,
+        result: applied.result,
+        privacy: buildPrivacySummary(current, { config: PRIVACY_CONFIG }),
+      };
+    }
+    const next = withAudit(
+      applied.state,
+      'privacy-retention-applied',
+      'Politica de retencao e minimizacao aplicada.',
+      { ...applied.result, actor: cleanText(options.actor) || 'privacy-worker' }
+    );
+    await writeState(next, lockerId, tenantId);
+    return {
+      changed: true,
+      result: applied.result,
+      privacy: buildPrivacySummary(next, { config: PRIVACY_CONFIG }),
+    };
+  });
+}
+
+async function runPrivacyLifecycleSweep() {
+  if (!isPostgresStorage()) {
+    return [await runPrivacyLifecycleForLocker()];
+  }
+  const pool = await ensurePostgres();
+  const result = await pool.query(`
+    select tenant_id, locker_id
+    from preddita_locker_states
+    order by tenant_id, locker_id
+  `);
+  const targets = result.rows.length > 0
+    ? result.rows
+    : [{ tenant_id: DEFAULT_TENANT_ID, locker_id: DEFAULT_LOCKER_ID }];
+  const applied = [];
+  for (const target of targets) {
+    applied.push(await runPrivacyLifecycleForLocker({
+      tenantId: target.tenant_id,
+      lockerId: target.locker_id,
+    }));
+  }
+  return applied;
 }
 
 function isActiveCommandStatus(status) {
@@ -2082,14 +2185,17 @@ function getSecurityWarnings() {
   if (!iotCommandBus.getStatus().configured) {
     warnings.push('Wake-up MQTT nao esta configurado; comandos remotos dependem do polling HTTP de contingencia.');
   }
+  if (!PRIVACY_CONFIG.controllerName) {
+    warnings.push('PREDDITA_PRIVACY_CONTROLLER_NAME nao foi definido para identificar o controlador dos dados.');
+  }
+  if (!PRIVACY_CONFIG.contactEmail) {
+    warnings.push('PREDDITA_PRIVACY_CONTACT_EMAIL nao foi definido para atendimento aos titulares.');
+  }
   return warnings;
 }
 
 function redactAdminAuditMessage(message) {
-  return cleanText(message).replace(
-    /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,
-    '[dado protegido]'
-  );
+  return sanitizeAuditMessage(message);
 }
 
 function redactAdminNotification(notification, session) {
@@ -2616,6 +2722,7 @@ async function processNotificationOutboxState(state, options = {}) {
 
   const candidates = nextState.notificationOutbox
     .filter((item) => ['pending', 'failed'].includes(item.status))
+    .filter((item) => item.attempts < NOTIFICATION_OUTBOX_MAX_ATTEMPTS)
     .filter((item) => !onlyDeliveryId || item.deliveryId === onlyDeliveryId)
     .filter((item) => !item.nextAttemptAt || Date.parse(item.nextAttemptAt) <= now)
     .slice(0, limit);
@@ -2893,6 +3000,16 @@ async function applyDeviceEvent(state, event) {
     const delivery = normalizeDeliveryPayload(event.payload.delivery ?? event.payload);
     if (!delivery.id) {
       throw new Error('Evento de entrega sem identificador.');
+    }
+    const existingDelivery = (state.deliveries ?? []).find((item) => cleanText(item.id) === delivery.id);
+    if (isTerminalDeliveryStatus(existingDelivery?.status)) {
+      const nextState = withAudit(
+        state,
+        'device-delivery-stored-ignored',
+        'Evento atrasado de deposito ignorado para uma entrega encerrada.',
+        { eventId: event.id, deliveryId: delivery.id, door: delivery.door }
+      );
+      return { state: withProcessedDeviceEvent(nextState, event), notification: null };
     }
 
     let nextState = withAudit(
@@ -3707,6 +3824,60 @@ async function handleApi(request, response) {
     return;
   }
 
+  if (method === 'GET' && path === '/api/admin/privacy') {
+    if (!hasAdminPermission(adminAuth, 'canManagePrivacy')) {
+      sendError(response, 403, 'Este papel nao pode consultar ou executar a politica de privacidade.');
+      return;
+    }
+    sendJson(
+      response,
+      200,
+      { ok: true, privacy: buildPrivacySummary(state, { config: PRIVACY_CONFIG }) },
+      { 'cache-control': 'no-store' }
+    );
+    return;
+  }
+
+  if (method === 'POST' && path === '/api/admin/privacy/retention/run') {
+    if (!hasAdminPermission(adminAuth, 'canManagePrivacy')) {
+      sendError(response, 403, 'Este papel nao pode executar a politica de privacidade.');
+      return;
+    }
+    const applied = await runPrivacyLifecycleForLocker({
+      lockerId: requestLockerId,
+      tenantId: state.tenant?.tenantId ?? DEFAULT_TENANT_ID,
+      actor: adminActor(adminAuth),
+      force: true,
+    });
+    sendJson(response, 200, { ok: true, ...applied }, { 'cache-control': 'no-store' });
+    return;
+  }
+
+  const privacyExportMatch = path.match(/^\/api\/admin\/privacy\/residents\/([^/]+)\/export$/);
+  if (privacyExportMatch && method === 'GET') {
+    if (!hasAdminPermission(adminAuth, 'canManagePrivacy')) {
+      sendError(response, 403, 'Este papel nao pode exportar dados de titulares.');
+      return;
+    }
+    const residentId = decodeURIComponent(privacyExportMatch[1]);
+    const payload = buildResidentDataExport(state, residentId);
+    if (!payload) {
+      sendError(response, 404, 'Apartamento nao encontrado.');
+      return;
+    }
+    sendText(
+      response,
+      200,
+      JSON.stringify(payload, null, 2),
+      'application/json; charset=utf-8',
+      {
+        'cache-control': 'no-store',
+        'content-disposition': 'attachment; filename="preddita-dados-titular.json"',
+      }
+    );
+    return;
+  }
+
   if (method === 'PUT' && path === '/api/admin/update-policy') {
     if (!hasAdminPermission(adminAuth, 'canManageUpdates')) {
       sendError(response, 403, 'Este papel nao pode gerenciar atualizacoes do aplicativo.');
@@ -3769,7 +3940,7 @@ async function handleApi(request, response) {
       response,
       200,
       toCsv(
-        ['id', 'recipientName', 'recipientEmail', 'unit', 'door', 'size', 'pin', 'status', 'notificationStatus', 'createdAt', 'depositedAt', 'collectedAt', 'expiresAt'],
+        ['id', 'recipientName', 'recipientEmail', 'unit', 'door', 'size', 'status', 'notificationStatus', 'createdAt', 'depositedAt', 'collectedAt', 'expiresAt', 'credentialsErasedAt', 'evidenceErasedAt', 'personalDataAnonymizedAt'],
         state.deliveries ?? []
       ),
       'text/csv; charset=utf-8'
@@ -3859,20 +4030,30 @@ async function handleApi(request, response) {
   }
 
   if (residentMatch && method === 'DELETE') {
-    if (!hasAdminPermission(adminAuth, 'canManageApartments')) {
-      sendError(response, 403, 'Este papel nao pode remover apartamentos.');
+    if (!hasAdminPermission(adminAuth, 'canManagePrivacy')) {
+      sendError(response, 403, 'Este papel nao pode eliminar dados de apartamentos.');
       return;
     }
     const residentId = decodeURIComponent(residentMatch[1]);
-    const previous = (state.residents ?? []).find((item) => item.id === residentId);
+    const erasure = eraseResidentData(state, residentId);
+    if (!erasure.ok) {
+      sendError(response, erasure.status, erasure.error);
+      return;
+    }
     const next = withAudit(
-      withResidentsRevision(state, (state.residents ?? []).filter((item) => item.id !== residentId)),
-      'resident-deleted',
-      previous ? `${residentApartmentLabel(previous)} removido.` : 'Apartamento removido.',
-      { residentId, actor: adminActor(adminAuth) }
+      withResidentsRevision(erasure.state, erasure.state.residents),
+      'privacy-resident-erased',
+      'Cadastro do apartamento eliminado e historico terminal anonimizado.',
+      {
+        anonymizedDeliveryCount: erasure.anonymizedDeliveryCount,
+        actor: adminActor(adminAuth),
+      }
     );
     await writeState(next, requestLockerId);
-    sendJson(response, 200, { ok: true });
+    sendJson(response, 200, {
+      ok: true,
+      anonymizedDeliveryCount: erasure.anonymizedDeliveryCount,
+    });
     void publishIotWakeup(next, 'residents-changed');
     return;
   }
@@ -4016,6 +4197,17 @@ async function handleApi(request, response) {
       sendError(response, 403, lockerValidation.error);
       return;
     }
+    const requestedDelivery = normalizeDeliveryPayload(body);
+    const currentDelivery = (state.deliveries ?? []).find((item) => item.id === requestedDelivery.id);
+    if (
+      requestedDelivery.status !== 'stored'
+      || isTerminalDeliveryStatus(currentDelivery?.status)
+      || !requestedDelivery.pin
+      || !requestedDelivery.qrPayload
+    ) {
+      sendError(response, 409, 'A notificacao exige uma entrega armazenada, ativa e com credenciais validas.');
+      return;
+    }
     const result = await notifyDeliveryStored(state, body);
     await writeState(result.state, requestLockerId);
     sendJson(response, 200, { ok: true, notification: result.notification });
@@ -4032,6 +4224,10 @@ async function handleApi(request, response) {
     const delivery = (state.deliveries ?? []).find((item) => item.id === deliveryId);
     if (!delivery) {
       sendError(response, 404, 'Entrega nao encontrada.');
+      return;
+    }
+    if (cleanText(delivery.status) !== 'stored' || !cleanText(delivery.pin) || !cleanText(delivery.qrPayload)) {
+      sendError(response, 409, 'A notificacao so pode ser reenviada enquanto a entrega estiver armazenada e ativa.');
       return;
     }
     const result = await notifyDeliveryStored(state, { delivery }, { force: true });
@@ -4357,6 +4553,13 @@ async function startServer() {
   } else {
     await jsonOperationalLogStore.prune(OPERATIONAL_LOG_RETENTION_DAYS);
   }
+  await runPrivacyLifecycleSweep().catch((error) => recordOperationalLog({
+    level: 'error',
+    event: 'privacy-retention-startup-failed',
+    message: 'A politica de retencao nao pode ser aplicada no startup; o servidor continuara em modo de recuperacao.',
+    source: 'server',
+    context: { errorCode: error?.code || error?.name || 'Error' },
+  }));
 
   server.listen(PORT, '0.0.0.0', () => {
     void recordOperationalLog({
@@ -4377,6 +4580,16 @@ async function startServer() {
   setInterval(() => {
     void processNotificationOutboxFromDisk();
   }, NOTIFICATION_OUTBOX_INTERVAL_MS).unref?.();
+
+  setInterval(() => {
+    void runPrivacyLifecycleSweep().catch((error) => recordOperationalLog({
+      level: 'error',
+      event: 'privacy-retention-failed',
+      message: 'Falha ao aplicar a politica automatica de retencao.',
+      source: 'worker',
+      context: { errorCode: error?.code || error?.name || 'Error' },
+    }));
+  }, PRIVACY_SWEEP_INTERVAL_MS).unref?.();
 }
 
 startServer().catch((error) => {

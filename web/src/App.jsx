@@ -17,6 +17,7 @@ import {
   countActiveDeliveries,
   createDoorCatalog,
   deliveryCanBeCollected,
+  eraseDeliveryCredentials,
   findAvailableDoor,
   formatRecipientApartment,
   getDeliveryStatusLabel,
@@ -73,7 +74,7 @@ const COMMANDS = createCommandSet(LOCKER_PROFILE);
 const DOORS_PER_PAGE = 8;
 const DOOR_COUNT_PRESETS = [8, 12, 16, 20, 24];
 const ADMIN_VIEWS = new Set(['admin', 'adminDeposit', 'adminPickup', 'doors', 'system']);
-const APP_VERSION = '2.0.24-lab';
+const APP_VERSION = '2.0.25-lab';
 const POPUP_BANNER_TITLES = new Set([
   'Porta pequena ainda aberta',
   'Sem porta grande disponivel',
@@ -1630,13 +1631,14 @@ export default function App() {
       }
 
       commitState((current) => completePickup(current, pickupToComplete.id, closeProof));
+      const collectedDelivery = eraseDeliveryCredentials({
+        ...pickupToComplete,
+        status: 'collected',
+        collectedAt: closeProof.closedAt,
+        pickupCloseProof: closeProof,
+      }, closeProof.closedAt);
       queueDeviceEvent('delivery-collected', {
-        delivery: {
-          ...pickupToComplete,
-          status: 'collected',
-          collectedAt: closeProof.closedAt,
-          pickupCloseProof: closeProof,
-        },
+        delivery: collectedDelivery,
         door: pickupToComplete.door,
         source: 'pickup-confirmed',
       }, {

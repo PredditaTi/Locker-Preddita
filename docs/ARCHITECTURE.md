@@ -157,6 +157,9 @@ No servidor:
 - Estado fica em `PREDDITA_DATA_DIR/state.json`.
 - Escrita e feita de forma atomica e com backups.
 - `processedDeviceEvents` guarda IDs ja processados para idempotencia.
+- Antes da persistencia, o ciclo de privacidade apaga credenciais terminais,
+  aplica retencao e sanitiza auditoria. No Postgres, o estado ja tratado e
+  dividido entre o snapshot principal e as tabelas normalizadas.
 
 Garantia pratica:
 
@@ -302,6 +305,17 @@ Servidor:
 - `PREDDITA_IOT_TICKET_TTL_SECONDS`: validade entre 900 e 3600 segundos.
 - `PREDDITA_OPERATIONAL_LOG_RETENTION_DAYS`: retencao dos logs tecnicos; 30 dias
   por padrao.
+- `PREDDITA_PRIVACY_CONTROLLER_NAME` e `PREDDITA_PRIVACY_CONTACT_EMAIL`:
+  identificacao e contato exibidos na politica do locker.
+- `PREDDITA_PRIVACY_SWEEP_INTERVAL_MS`: intervalo do worker; 6 horas por padrao.
+- `PREDDITA_DELIVERY_EVIDENCE_RETENTION_DAYS`: fotos e OCR; 30 dias por padrao.
+- `PREDDITA_DELIVERY_PERSONAL_DATA_RETENTION_DAYS`: dados pessoais de entregas
+  encerradas; 90 dias por padrao.
+- `PREDDITA_DELIVERY_RECORD_RETENTION_DAYS`: historico ja anonimizado; 730 dias.
+- `PREDDITA_AUDIT_RETENTION_DAYS`, `PREDDITA_COMMAND_RETENTION_DAYS`,
+  `PREDDITA_NOTIFICATION_RETENTION_DAYS`,
+  `PREDDITA_PROCESSED_EVENT_RETENTION_DAYS` e
+  `PREDDITA_BACKUP_RETENTION_DAYS`: demais prazos do ciclo de vida.
 - `PREDDITA_MAX_JSON_OPERATIONAL_LOGS`: limite do arquivo JSONL no modo de
   laboratorio; 5.000 registros por padrao.
 - `PREDDITA_ALLOWED_ORIGINS`: CORS permitido.

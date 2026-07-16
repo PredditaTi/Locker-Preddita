@@ -137,13 +137,21 @@ test('entregador deposita e morador retira a mesma encomenda', async ({ page }) 
   expect(collectedDelivery.status).toBe('collected');
   expect(collectedDelivery.pickupCloseProof?.channel).toBe(depositDoor);
   expect(collectedDelivery.collectedAt).toBeTruthy();
+  expect(collectedDelivery.pin).toBe('');
+  expect(collectedDelivery.token).toBe('');
+  expect(collectedDelivery.qrPayload).toBe('');
+  expect(collectedDelivery.credentialsErasedAt).toBeTruthy();
 
   await page.reload();
   await expect(page.getByRole('button', { name: /Entregar encomenda/i })).toBeVisible();
-  const persistedStatus = await page.evaluate(({ storageKey, deliveryId }) => {
+  const persistedDelivery = await page.evaluate(({ storageKey, deliveryId }) => {
     const state = JSON.parse(window.localStorage.getItem(storageKey) || '{}');
-    return state.deliveries?.find((delivery) => delivery.id === deliveryId)?.status;
+    return state.deliveries?.find((delivery) => delivery.id === deliveryId) || null;
   }, { storageKey: STORAGE_KEY, deliveryId: storedDelivery.id });
-  expect(persistedStatus).toBe('collected');
+  expect(persistedDelivery.status).toBe('collected');
+  expect(persistedDelivery.pin).toBe('');
+  expect(persistedDelivery.token).toBe('');
+  expect(persistedDelivery.qrPayload).toBe('');
+  expect(persistedDelivery.credentialsErasedAt).toBeTruthy();
   expect(browserErrors).toEqual([]);
 });

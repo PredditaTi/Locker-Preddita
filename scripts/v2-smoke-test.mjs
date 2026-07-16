@@ -13,7 +13,7 @@ const SINDICO_PASSWORD = 'v2-sindico-password';
 const OPERATOR_PASSWORD = 'v2-operator-password';
 const SUPER_ADMIN_PASSWORD = 'v2-super-admin-password';
 const DEVICE_KEY = 'v2-device-test-key';
-const EXPECTED_ADMIN_VERSION = '2.0.24-lab';
+const EXPECTED_ADMIN_VERSION = '2.0.25-lab';
 const PORT = 9897;
 const DATA_DIR = mkdtempSync(join(tmpdir(), 'preddita-v2-smoke-'));
 const ADMIN_USERS = JSON.stringify([
@@ -234,6 +234,8 @@ const server = spawn(process.execPath, [SERVER_PATH], {
     PREDDITA_COMMAND_LEASE_MS: '800',
     PREDDITA_COMMAND_EXECUTION_LEASE_MS: '3000',
     PREDDITA_DEVICE_STALE_MS: '30000',
+    PREDDITA_PRIVACY_CONTROLLER_NAME: 'Condominio Smoke',
+    PREDDITA_PRIVACY_CONTACT_EMAIL: 'lgpd.smoke@example.com',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -283,6 +285,19 @@ try {
   const adminHeaders = await login('sindico-smoke', SINDICO_PASSWORD);
   const operatorHeaders = await login('operador-smoke', OPERATOR_PASSWORD);
   const superAdminHeaders = await login('preddita-smoke', SUPER_ADMIN_PASSWORD);
+
+  const operatorPrivacy = await request('/api/admin/privacy', { headers: operatorHeaders });
+  if (operatorPrivacy.response.status !== 403) {
+    throw new Error('Operador nao deveria consultar a politica de privacidade.');
+  }
+  const privacy = await requestOk('/api/admin/privacy', { headers: adminHeaders });
+  if (
+    privacy.privacy?.policy?.controllerName !== 'Condominio Smoke'
+    || privacy.privacy?.policy?.contactEmail !== 'lgpd.smoke@example.com'
+    || privacy.privacy?.policy?.terminalCredentialRetention !== 'immediate'
+  ) {
+    throw new Error('Sindico deveria consultar a politica de privacidade configurada.');
+  }
 
   const sindicoState = await requestOk('/api/admin/state', { headers: adminHeaders });
   if (sindicoState.state.session?.role !== 'sindico' || sindicoState.state.platform !== null) {
@@ -479,7 +494,7 @@ try {
     throw new Error('Nonce HMAC reutilizado deveria ser bloqueado como replay.');
   }
 
-  await requestOk('/api/admin/residents', {
+  const createdResident = await requestOk('/api/admin/residents', {
     method: 'POST',
     headers: adminHeaders,
     body: JSON.stringify({
@@ -490,6 +505,23 @@ try {
       building: 'Torre Teste',
     }),
   });
+
+  const disposableResident = await requestOk('/api/admin/residents', {
+    method: 'POST',
+    headers: adminHeaders,
+    body: JSON.stringify({
+      email: 'eliminar.v2@example.com',
+      apartment: '903',
+      building: 'Torre Teste',
+    }),
+  });
+  const erasedResident = await requestOk(
+    `/api/admin/residents/${encodeURIComponent(disposableResident.resident.id)}`,
+    { method: 'DELETE', headers: adminHeaders }
+  );
+  if (erasedResident.anonymizedDeliveryCount !== 0) {
+    throw new Error('Cadastro sem entregas deveria ser eliminado sem historico associado.');
+  }
 
   const operatorState = await requestOk('/api/admin/state', { headers: operatorHeaders });
   const operatorResident = operatorState.state.residents.find((resident) => resident.apartment === '901');
@@ -570,7 +602,7 @@ try {
       deliveries: [
         {
           id: 'delivery-smoke-notify',
-          recipientId: 'resident-smoke',
+          recipientId: createdResident.resident.id,
           recipientName: 'Apartamento 901',
           recipientEmail: 'teste.v2@example.com',
           unit: 'Torre Teste - 9 andar - Ap 901',
@@ -629,6 +661,42 @@ try {
     throw new Error('Painel deveria receber a telemetria do atualizador e do transporte de comandos.');
   }
 
+  const residentExportResponse = await fetch(
+    `http://127.0.0.1:${PORT}/api/admin/privacy/residents/${encodeURIComponent(createdResident.resident.id)}/export`,
+    { headers: adminHeaders }
+  );
+  const residentExportText = await residentExportResponse.text();
+  if (
+    !residentExportResponse.ok
+    || !String(residentExportResponse.headers.get('cache-control')).includes('no-store')
+    || !residentExportText.includes('teste.v2@example.com')
+    || residentExportText.includes('123456')
+    || residentExportText.includes('SMOKE-TOKEN')
+    || residentExportText.includes('preddita://collect')
+  ) {
+    throw new Error('Exportacao do titular deveria conter seus dados sem revelar credenciais de retirada.');
+  }
+
+  const deliveriesCsv = await fetch(`http://127.0.0.1:${PORT}/api/admin/export/deliveries.csv`, {
+    headers: adminHeaders,
+  }).then((response) => response.text());
+  if (
+    !deliveriesCsv.includes('credentialsErasedAt')
+    || deliveriesCsv.includes(';pin;')
+    || deliveriesCsv.includes('123456')
+    || deliveriesCsv.includes('SMOKE-TOKEN')
+  ) {
+    throw new Error('CSV de entregas nao deveria expor PIN, token ou QR.');
+  }
+
+  const activeResidentErasure = await request(
+    `/api/admin/residents/${encodeURIComponent(createdResident.resident.id)}`,
+    { method: 'DELETE', headers: adminHeaders }
+  );
+  if (activeResidentErasure.response.status !== 409) {
+    throw new Error('Eliminacao deveria ser bloqueada enquanto o apartamento possui entrega ativa.');
+  }
+
   const protectedOperatorState = await requestOk('/api/admin/state', { headers: operatorHeaders });
   const protectedDelivery = protectedOperatorState.state.deliveries.find(
     (delivery) => delivery.id === 'delivery-smoke-notify'
@@ -682,7 +750,7 @@ try {
 
   const offlineDelivery = {
     id: 'delivery-smoke-offline-sync',
-    recipientId: 'resident-smoke',
+    recipientId: createdResident.resident.id,
     recipientName: 'Apartamento 901',
     recipientEmail: 'teste.v2@example.com',
     unit: 'Torre Teste - 9 andar - Ap 901',
@@ -754,6 +822,43 @@ try {
     duplicateReplay.failedEvents.length
   ) {
     throw new Error('Replay de evento offline ja processado deve ser idempotente e nao reenviar notificacao.');
+  }
+
+  const lateStoredReplay = await requestOk('/api/device/events', {
+    method: 'POST',
+    deviceAuth: true,
+    body: JSON.stringify({
+      events: [{
+        id: 'event-smoke-late-stored-after-collection',
+        type: 'delivery-stored',
+        occurredAt: new Date().toISOString(),
+        payload: { delivery: offlineDelivery, sendEmail: true },
+      }],
+    }),
+  });
+  if (
+    !lateStoredReplay.acceptedIds.includes('event-smoke-late-stored-after-collection')
+    || lateStoredReplay.notifications.some((item) => item.deliveryId === offlineDelivery.id)
+  ) {
+    throw new Error('Evento atrasado de deposito nao deveria reabrir uma entrega coletada.');
+  }
+
+  const terminalResend = await request('/api/admin/deliveries/delivery-smoke-offline-sync/notify', {
+    method: 'POST',
+    headers: adminHeaders,
+    body: JSON.stringify({}),
+  });
+  if (terminalResend.response.status !== 409) {
+    throw new Error('Entrega coletada nao deveria permitir reenvio de PIN ou QR.');
+  }
+
+  const retentionRun = await requestOk('/api/admin/privacy/retention/run', {
+    method: 'POST',
+    headers: adminHeaders,
+    body: JSON.stringify({}),
+  });
+  if (!retentionRun.privacy?.lastAppliedAt || !retentionRun.result) {
+    throw new Error('Execucao manual da retencao deveria retornar resultado auditavel.');
   }
 
   const created = await requestOk('/api/admin/doors/4/open', {
@@ -904,11 +1009,19 @@ try {
   if (offlineSyncedDelivery?.status !== 'collected') {
     throw new Error('Evento offline de retirada deveria liberar a entrega no painel.');
   }
+  if (
+    offlineSyncedDelivery.pin
+    || offlineSyncedDelivery.token
+    || offlineSyncedDelivery.qrPayload
+    || !offlineSyncedDelivery.credentialsErasedAt
+  ) {
+    throw new Error('Entrega coletada deveria apagar PIN, token e QR imediatamente.');
+  }
   if (!state.state.processedDeviceEvents.some((event) => event.id === 'event-smoke-offline-stored')) {
     throw new Error('Eventos offline processados deveriam ficar registrados para idempotencia.');
   }
-  if (!state.state.notificationOutbox?.some((item) => item.deliveryId === offlineDelivery.id)) {
-    throw new Error('Entrega sincronizada offline deveria enfileirar notificacao no outbox.');
+  if (state.state.notificationOutbox?.some((item) => item.deliveryId === offlineDelivery.id)) {
+    throw new Error('Coleta sincronizada deveria cancelar notificacoes pendentes da entrega.');
   }
   if (state.state.processedDeviceEvents.filter((event) => event.id === 'event-smoke-offline-stored').length !== 1) {
     throw new Error('Replay offline nao deveria duplicar o registro de idempotencia.');

@@ -546,7 +546,9 @@ input:focus {
 
 .health-grid strong {
   display: block;
+  min-width: 0;
   margin-top: 6px;
+  overflow-wrap: anywhere;
   font-size: 1.2rem;
 }
 
@@ -1161,6 +1163,10 @@ input:focus {
 
   .grid.two {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .health-grid .privacy-contact {
+    grid-column: 1 / -1;
   }
 
   .stat-card strong {
