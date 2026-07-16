@@ -59,8 +59,8 @@ const DATA_DIR = process.env.PREDDITA_DATA_DIR ? normalize(process.env.PREDDITA_
 const DB_PATH = join(DATA_DIR, 'state.json');
 const BACKUP_DIR = join(DATA_DIR, 'backups');
 const OPERATIONAL_LOG_PATH = join(DATA_DIR, 'operational-logs.jsonl');
-const APP_VERSION = '2.0.21-lab';
-const SCHEMA_VERSION = 10;
+const APP_VERSION = '2.0.22-lab';
+const SCHEMA_VERSION = 11;
 const DEFAULT_ADMIN_TOKEN = 'preddita-admin-local';
 const DEFAULT_SUPER_ADMIN_TOKEN = 'preddita-super-admin-local';
 const DEFAULT_DEVICE_KEY = 'preddita-device-local';
@@ -69,6 +69,11 @@ const MAX_PROCESSED_DEVICE_EVENTS = 600;
 const MAX_DEVICE_EVENTS_PER_BATCH = 120;
 const MAX_NOTIFICATION_OUTBOX = 500;
 const MAX_DELIVERY_EVIDENCE_DATA_URL = 900_000;
+const APP_UPDATE_CHANNELS = new Set(['lab', 'pilot', 'production']);
+const APP_UPDATE_STATUS_VALUES = new Set([
+  'idle', 'offered', 'downloading', 'downloaded', 'awaiting-permission',
+  'installing', 'failed', 'up-to-date',
+]);
 const DELIVERY_REMINDER_THRESHOLDS = [
   { level: 1, hours: 24, reason: 'delivery-reminder-24h' },
   { level: 2, hours: 48, reason: 'delivery-reminder-48h' },
@@ -496,6 +501,132 @@ function normalizeResidentRecord(resident = {}) {
   };
 }
 
+function createDefaultAppUpdatePolicy() {
+  return {
+    enabled: false,
+    channel: 'lab',
+    rolloutPercentage: 0,
+    releaseId: '',
+    versionCode: 0,
+    versionName: '',
+    apkUrl: '',
+    sha256: '',
+    notes: '',
+    publishedAt: '',
+    publishedBy: '',
+  };
+}
+
+function normalizeAppUpdatePolicy(policy = {}) {
+  const channel = cleanText(policy.channel).toLowerCase();
+  return {
+    ...createDefaultAppUpdatePolicy(),
+    enabled: Boolean(policy.enabled),
+    channel: APP_UPDATE_CHANNELS.has(channel) ? channel : 'lab',
+    rolloutPercentage: Math.max(0, Math.min(100, Number.parseInt(policy.rolloutPercentage, 10) || 0)),
+    releaseId: cleanText(policy.releaseId).slice(0, 120),
+    versionCode: Math.max(0, Number.parseInt(policy.versionCode, 10) || 0),
+    versionName: cleanText(policy.versionName).slice(0, 80),
+    apkUrl: cleanText(policy.apkUrl).slice(0, 2048),
+    sha256: cleanText(policy.sha256).toLowerCase().slice(0, 64),
+    notes: cleanText(policy.notes).slice(0, 500),
+    publishedAt: cleanText(policy.publishedAt),
+    publishedBy: cleanText(policy.publishedBy).slice(0, 120),
+  };
+}
+
+function validateAppUpdatePolicy(body = {}, currentPolicy = {}) {
+  if (cleanText(body.notes).length > 500) {
+    return { ok: false, error: 'As notas da versao devem ter no maximo 500 caracteres.' };
+  }
+  if (cleanText(body.apkUrl).length > 2048) {
+    return { ok: false, error: 'A URL do APK excede o tamanho permitido.' };
+  }
+  const merged = normalizeAppUpdatePolicy({ ...currentPolicy, ...body });
+  if (!APP_UPDATE_CHANNELS.has(cleanText(body.channel ?? merged.channel).toLowerCase())) {
+    return { ok: false, error: 'Canal de atualizacao invalido.' };
+  }
+  const rollout = Number(body.rolloutPercentage ?? merged.rolloutPercentage);
+  if (!Number.isInteger(rollout) || rollout < 0 || rollout > 100) {
+    return { ok: false, error: 'O rollout deve ser um numero inteiro entre 0 e 100.' };
+  }
+  if (!merged.enabled) return { ok: true, policy: merged };
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/.test(merged.releaseId)) {
+    return { ok: false, error: 'Informe um identificador de release valido.' };
+  }
+  if (!Number.isInteger(merged.versionCode) || merged.versionCode <= 0 || merged.versionCode > 2147483647) {
+    return { ok: false, error: 'Informe um versionCode entre 1 e 2147483647.' };
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9._+-]{0,79}$/.test(merged.versionName)) {
+    return { ok: false, error: 'Informe um versionName valido.' };
+  }
+  if (
+    (merged.channel === 'lab' && !merged.versionName.endsWith('-lab'))
+    || (merged.channel === 'pilot' && !merged.versionName.endsWith('-pilot'))
+    || (merged.channel === 'production' && /-(lab|pilot)$/.test(merged.versionName))
+  ) {
+    return { ok: false, error: 'O versionName nao corresponde ao canal selecionado.' };
+  }
+  let apkUrl;
+  try {
+    apkUrl = new URL(merged.apkUrl);
+  } catch (_error) {
+    return { ok: false, error: 'Informe uma URL HTTPS valida para o APK.' };
+  }
+  if (apkUrl.protocol !== 'https:' || apkUrl.username || apkUrl.password) {
+    return { ok: false, error: 'O APK deve usar uma URL HTTPS sem credenciais embutidas.' };
+  }
+  if (!/^[a-f0-9]{64}$/.test(merged.sha256)) {
+    return { ok: false, error: 'Informe o SHA-256 completo do APK (64 caracteres hexadecimais).' };
+  }
+  return { ok: true, policy: merged };
+}
+
+function normalizeAppUpdaterStatus(status = {}, current = {}) {
+  const incomingStatus = cleanText(status.status).toLowerCase();
+  const incomingProgress = Number.parseInt(status.progressPercentage, 10);
+  return {
+    available: status.available === undefined ? Boolean(current.available) : Boolean(status.available),
+    currentVersionCode: Math.max(0, Number.parseInt(status.currentVersionCode, 10) || Number.parseInt(current.currentVersionCode, 10) || 0),
+    currentVersionName: cleanText(status.currentVersionName || current.currentVersionName).slice(0, 80),
+    status: APP_UPDATE_STATUS_VALUES.has(incomingStatus) ? incomingStatus : cleanText(current.status) || 'idle',
+    releaseId: cleanText(status.releaseId || current.releaseId).slice(0, 120),
+    targetVersionCode: Math.max(0, Number.parseInt(status.targetVersionCode, 10) || Number.parseInt(current.targetVersionCode, 10) || 0),
+    targetVersionName: cleanText(status.targetVersionName || current.targetVersionName).slice(0, 80),
+    progressPercentage: status.progressPercentage === undefined || !Number.isFinite(incomingProgress)
+      ? Math.max(0, Math.min(100, Number.parseInt(current.progressPercentage, 10) || 0))
+      : Math.max(0, Math.min(100, incomingProgress)),
+    lastError: status.lastError === undefined
+      ? cleanText(current.lastError).slice(0, 300)
+      : cleanText(status.lastError).slice(0, 300),
+    updatedAt: cleanText(status.updatedAt) || nowIso(),
+  };
+}
+
+function appUpdateRolloutBucket(lockerId, releaseId) {
+  const digest = createHash('sha256').update(`${lockerId}:${releaseId}`).digest();
+  return (digest.readUInt32BE(0) / 0xffffffff) * 100;
+}
+
+function resolveDeviceAppUpdate(state) {
+  const policy = normalizeAppUpdatePolicy(state.appUpdate);
+  if (!policy.enabled || policy.rolloutPercentage <= 0) return null;
+  const lockerId = cleanText(state.tenant?.lockerId || state.device?.lockerId || DEFAULT_LOCKER_ID);
+  if (policy.rolloutPercentage < 100 && appUpdateRolloutBucket(lockerId, policy.releaseId) >= policy.rolloutPercentage) return null;
+  const currentVersionCode = Math.max(0, Number.parseInt(state.device?.appUpdater?.currentVersionCode, 10) || 0);
+  if (currentVersionCode >= policy.versionCode) return null;
+  return {
+    releaseId: policy.releaseId,
+    channel: policy.channel,
+    versionCode: policy.versionCode,
+    versionName: policy.versionName,
+    apkUrl: policy.apkUrl,
+    sha256: policy.sha256,
+    notes: policy.notes,
+    publishedAt: policy.publishedAt,
+  };
+}
+
 function createInitialState(options = {}) {
   const createdAt = nowIso();
   const tenantId = normalizeTenantId(options.tenantId);
@@ -536,6 +667,7 @@ function createInitialState(options = {}) {
     residentsUpdatedAt: createdAt,
     doors: createDoors(24),
     deliveries: [],
+    appUpdate: createDefaultAppUpdatePolicy(),
     notificationOutbox: [],
     commands: [],
     processedDeviceEvents: [],
@@ -647,6 +779,7 @@ function migrateState(parsed = {}, options = {}) {
     residentsUpdatedAt: parsed.residentsUpdatedAt ?? parsed.updatedAt ?? fallback.residentsUpdatedAt,
     doors: fallbackDoors.map((fallbackDoor, index) => normalizeDoorRecord(incomingDoors[index], fallbackDoor)),
     deliveries: Array.isArray(parsed.deliveries) ? parsed.deliveries : fallback.deliveries,
+    appUpdate: normalizeAppUpdatePolicy(parsed.appUpdate),
     notificationOutbox: Array.isArray(parsed.notificationOutbox)
       ? parsed.notificationOutbox.map(normalizeNotificationOutboxItem).slice(0, MAX_NOTIFICATION_OUTBOX)
       : [],
@@ -1759,6 +1892,10 @@ function getRuntimeSummary(state) {
     smtpConfigured: isSmtpConfigured(),
     pendingNotificationCount: notificationOutbox.filter((item) => ['pending', 'failed'].includes(cleanText(item.status))).length,
     failedNotificationCount: notificationOutbox.filter((item) => cleanText(item.status) === 'failed').length,
+    appUpdateEnabled: Boolean(state.appUpdate?.enabled),
+    appUpdateTargetVersion: cleanText(state.appUpdate?.versionName),
+    appUpdateRolloutPercentage: Number.parseInt(state.appUpdate?.rolloutPercentage, 10) || 0,
+    deviceAppUpdateStatus: cleanText(state.device?.appUpdater?.status) || 'unknown',
     deviceAuthMode: DEVICE_AUTH_MODE,
     storageMode: STORAGE_MODE,
     operationalStorage: isPostgresStorage() ? 'normalized-postgres' : 'snapshot',
@@ -1792,6 +1929,9 @@ function getLockerSummary(state) {
     serialPath: cleanText(state.device?.serialPath),
     bridgeVersion: cleanText(state.device?.bridgeVersion),
     edgeAppVersion: cleanText(state.device?.edgeAppVersion),
+    edgeVersionCode: Number.parseInt(state.device?.appUpdater?.currentVersionCode, 10) || 0,
+    appUpdateStatus: cleanText(state.device?.appUpdater?.status) || 'unknown',
+    appUpdateTargetVersion: cleanText(state.device?.appUpdater?.targetVersionName),
     commissioningStatus: cleanText(state.device?.commissioningStatus) || 'pending',
     commissionedAt: cleanText(state.device?.commissionedAt),
     unlockTimeoutSeconds: Number.parseInt(state.device?.unlockTimeoutSeconds, 10) || 0,
@@ -3481,6 +3621,41 @@ async function handleApi(request, response) {
     return;
   }
 
+  if (method === 'PUT' && path === '/api/admin/update-policy') {
+    if (!hasAdminPermission(adminAuth, 'canManageUpdates')) {
+      sendError(response, 403, 'Este papel nao pode gerenciar atualizacoes do aplicativo.');
+      return;
+    }
+    const body = await readBody(request);
+    const validation = validateAppUpdatePolicy(body, state.appUpdate);
+    if (!validation.ok) {
+      sendError(response, 400, validation.error);
+      return;
+    }
+    const actor = adminActor(adminAuth);
+    const publishedAt = validation.policy.enabled ? nowIso() : cleanText(state.appUpdate?.publishedAt);
+    const policy = {
+      ...validation.policy,
+      publishedAt,
+      publishedBy: validation.policy.enabled ? actor : cleanText(state.appUpdate?.publishedBy),
+    };
+    const next = withAudit(
+      { ...state, appUpdate: policy },
+      policy.enabled ? 'app-update-published' : 'app-update-disabled',
+      policy.enabled
+        ? `Atualizacao ${policy.versionName} publicada para ${policy.rolloutPercentage}% dos lockers.`
+        : 'Distribuicao remota de APK desativada.',
+      { releaseId: policy.releaseId, versionCode: policy.versionCode, actor }
+    );
+    await writeState(next, requestLockerId);
+    sendJson(response, 200, {
+      ok: true,
+      appUpdate: policy,
+      runtime: getRuntimeSummary(next),
+    });
+    return;
+  }
+
   if (method === 'GET' && path === '/api/admin/export/residents.csv') {
     if (!hasAdminPermission(adminAuth, 'canExportData')) {
       sendError(response, 403, 'Este papel nao pode exportar dados pessoais.');
@@ -3817,6 +3992,7 @@ async function handleApi(request, response) {
         residentsSyncedAt: cleanText(body.device?.residentsSyncedAt) || state.device?.residentsSyncedAt || '',
         remoteResidentsRevision: cleanText(body.device?.remoteResidentsRevision) || state.device?.remoteResidentsRevision || '',
         remoteBaseUrl: cleanText(body.device?.remoteBaseUrl ?? body.bridgeBaseUrl) || state.device?.remoteBaseUrl || '',
+        appUpdater: normalizeAppUpdaterStatus(body.device?.appUpdater, state.device?.appUpdater),
         lastSeenAt: nowIso(),
       },
     };
@@ -3852,6 +4028,7 @@ async function handleApi(request, response) {
             residents: current.residents ?? [],
             residentsUpdatedAt: current.residentsUpdatedAt ?? current.updatedAt,
             commands: leased.leasedCommands,
+            appUpdate: resolveDeviceAppUpdate(current),
             leaseDurationMs: COMMAND_LEASE_MS,
             serverTime: nowIso(),
           };
@@ -3892,6 +4069,7 @@ async function handleApi(request, response) {
           residents: current.residents ?? [],
           residentsUpdatedAt: current.residentsUpdatedAt ?? current.updatedAt,
           commands: leasedCommands,
+          appUpdate: resolveDeviceAppUpdate(current),
           leaseDurationMs: COMMAND_LEASE_MS,
           serverTime: nowIso(),
         };

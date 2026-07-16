@@ -23,7 +23,7 @@ Solucoes maduras de smart lockers se posicionam como plataformas completas, nao 
 | Autenticacao | Token fixo no browser | Login real, perfis, MFA e rotacao de chaves |
 | Admin | Abre portas e lista moradores | Centro operacional com diagnostico, comandos e auditoria |
 | App do armario | Estado local + sync | Edge agent separado da UI publica |
-| Atualizacao | ADB/manual | Canal de atualizacao com versao, rollout e rollback |
+| Atualizacao | ADB/manual | Canal com versao, rollout e recuperacao por versao superior |
 | Observabilidade | Logs manuais | Eventos estruturados, metricas e alertas |
 
 ## Arquitetura recomendada
@@ -91,13 +91,19 @@ Solucoes maduras de smart lockers se posicionam como plataformas completas, nao 
 - `Edge Agent` ganhou contrato proprio para RS-485, credencial Android,
   persistencia offline, heartbeat e comandos; a `Kiosk UI` nao acessa mais os
   transportes ou diarios diretamente.
+- Atualizacao remota segura do APK por locker, com canal, rollout deterministico,
+  pausa imediata e telemetria no Admin Online. O Android aceita somente HTTPS,
+  limita o download e valida SHA-256, pacote, `versionCode` e certificado antes
+  de abrir o instalador do sistema; operacoes fisicas em andamento bloqueiam o
+  handoff da atualizacao.
+- O workflow de release publica um GitHub Release imutavel com APK assinado e
+  checksum, pronto para ser referenciado no manifesto remoto.
 
 ## Proximas melhorias recomendadas
 
-1. Criar fluxo de atualizacao remota do APK.
-2. Trocar polling por AWS IoT Core/MQTT.
-3. Adicionar testes de contrato da API e testes de fluxo do kiosk.
-4. Criar LGPD/data-retention: CPF, telefone, e-mail, auditoria e expiracao de entregas.
+1. Trocar polling por AWS IoT Core/MQTT.
+2. Adicionar testes de contrato da API e testes de fluxo do kiosk.
+3. Criar LGPD/data-retention: CPF, telefone, e-mail, auditoria e expiracao de entregas.
 
 ## Criterio de produto para ficar competitivo
 

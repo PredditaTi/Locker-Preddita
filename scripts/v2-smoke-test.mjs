@@ -13,7 +13,7 @@ const SINDICO_PASSWORD = 'v2-sindico-password';
 const OPERATOR_PASSWORD = 'v2-operator-password';
 const SUPER_ADMIN_PASSWORD = 'v2-super-admin-password';
 const DEVICE_KEY = 'v2-device-test-key';
-const EXPECTED_ADMIN_VERSION = '2.0.21-lab';
+const EXPECTED_ADMIN_VERSION = '2.0.22-lab';
 const PORT = 9897;
 const DATA_DIR = mkdtempSync(join(tmpdir(), 'preddita-v2-smoke-'));
 const ADMIN_USERS = JSON.stringify([
@@ -300,6 +300,70 @@ try {
     throw new Error('Runtime JSON deveria informar o armazenamento dos logs operacionais.');
   }
 
+  const restrictedUpdate = await request('/api/admin/update-policy', {
+    method: 'PUT',
+    headers: adminHeaders,
+    body: JSON.stringify({ enabled: false, channel: 'lab', rolloutPercentage: 0 }),
+  });
+  if (restrictedUpdate.response.status !== 403) {
+    throw new Error('Sindico nao deveria gerenciar a distribuicao de APK.');
+  }
+
+  const invalidUpdate = await request('/api/admin/update-policy', {
+    method: 'PUT',
+    headers: superAdminHeaders,
+    body: JSON.stringify({
+      enabled: true,
+      channel: 'lab',
+      rolloutPercentage: 100,
+      releaseId: 'v2.0.22-lab',
+      versionCode: 22,
+      versionName: '2.0.22-lab',
+      apkUrl: 'http://downloads.example.com/preddita.apk',
+      sha256: 'a'.repeat(64),
+    }),
+  });
+  if (invalidUpdate.response.status !== 400) {
+    throw new Error('Politica de atualizacao com URL sem HTTPS deveria ser recusada.');
+  }
+
+  const mismatchedChannelUpdate = await request('/api/admin/update-policy', {
+    method: 'PUT',
+    headers: superAdminHeaders,
+    body: JSON.stringify({
+      enabled: true,
+      channel: 'pilot',
+      rolloutPercentage: 10,
+      releaseId: 'v2.0.22-lab',
+      versionCode: 22,
+      versionName: '2.0.22-lab',
+      apkUrl: 'https://downloads.example.com/preddita.apk',
+      sha256: 'a'.repeat(64),
+    }),
+  });
+  if (mismatchedChannelUpdate.response.status !== 400) {
+    throw new Error('VersionName deveria corresponder ao canal de distribuicao.');
+  }
+
+  const publishedUpdate = await requestOk('/api/admin/update-policy', {
+    method: 'PUT',
+    headers: superAdminHeaders,
+    body: JSON.stringify({
+      enabled: true,
+      channel: 'lab',
+      rolloutPercentage: 100,
+      releaseId: 'v2.0.22-lab',
+      versionCode: 22,
+      versionName: '2.0.22-lab',
+      apkUrl: 'https://github.com/PredditaTi/Locker-Preddita/releases/download/v2.0.22-lab/PREDDITA-Locker-2.0.22-lab-release.apk',
+      sha256: 'a'.repeat(64),
+      notes: 'Smoke test de distribuicao segura.',
+    }),
+  });
+  if (!publishedUpdate.appUpdate?.enabled || publishedUpdate.appUpdate?.versionCode !== 22) {
+    throw new Error('Admin Geral deveria publicar a politica de atualizacao por locker.');
+  }
+
   const restrictedLogs = await request('/api/admin/logs', { headers: adminHeaders });
   if (restrictedLogs.response.status !== 403) {
     throw new Error('Sindico nao deveria consultar logs operacionais.');
@@ -474,6 +538,13 @@ try {
         board: 1,
         doorCount: 10,
         residentCount: 2,
+        appUpdater: {
+          available: true,
+          currentVersionCode: 21,
+          currentVersionName: '2.0.21-lab',
+          status: 'idle',
+          progressPercentage: 0,
+        },
       },
       doors: Array.from({ length: 10 }, (_, index) => ({
         channel: index + 1,
@@ -527,6 +598,22 @@ try {
       ],
     }),
   });
+
+  const updateSnapshot = await requestOk('/api/device/snapshot', { deviceAuth: true });
+  if (
+    updateSnapshot.appUpdate?.releaseId !== 'v2.0.22-lab'
+    || updateSnapshot.appUpdate?.versionCode !== 22
+    || updateSnapshot.appUpdate?.sha256 !== 'a'.repeat(64)
+  ) {
+    throw new Error('Locker elegivel deveria receber o manifesto de atualizacao no snapshot autenticado.');
+  }
+  const updateAdminState = await requestOk('/api/admin/state', { headers: superAdminHeaders });
+  if (
+    updateAdminState.state.device?.appUpdater?.currentVersionCode !== 21
+    || updateAdminState.state.runtime?.deviceAppUpdateStatus !== 'idle'
+  ) {
+    throw new Error('Painel deveria receber a telemetria nativa do atualizador.');
+  }
 
   const protectedOperatorState = await requestOk('/api/admin/state', { headers: operatorHeaders });
   const protectedDelivery = protectedOperatorState.state.deliveries.find(

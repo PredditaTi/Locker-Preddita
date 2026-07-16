@@ -5,7 +5,8 @@
 O repositorio possui dois workflows:
 
 - `CI`: valida cada pull request e cada push na `main`.
-- `Release APK`: gera manualmente um APK release assinado e seu SHA-256.
+- `Release APK`: gera manualmente um APK release assinado e seu SHA-256 e os
+  publica em um GitHub Release imutavel.
 
 O CI usa Node.js 20, Java 17, Android SDK 34 e Postgres 16. Ele executa os
 testes JavaScript, o smoke Postgres, o parser Java RS-485, auditorias de
@@ -35,12 +36,18 @@ permitida somente no servidor de desenvolvimento do Vite, nunca em um APK.
 2. Escolha `Release APK`.
 3. Selecione `Run workflow`.
 4. Escolha `lab`, `pilot` ou `production`.
-5. Baixe o artifact produzido ao final do job.
-6. Confira o APK com o arquivo `.sha256` antes de instalar.
+5. Confirme o GitHub Release criado com a tag `v<versionName>`.
+6. Use a URL HTTPS do APK e o conteudo do `.sha256` no painel `Atualizacoes`.
 
 O workflow tambem executa `apksigner verify` antes de publicar o artifact.
 O canal precisa corresponder ao sufixo do `versionName`: `-lab`, `-pilot` ou
 nenhum sufixo para producao. Uma combinacao incorreta falha antes do upload.
+Uma tag existente tambem causa falha: releases nao sao sobrescritas. Para
+corrigir um APK, incremente sempre `versionCode` e `versionName`.
+
+A versao `2.0.22-lab` e o bootstrap do atualizador e ainda precisa ser instalada
+por ADB nos lockers existentes. Depois dela, releases com `versionCode` maior
+podem usar o rollout do Admin Online.
 
 ## Custodia da chave
 

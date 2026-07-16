@@ -48,7 +48,7 @@ export {
   validateFrame,
 };
 
-export const EDGE_AGENT_CONTRACT_VERSION = 1;
+export const EDGE_AGENT_CONTRACT_VERSION = 2;
 
 const REMOTE_COMPLETIONS_STORAGE_KEY = 'preddita_pending_remote_completions_v1';
 const MAX_PENDING_REMOTE_COMPLETIONS = 20;
@@ -120,10 +120,53 @@ function getResidentsRevision(residents, residentsUpdatedAt) {
     .join('|');
 }
 
+function getNativeAppUpdater() {
+  try {
+    if (typeof window === 'undefined' || !window.PredditaUpdater) return null;
+    return window.PredditaUpdater;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function createNativeAppUpdater() {
+  return {
+    getStatus() {
+      const bridge = getNativeAppUpdater();
+      if (!bridge?.getStatus) {
+        return {
+          available: false,
+          currentVersionCode: 0,
+          currentVersionName: '',
+          status: 'idle',
+        };
+      }
+      try {
+        const parsed = JSON.parse(bridge.getStatus() || '{}');
+        return parsed && typeof parsed === 'object'
+          ? { ...parsed, available: true }
+          : { available: true, status: 'idle' };
+      } catch (_error) {
+        return { available: true, status: 'failed', lastError: 'INVALID_NATIVE_UPDATE_STATUS' };
+      }
+    },
+    requestUpdate(manifest) {
+      const bridge = getNativeAppUpdater();
+      if (!bridge?.requestUpdate) return false;
+      try {
+        return Boolean(bridge.requestUpdate(JSON.stringify(manifest)));
+      } catch (_error) {
+        return false;
+      }
+    },
+  };
+}
+
 export class EdgeAgentRuntime {
   constructor(options = {}) {
     this.hardware = options.hardware ?? Serial;
     this.remote = options.remote ?? RemoteBridge;
+    this.appUpdater = options.appUpdater ?? createNativeAppUpdater();
     this.storage = resolveStorage(options.storage);
     this.now = options.now ?? (() => new Date().toISOString());
     this.maxPendingEvents = options.maxPendingEvents ?? MAX_PENDING_DEVICE_EVENTS;
@@ -196,6 +239,15 @@ export class EdgeAgentRuntime {
 
   publishRemoteStatus(payload) {
     return this.remote.publishRemoteStatus(payload);
+  }
+
+  getAppUpdateStatus() {
+    return this.appUpdater.getStatus();
+  }
+
+  requestAppUpdate(manifest) {
+    if (!manifest || typeof manifest !== 'object') return false;
+    return this.appUpdater.requestUpdate(manifest);
   }
 
   queueEvent(type, payload = {}, options = {}) {
@@ -436,7 +488,14 @@ export class EdgeAgentRuntime {
     try {
       await this.flushPendingCompletions();
       await this.flushPendingEvents({ onNotifications: options.onNotifications });
-      await this.remote.publishRemoteStatus(options.status ?? {});
+      const status = options.status ?? {};
+      await this.remote.publishRemoteStatus({
+        ...status,
+        device: {
+          ...(status.device ?? {}),
+          appUpdater: this.getAppUpdateStatus(),
+        },
+      });
 
       const snapshot = await this.remote.fetchRemoteSnapshot();
       if (!snapshot) return { ok: false, offline: true };
@@ -450,14 +509,19 @@ export class EdgeAgentRuntime {
         getResidentsRevision(residents, snapshot.residentsUpdatedAt),
       );
 
+      const commands = Array.isArray(snapshot.commands) ? snapshot.commands : [];
       await this.executeRemoteCommands(
-        Array.isArray(snapshot.commands) ? snapshot.commands : [],
+        commands,
         {
           doorCount: Number.parseInt(options.doorCount, 10) || 0,
           onOpenDoor: options.onOpenDoor,
         },
       );
-      return { ok: true, snapshot };
+      const updateRequested = commands.length === 0
+        && Boolean(options.canInstallUpdate)
+        && Boolean(snapshot.appUpdate)
+        && this.requestAppUpdate(snapshot.appUpdate);
+      return { ok: true, snapshot, updateRequested };
     } finally {
       this.remoteCycleInFlight = false;
     }

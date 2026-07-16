@@ -25,8 +25,8 @@ android {
         applicationId "com.preddita.entregaslocker"
         minSdk 26            // Android 8 — RK3562 roda Android 11+
         targetSdk 34
-        versionCode 21
-        versionName "2.0.21-lab"
+        versionCode 22
+        versionName "2.0.22-lab"
     }
 
     signingConfigs {
@@ -60,5 +60,6 @@ android {
 
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'androidx.core:core:1.13.1'
     implementation 'androidx.webkit:webkit:1.16.0'
 }

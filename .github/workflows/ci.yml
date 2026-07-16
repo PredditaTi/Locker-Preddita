@@ -123,6 +123,15 @@ jobs:
             scripts/DeviceAuthContractTest.java
           java -cp "$output_dir" DeviceAuthContractTest
 
+      - name: Test native app update contract
+        run: |
+          output_dir="$(mktemp -d)"
+          trap 'rm -rf "$output_dir"' EXIT
+          javac -d "$output_dir" \
+            android/app/src/main/java/com/preddita/entregaslocker/AppUpdateContract.java \
+            scripts/AppUpdateContractTest.java
+          java -cp "$output_dir" AppUpdateContractTest
+
       - name: Audit production dependencies
         run: |
           npm audit --omit=dev --audit-level=high --prefix admin-online

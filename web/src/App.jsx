@@ -73,7 +73,7 @@ const COMMANDS = createCommandSet(LOCKER_PROFILE);
 const DOORS_PER_PAGE = 8;
 const DOOR_COUNT_PRESETS = [8, 12, 16, 20, 24];
 const ADMIN_VIEWS = new Set(['admin', 'adminDeposit', 'adminPickup', 'doors', 'system']);
-const APP_VERSION = '2.0.21-lab';
+const APP_VERSION = '2.0.22-lab';
 const POPUP_BANNER_TITLES = new Set([
   'Porta pequena ainda aberta',
   'Sem porta grande disponivel',
@@ -1923,8 +1923,12 @@ export default function App() {
   }
 
   async function processRemoteBridge() {
+    const hasOpenDoorWorkflow = lockerState.deliveries.some((delivery) =>
+      ['door_opened_for_dropoff', 'pickup_opened'].includes(delivery.status),
+    );
     return edgeAgent.runRemoteCycle({
       doorCount: lockerState.deviceConfig.doorCount,
+      canInstallUpdate: !isBusy && view === 'home' && !hasOpenDoorWorkflow,
       status: {
         device: {
           serialOpen: hardwareInfo.serialOpen,
@@ -2012,7 +2016,7 @@ export default function App() {
       clearInterval(timer);
       clearTimeout(initialTimer);
     };
-  }, [doorStates, hardwareInfo, isBusy, lockerState]);
+  }, [doorStates, hardwareInfo, isBusy, lockerState, view]);
 
   useEffect(() => {
     if (view !== 'courier' || !activeDeposit || courierDepositStage !== 'large') {

@@ -174,7 +174,7 @@ cd web
 $env:VITE_PREDDITA_REMOTE_URL="https://locker.example.com"
 $env:VITE_PREDDITA_LOCKER_ID="ks1062-aurora"
 $env:VITE_PREDDITA_DEVICE_AUTH_MODE="hmac"
-$env:VITE_PREDDITA_EDGE_APP_VERSION="2.0.21-lab"
+$env:VITE_PREDDITA_EDGE_APP_VERSION="2.0.22-lab"
 npm run build
 Remove-Item Env:VITE_PREDDITA_REMOTE_URL
 Remove-Item Env:VITE_PREDDITA_LOCKER_ID
@@ -209,6 +209,28 @@ Ver versao instalada:
 & $adb shell dumpsys package com.preddita.entregaslocker | Select-String "versionCode|versionName"
 ```
 
+## Publicar uma atualizacao remota
+
+`2.0.22-lab` introduz o bridge nativo do atualizador. Instale essa versao uma
+vez por ADB em cada equipamento existente; o rollout remoto passa a valer para
+`versionCode 23` e superiores.
+
+1. Incremente `versionCode` e `versionName` em `android/app/build.gradle`.
+2. Mescle a versao validada na `main` e execute `Release APK` com o canal
+   correspondente. O workflow cria uma release imutavel com o APK e `.sha256`.
+3. Entre no Admin Online como `suporte` ou `super_admin` e abra `Atualizacoes`.
+4. Informe a tag da release, as duas versoes, a URL HTTPS do asset e os 64
+   caracteres do checksum. Comece com rollout pequeno e aumente depois de
+   confirmar a telemetria dos lockers piloto.
+5. Pause a distribuicao no painel se houver falha. Nao publique downgrade:
+   corrija o problema em um novo `versionCode`, assinado pela mesma keystore.
+
+O Edge Agent so entrega o manifesto ao Android quando a tela inicial esta
+ociosa, sem porta aguardando deposito/retirada e sem comando remoto no ciclo.
+O Android revalida o arquivo depois do download e antes de retomar uma
+instalacao que aguardava permissao. Na primeira atualizacao, o sistema pode
+solicitar ao operador que autorize esta fonte de instalacao.
+
 ## Checklist antes de publicar
 
 - `npm run test:workflow` passou.
@@ -218,6 +240,8 @@ Ver versao instalada:
 - `npm run build` passou.
 - `gradlew assembleDebug` passou.
 - O APK `release` foi assinado com a keystore de producao, nunca com a de debug.
+- O GitHub Release possui o APK e `.sha256`, e a URL/checksum do rollout
+  correspondem exatamente a esses assets.
 - `PREDDITA_ADMIN_USERS` contem somente hashes scrypt, inclui um
   `super_admin` ativo e restringe cada conta aos lockers necessarios.
 - Login, logout, CSRF e os papeis administrativos passaram no smoke test.
