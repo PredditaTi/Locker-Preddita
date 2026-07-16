@@ -17,7 +17,9 @@ flowchart LR
   Android --> RS485["Serial /dev/ttyS5"]
   Android --> Installer["Instalador Android"]
   RS485 --> Board["Placa CM06 / portas"]
-  Edge <--> Admin["Admin Online Node.js"]
+  Edge <-->|"Snapshot HTTP autenticado"| Admin["Admin Online Node.js"]
+  Admin -->|"Wake-up QoS 1"| IoT["AWS IoT Core"]
+  IoT -->|"MQTT sobre WSS"| Edge
   Admin --> SMTP["SMTP e-mail"]
   Manager["Sindico/Admin Geral"] --> Admin
 ```
@@ -40,6 +42,8 @@ Principais arquivos:
 - `web/src/doorSafety.js`: validacao das leituras e provas do ciclo fisico
   fechada-aberta-fechada.
 - `web/src/remoteBridge.js`: HTTP entre app embarcado e Admin Online.
+- `web/src/commandWakeup.js`: conexao MQTT WSS opcional, validacao,
+  deduplicacao e reconexao com ticket temporario.
 - `web/src/diagnostics.js`: testes de diagnostico executaveis dentro do armario.
 - `android/app/src/main/java/.../MainActivity.java`: WebView e ponte JavaScript
   para ler/escrever na serial.
@@ -91,6 +95,8 @@ Principais arquivos:
 
 - `admin-online/server.mjs`: servidor HTTP, autenticacao, persistencia,
   endpoints, e-mail SMTP, fila de comandos e ingestao de eventos do armario.
+- `admin-online/iotCommandBus.mjs`: publicacao QoS 1 e emissao de tickets WSS
+  AWS SigV4 com session policy por locker.
 - `admin-online/public/app.js`: painel do sindico/Admin Geral em JavaScript
   puro.
 - `admin-online/public/index.html`: estrutura do painel.
@@ -105,6 +111,8 @@ Endpoints criticos:
 - `POST /api/admin/doors/:door/open`: cria comando remoto de abertura.
 - `PUT /api/admin/update-policy`: publica ou pausa o rollout remoto do APK.
 - `GET /api/device/snapshot`: armario busca moradores e comandos pendentes.
+- `GET /api/device/mqtt-ticket`: emite conexao WSS temporaria e restrita ao
+  topico exato do armario, ou informa que o MQTT esta desativado.
 - `POST /api/device/status`: armario publica heartbeat, portas e entregas.
 - `POST /api/device/events`: armario reenvia eventos offline.
 - `POST /api/device/commands/:id/ack`: armario confirma o lease e registra o
@@ -210,8 +218,8 @@ canal divergente ou byte sem transicao interrompem o fluxo.
 O painel nunca abre a porta diretamente. Ele cria um comando em fila:
 
 1. Sindico/Admin clica em abrir.
-2. Servidor cria comando `pending`.
-3. Armario busca via `/api/device/snapshot`; o servidor cria um lease curto e
+2. Servidor cria comando `pending` e somente depois publica um wake-up MQTT.
+3. O wake-up faz o armario antecipar `/api/device/snapshot`; o servidor cria um lease curto e
    muda o comando para `leased`.
 4. Armario grava a execucao local e envia `/api/device/commands/:id/ack` com
    `leaseId` e `executionId`.
@@ -231,6 +239,16 @@ reporta resultado fisico desconhecido para verificacao manual.
 
 Se o armario estiver offline, stale, sem serial ou com comando pendente para a
 mesma porta, a API bloqueia a abertura.
+
+O MQTT nunca carrega moradores, comandos ou credenciais e nao altera estado. A
+mensagem contem somente versao do schema, `eventId`, `lockerId`, motivo e
+horario. QoS 1 reduz perdas, mas duplicatas sao esperadas e deduplicadas. Se
+AWS IoT, STS ou WebSocket falhar, o polling HTTP de 6 segundos continua; com a
+conexao MQTT saudavel, o snapshot de contingencia ocorre a cada 30 segundos.
+
+O dispositivo solicita o ticket pela API HMAC. Por padrao, o servidor assume
+uma role por 15 minutos e aplica session policy exata para `iot:Connect`, `iot:Subscribe` e
+`iot:Receive`; a URL WSS SigV4 nao e persistida nem enviada na telemetria.
 
 ## Persistencia operacional
 
@@ -277,6 +295,11 @@ Servidor:
 - `PREDDITA_COMMAND_TTL_MS`: prazo total do comando.
 - `PREDDITA_COMMAND_LEASE_MS`: prazo para o armario confirmar a entrega.
 - `PREDDITA_COMMAND_EXECUTION_LEASE_MS`: prazo da execucao antes de reconciliar.
+- `PREDDITA_IOT_MODE`: `disabled` por padrao ou `aws-iot`.
+- `PREDDITA_IOT_REGION` e `PREDDITA_IOT_ENDPOINT`: regiao e hostname Data-ATS.
+- `PREDDITA_IOT_DEVICE_ROLE_ARN`: role temporaria assumida para cada ticket.
+- `PREDDITA_IOT_TOPIC_PREFIX`: prefixo sem dados pessoais; `preddita/v1` por padrao.
+- `PREDDITA_IOT_TICKET_TTL_SECONDS`: validade entre 900 e 3600 segundos.
 - `PREDDITA_OPERATIONAL_LOG_RETENTION_DAYS`: retencao dos logs tecnicos; 30 dias
   por padrao.
 - `PREDDITA_MAX_JSON_OPERATIONAL_LOGS`: limite do arquivo JSONL no modo de

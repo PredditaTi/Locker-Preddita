@@ -18,7 +18,7 @@ Solucoes maduras de smart lockers se posicionam como plataformas completas, nao 
 | Area | V1 atual | Direcao v2 |
 | --- | --- | --- |
 | Persistencia | JSON local no servidor | Banco transacional com backups, migracoes e auditoria |
-| Comandos remotos | Polling HTTP simples | Fila rastreavel, status detalhado e depois MQTT/IoT Core |
+| Comandos remotos | Polling HTTP simples | Fila rastreavel com wake-up MQTT/IoT Core e fallback HTTP |
 | Saude do dispositivo | Ultimo status bruto | Sinal fresco, stale detection, serial, bridge, SMTP e fila |
 | Autenticacao | Token fixo no browser | Login real, perfis, MFA e rotacao de chaves |
 | Admin | Abre portas e lista moradores | Centro operacional com diagnostico, comandos e auditoria |
@@ -45,8 +45,10 @@ Solucoes maduras de smart lockers se posicionam como plataformas completas, nao 
    - Abertura remota com rastreamento do comando ate a confirmacao do armario.
 
 5. **IoT/Command Bus**
-   - Curto prazo: polling HTTP endurecido.
-   - Medio prazo: AWS IoT Core com shadow/reportado/desejado, jobs de atualizacao e secure tunneling.
+   - Implementado: AWS IoT Core como wake-up QoS 1, com ticket WSS temporario,
+     privilegio minimo por locker e polling HTTP de contingencia.
+   - Futuro: avaliar shadow/reportado/desejado e secure tunneling somente quando
+     houver necessidade operacional comprovada.
 
 ## Melhorias implementadas nesta v2 local
 
@@ -98,12 +100,14 @@ Solucoes maduras de smart lockers se posicionam como plataformas completas, nao 
   handoff da atualizacao.
 - O workflow de release publica um GitHub Release imutavel com APK assinado e
   checksum, pronto para ser referenciado no manifesto remoto.
+- AWS IoT Core antecipa comandos, moradores e atualizacoes com wake-up MQTT QoS
+  1. O Postgres e a API HMAC continuam como fonte de verdade; tickets STS usam
+  session policy exata e o polling HTTP assume automaticamente em falhas.
 
 ## Proximas melhorias recomendadas
 
-1. Trocar polling por AWS IoT Core/MQTT.
-2. Adicionar testes de contrato da API e testes de fluxo do kiosk.
-3. Criar LGPD/data-retention: CPF, telefone, e-mail, auditoria e expiracao de entregas.
+1. Adicionar testes de contrato da API e testes de fluxo do kiosk.
+2. Criar LGPD/data-retention: CPF, telefone, e-mail, auditoria e expiracao de entregas.
 
 ## Criterio de produto para ficar competitivo
 

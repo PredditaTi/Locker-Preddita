@@ -1159,6 +1159,10 @@ input:focus {
     overflow-wrap: anywhere;
   }
 
+  .grid.two {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .stat-card strong {
     font-size: 1.55rem;
   }

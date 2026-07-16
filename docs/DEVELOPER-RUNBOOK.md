@@ -62,6 +62,8 @@ node scripts\v2-device-event-journal-test.mjs
 node scripts\v2-serial-protocol-test.mjs
 node scripts\v2-door-safety-test.mjs
 node scripts\v2-commissioning-test.mjs
+node scripts\CommandWakeupTest.mjs
+node scripts\IotCommandBusTest.mjs
 ```
 
 O teste nativo `scripts\Rs485FrameParserTest.java` tambem roda dentro de
@@ -174,7 +176,7 @@ cd web
 $env:VITE_PREDDITA_REMOTE_URL="https://locker.example.com"
 $env:VITE_PREDDITA_LOCKER_ID="ks1062-aurora"
 $env:VITE_PREDDITA_DEVICE_AUTH_MODE="hmac"
-$env:VITE_PREDDITA_EDGE_APP_VERSION="2.0.22-lab"
+$env:VITE_PREDDITA_EDGE_APP_VERSION="2.0.23-lab"
 npm run build
 Remove-Item Env:VITE_PREDDITA_REMOTE_URL
 Remove-Item Env:VITE_PREDDITA_LOCKER_ID
@@ -255,6 +257,9 @@ solicitar ao operador que autorize esta fonte de instalacao.
   provisionado no modo diagnostico.
 - `PREDDITA_ALLOWED_ORIGINS` inclui o dominio do painel e
   `https://appassets.androidplatform.net`, usado pelo APK.
+- Se MQTT estiver habilitado, `PREDDITA_IOT_*` aponta para o endpoint Data-ATS e
+  a role temporaria; o painel mostra `MQTT conectado` e o polling de contingencia
+  foi exercitado com o broker indisponivel.
 - SMTP configurado e testado.
 - APK reporta a versao esperada no painel online.
 - Armario aparece online, serial aberta e com `/dev/ttyS5`.
@@ -302,3 +307,6 @@ Painel nao abre porta remotamente:
 - Confirmar `serialOpen`.
 - Conferir se ja existe comando pendente para a mesma porta.
 - Verificar login, papel e locker permitido do usuario administrativo.
+- Em `Sistema`, conferir o transporte de comandos. Se MQTT estiver desconectado,
+  buscar `iot-device-wakeup-failed` ou `iot-device-ticket-failed` nos logs; o
+  snapshot HTTP deve continuar chegando a cada 6 segundos.

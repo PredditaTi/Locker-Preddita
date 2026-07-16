@@ -21,6 +21,7 @@ PREDDITA_COMMAND_TTL_MS=120000
 PREDDITA_COMMAND_LEASE_MS=15000
 PREDDITA_COMMAND_EXECUTION_LEASE_MS=30000
 PREDDITA_OPERATIONAL_LOG_RETENTION_DAYS=30
+PREDDITA_IOT_MODE=disabled
 PREDDITA_SMTP_HOST=smtp.seu-provedor.com
 PREDDITA_SMTP_PORT=587
 PREDDITA_SMTP_SECURE=false
@@ -64,6 +65,61 @@ As variaveis `PREDDITA_SMTP_*` sao usadas para enviar o PIN e o QR Code por e-ma
 ```text
 PREDDITA_DEVICE_KEYS={"ks1062-aurora":"chave-1","ks1062-torre-b":"chave-2"}
 ```
+
+## Wake-up com AWS IoT Core
+
+O MQTT e um aviso de baixa latencia, nao a fonte de verdade. O servidor grava a
+alteracao ou o comando no Postgres antes de publicar um evento QoS 1 sem dados
+pessoais. Ao receber o aviso, o Edge Agent chama o snapshot HTTP autenticado,
+que continua responsavel por lease, ACK, idempotencia e estado. Sem MQTT, o
+polling HTTP de 6 segundos permanece ativo; conectado, o heartbeat de
+contingencia passa a 30 segundos.
+
+Obtenha o hostname Data-ATS:
+
+```bash
+aws iot describe-endpoint --endpoint-type iot:Data-ATS --region sa-east-1
+```
+
+Configure o servidor sem chaves AWS estaticas, usando a role da instancia,
+task ou workload. Essa identidade precisa de `iot:Publish` somente nos topicos
+`preddita/v1/tenant/*/locker/*/wake` e `sts:AssumeRole` na role indicada por
+`PREDDITA_IOT_DEVICE_ROLE_ARN`.
+
+A role assumida pelo dispositivo precisa confiar na identidade do servidor e
+permitir como teto:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Effect": "Allow", "Action": "iot:Connect", "Resource": "arn:aws:iot:REGIAO:CONTA:client/preddita-locker-*" },
+    { "Effect": "Allow", "Action": "iot:Subscribe", "Resource": "arn:aws:iot:REGIAO:CONTA:topicfilter/preddita/v1/tenant/*/locker/*/wake" },
+    { "Effect": "Allow", "Action": "iot:Receive", "Resource": "arn:aws:iot:REGIAO:CONTA:topic/preddita/v1/tenant/*/locker/*/wake" }
+  ]
+}
+```
+
+Em cada ticket, o Admin Online adiciona uma session policy sem curingas,
+limitada ao `clientId` e ao topico exato do locker. O endpoint
+`GET /api/device/mqtt-ticket` exige a mesma assinatura HMAC do snapshot e
+devolve uma URL WSS SigV4 temporaria por 15 minutos por padrao; a URL nunca entra em logs,
+estado ou heartbeat.
+
+Depois da infraestrutura pronta, habilite:
+
+```text
+PREDDITA_IOT_MODE=aws-iot
+PREDDITA_IOT_REGION=sa-east-1
+PREDDITA_IOT_ENDPOINT=a1b2c3d4e5f6-ats.iot.sa-east-1.amazonaws.com
+PREDDITA_IOT_DEVICE_ROLE_ARN=arn:aws:iam::123456789012:role/preddita-locker-mqtt-device
+PREDDITA_IOT_TOPIC_PREFIX=preddita/v1
+PREDDITA_IOT_TICKET_TTL_SECONDS=900
+```
+
+No painel `Sistema`, confirme `Backend: Configurado` e `MQTT conectado`. Uma
+falha de publish ou ticket aparece nos logs operacionais, sem interromper o
+fluxo HTTP.
 
 ## Laboratorio com Docker
 

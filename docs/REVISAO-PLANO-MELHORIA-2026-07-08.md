@@ -263,6 +263,22 @@ Validacao do segundo lote:
 - O workflow `Release APK` publica APK e checksum em uma release imutavel.
 - Versao atualizada para `2.0.22-lab`, `versionCode 22` e `schemaVersion 11`.
 
+### Wake-up MQTT com AWS IoT Core em 2026-07-16
+
+- O Admin Online persiste comandos, moradores e politicas antes de publicar um
+  aviso MQTT QoS 1; o broker nao se tornou fonte de verdade.
+- O Edge Agent mantem uma conexao WSS opcional e antecipa o snapshot HTTP ao
+  receber o evento. Sem conexao, o polling de 6 segundos continua; conectado,
+  o heartbeat de contingencia ocorre a cada 30 segundos.
+- Tickets WSS usam credenciais STS por 15 minutos e session policy sem curingas,
+  limitada ao `clientId` e ao topico exato de tenant/locker.
+- Mensagens nao carregam moradores, comandos ou contatos. URL assinada e
+  credenciais nao entram em estado, logs ou heartbeat.
+- Painel `Sistema`, logs operacionais, smoke, testes de politica IAM e testes de
+  conexao/deduplicacao cobrem o novo transporte e sua contingencia.
+- Versao atualizada para `2.0.23-lab` e `versionCode 23`; `schemaVersion 11`
+  permanece porque nao houve nova entidade persistida.
+
 Primeiro pacote de Fase 0 aplicado apos esta revisao:
 
 - `admin-online`: `nodemailer` atualizado para versao sem vulnerabilidades no

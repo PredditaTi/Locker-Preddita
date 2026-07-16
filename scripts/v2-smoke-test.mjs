@@ -13,7 +13,7 @@ const SINDICO_PASSWORD = 'v2-sindico-password';
 const OPERATOR_PASSWORD = 'v2-operator-password';
 const SUPER_ADMIN_PASSWORD = 'v2-super-admin-password';
 const DEVICE_KEY = 'v2-device-test-key';
-const EXPECTED_ADMIN_VERSION = '2.0.22-lab';
+const EXPECTED_ADMIN_VERSION = '2.0.23-lab';
 const PORT = 9897;
 const DATA_DIR = mkdtempSync(join(tmpdir(), 'preddita-v2-smoke-'));
 const ADMIN_USERS = JSON.stringify([
@@ -545,6 +545,13 @@ try {
           status: 'idle',
           progressPercentage: 0,
         },
+        commandWakeup: {
+          enabled: false,
+          state: 'disabled',
+          connected: false,
+          transport: 'http-polling',
+          reconnectAttempt: 0,
+        },
       },
       doors: Array.from({ length: 10 }, (_, index) => ({
         channel: index + 1,
@@ -599,6 +606,11 @@ try {
     }),
   });
 
+  const mqttTicket = await requestOk('/api/device/mqtt-ticket', { deviceAuth: true });
+  if (mqttTicket.enabled !== false || mqttTicket.mode !== 'disabled' || mqttTicket.url) {
+    throw new Error('Servidor sem AWS IoT deveria manter apenas o polling HTTP e nao emitir URL assinada.');
+  }
+
   const updateSnapshot = await requestOk('/api/device/snapshot', { deviceAuth: true });
   if (
     updateSnapshot.appUpdate?.releaseId !== 'v2.0.22-lab'
@@ -611,8 +623,10 @@ try {
   if (
     updateAdminState.state.device?.appUpdater?.currentVersionCode !== 21
     || updateAdminState.state.runtime?.deviceAppUpdateStatus !== 'idle'
+    || updateAdminState.state.runtime?.iotMode !== 'disabled'
+    || updateAdminState.state.runtime?.deviceCommandWakeupState !== 'disabled'
   ) {
-    throw new Error('Painel deveria receber a telemetria nativa do atualizador.');
+    throw new Error('Painel deveria receber a telemetria do atualizador e do transporte de comandos.');
   }
 
   const protectedOperatorState = await requestOk('/api/admin/state', { headers: operatorHeaders });

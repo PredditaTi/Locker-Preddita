@@ -36,6 +36,7 @@ import {
   loadLockerState,
   persistLockerState,
 } from './lockerWorkflow.js';
+import { createCommandWakeupRuntime } from './commandWakeup.js';
 
 export {
   SENSOR_POLARITY_OPTIONS,
@@ -167,6 +168,9 @@ export class EdgeAgentRuntime {
     this.hardware = options.hardware ?? Serial;
     this.remote = options.remote ?? RemoteBridge;
     this.appUpdater = options.appUpdater ?? createNativeAppUpdater();
+    this.commandWakeup = options.commandWakeup ?? createCommandWakeupRuntime({
+      fetchTicket: () => this.remote.fetchMqttTicket(),
+    });
     this.storage = resolveStorage(options.storage);
     this.now = options.now ?? (() => new Date().toISOString());
     this.maxPendingEvents = options.maxPendingEvents ?? MAX_PENDING_DEVICE_EVENTS;
@@ -248,6 +252,18 @@ export class EdgeAgentRuntime {
   requestAppUpdate(manifest) {
     if (!manifest || typeof manifest !== 'object') return false;
     return this.appUpdater.requestUpdate(manifest);
+  }
+
+  startCommandWakeup(options) {
+    return this.commandWakeup.start(options);
+  }
+
+  stopCommandWakeup() {
+    return this.commandWakeup.stop();
+  }
+
+  getCommandWakeupStatus() {
+    return this.commandWakeup.getStatus();
   }
 
   queueEvent(type, payload = {}, options = {}) {
@@ -494,6 +510,7 @@ export class EdgeAgentRuntime {
         device: {
           ...(status.device ?? {}),
           appUpdater: this.getAppUpdateStatus(),
+          commandWakeup: this.getCommandWakeupStatus(),
         },
       });
 
