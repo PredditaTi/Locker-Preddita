@@ -12,13 +12,28 @@ import {
   parseAdminUsers,
   toPublicAdminSession,
 } from './adminAuth.mjs';
+import {
+  ADMIN_MFA_CHALLENGE_TTL_MS,
+  ADMIN_MFA_MAX_ATTEMPTS,
+  adminRoleRequiresMfa,
+  createMfaChallengeToken,
+  createTotpUri,
+  decryptMfaSecret,
+  encryptMfaSecret,
+  generateRecoveryCodes,
+  generateTotpSecret,
+  hashMfaChallengeToken,
+  parseMfaEncryptionKey,
+  verifyRecoveryCode,
+  verifyTotp,
+} from './adminMfa.mjs';
 
 const ROOT_DIR = fileURLToPath(new URL('.', import.meta.url));
 const PUBLIC_DIR = join(ROOT_DIR, 'public');
 const DATA_DIR = process.env.PREDDITA_DATA_DIR ? normalize(process.env.PREDDITA_DATA_DIR) : join(ROOT_DIR, 'data');
 const DB_PATH = join(DATA_DIR, 'state.json');
 const BACKUP_DIR = join(DATA_DIR, 'backups');
-const APP_VERSION = '2.0.16-lab';
+const APP_VERSION = '2.0.17-lab';
 const SCHEMA_VERSION = 7;
 const DEFAULT_ADMIN_TOKEN = 'preddita-admin-local';
 const DEFAULT_SUPER_ADMIN_TOKEN = 'preddita-super-admin-local';
@@ -68,6 +83,8 @@ const MAX_BACKUPS = Number.parseInt(process.env.PREDDITA_MAX_BACKUPS ?? '32', 10
 const ADMIN_RATE_LIMIT_PER_MINUTE = Number.parseInt(process.env.PREDDITA_ADMIN_RATE_LIMIT_PER_MINUTE ?? '180', 10);
 const ADMIN_LOGIN_RATE_LIMIT_PER_MINUTE = parsePositiveInteger(process.env.PREDDITA_ADMIN_LOGIN_RATE_LIMIT_PER_MINUTE, 12);
 const ADMIN_SESSION_TTL_MS = parsePositiveInteger(process.env.PREDDITA_ADMIN_SESSION_TTL_MS, 28800000);
+const ADMIN_MFA_ENCRYPTION_KEY_VALUE = cleanText(process.env.PREDDITA_MFA_ENCRYPTION_KEY);
+const ADMIN_MFA_ENCRYPTION_KEY = parseMfaEncryptionKey(ADMIN_MFA_ENCRYPTION_KEY_VALUE);
 const DEVICE_RATE_LIMIT_PER_MINUTE = Number.parseInt(process.env.PREDDITA_DEVICE_RATE_LIMIT_PER_MINUTE ?? '240', 10);
 const OPEN_RATE_LIMIT_PER_MINUTE = Number.parseInt(process.env.PREDDITA_OPEN_RATE_LIMIT_PER_MINUTE ?? '18', 10);
 const NOTIFICATION_OUTBOX_INTERVAL_MS = Number.parseInt(process.env.PREDDITA_NOTIFICATION_OUTBOX_INTERVAL_MS ?? '30000', 10);
@@ -246,6 +263,9 @@ function getStartupConfigErrors() {
   if (!DEVICE_AUTH_MODES.has(DEVICE_AUTH_MODE)) {
     errors.push('PREDDITA_DEVICE_AUTH_MODE deve ser hmac, dual ou legacy.');
   }
+  if (ADMIN_MFA_ENCRYPTION_KEY_VALUE && !ADMIN_MFA_ENCRYPTION_KEY) {
+    errors.push('PREDDITA_MFA_ENCRYPTION_KEY deve conter exatamente 32 bytes em Base64.');
+  }
   if (IS_PRODUCTION && DEVICE_AUTH_MODE !== 'hmac') {
     errors.push('PREDDITA_DEVICE_AUTH_MODE deve ser hmac em producao.');
   }
@@ -275,6 +295,12 @@ function getStartupConfigErrors() {
 
   if (isPostgresStorage() && !DATABASE_URL) {
     errors.push('PREDDITA_DATABASE_URL ou DATABASE_URL deve ser definido quando PREDDITA_STORAGE=postgres.');
+  }
+  if (!isPostgresStorage()) {
+    errors.push('PREDDITA_STORAGE deve ser postgres em producao para proteger contas privilegiadas com MFA.');
+  }
+  if (!ADMIN_MFA_ENCRYPTION_KEY) {
+    errors.push('PREDDITA_MFA_ENCRYPTION_KEY deve ser definido em producao para proteger os segredos MFA.');
   }
 
   return errors;
@@ -600,6 +626,33 @@ async function ensurePostgres() {
       on preddita_admin_sessions (username, expires_at desc)
       where revoked_at is null
     `);
+    await postgresPool.query(`
+      create table if not exists preddita_admin_mfa (
+        username text primary key references preddita_admin_users(username),
+        secret_ciphertext text not null,
+        last_used_step bigint not null default -1,
+        recovery_codes jsonb not null default '[]'::jsonb,
+        enabled_at timestamptz not null default now(),
+        updated_at timestamptz not null default now()
+      )
+    `);
+    await postgresPool.query(`
+      create table if not exists preddita_admin_mfa_challenges (
+        token_hash char(64) primary key,
+        username text not null references preddita_admin_users(username),
+        kind text not null check (kind in ('enroll', 'verify')),
+        pending_secret_ciphertext text,
+        attempts integer not null default 0 check (attempts >= 0),
+        created_at timestamptz not null default now(),
+        expires_at timestamptz not null,
+        consumed_at timestamptz
+      )
+    `);
+    await postgresPool.query(`
+      create index if not exists idx_preddita_admin_mfa_challenges_active
+      on preddita_admin_mfa_challenges (username, expires_at desc)
+      where consumed_at is null
+    `);
     return postgresPool;
   })();
 
@@ -837,6 +890,233 @@ async function initializePostgresAdminAuth() {
     repository: createPostgresAdminSessionRepository(),
     resolveUser: (username) => adminUsers.find((user) => user.username === username) || null,
   });
+}
+
+function isAdminMfaEnabledFor(user) {
+  return Boolean(
+    user
+    && isPostgresStorage()
+    && ADMIN_MFA_ENCRYPTION_KEY
+    && adminRoleRequiresMfa(user.role)
+  );
+}
+
+async function readPostgresAdminMfa(username) {
+  const pool = await ensurePostgres();
+  const result = await pool.query(
+    'select username from preddita_admin_mfa where username = $1',
+    [username]
+  );
+  return Boolean(result.rows[0]);
+}
+
+async function createPostgresAdminMfaChallenge(user, options = {}) {
+  const pool = await ensurePostgres();
+  const token = createMfaChallengeToken();
+  const tokenHash = hashMfaChallengeToken(token);
+  const expiresAt = new Date(Date.now() + ADMIN_MFA_CHALLENGE_TTL_MS).toISOString();
+  const kind = options.secretCiphertext ? 'enroll' : 'verify';
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+    await client.query(
+      `
+        update preddita_admin_mfa_challenges
+        set consumed_at = coalesce(consumed_at, now())
+        where username = $1 and consumed_at is null
+      `,
+      [user.username]
+    );
+    await client.query(
+      `
+        insert into preddita_admin_mfa_challenges (
+          token_hash, username, kind, pending_secret_ciphertext, expires_at
+        ) values ($1, $2, $3, $4, $5)
+      `,
+      [tokenHash, user.username, kind, options.secretCiphertext || null, expiresAt]
+    );
+    await client.query("delete from preddita_admin_mfa_challenges where expires_at < now() - interval '1 day'");
+    await client.query('commit');
+  } catch (error) {
+    await client.query('rollback');
+    throw error;
+  } finally {
+    client.release();
+  }
+  return { token, kind, expiresAt };
+}
+
+async function buildAdminMfaQrDataUrl(otpauthUri) {
+  const qrModule = await import('qrcode');
+  const QRCode = qrModule.default ?? qrModule;
+  return QRCode.toDataURL(otpauthUri, {
+    margin: 1,
+    width: 256,
+    errorCorrectionLevel: 'M',
+    color: { dark: '#10263a', light: '#ffffff' },
+  });
+}
+
+async function beginAdminMfaLogin(user) {
+  const enrolled = await readPostgresAdminMfa(user.username);
+  if (enrolled) {
+    const challenge = await createPostgresAdminMfaChallenge(user);
+    return {
+      required: true,
+      enrollment: false,
+      challengeToken: challenge.token,
+      expiresAt: challenge.expiresAt,
+    };
+  }
+
+  const secret = generateTotpSecret();
+  const secretCiphertext = encryptMfaSecret(secret, ADMIN_MFA_ENCRYPTION_KEY);
+  const challenge = await createPostgresAdminMfaChallenge(user, { secretCiphertext });
+  const otpauthUri = createTotpUri({ secret, username: user.username });
+  return {
+    required: true,
+    enrollment: true,
+    challengeToken: challenge.token,
+    expiresAt: challenge.expiresAt,
+    secret,
+    otpauthUri,
+    qrDataUrl: await buildAdminMfaQrDataUrl(otpauthUri),
+  };
+}
+
+async function completeAdminMfaLogin({ challengeToken, code, recoveryCode }) {
+  const tokenHash = hashMfaChallengeToken(challengeToken);
+  const pool = await ensurePostgres();
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+    const challengeResult = await client.query(
+      `
+        select token_hash, username, kind, pending_secret_ciphertext, attempts
+        from preddita_admin_mfa_challenges
+        where token_hash = $1 and consumed_at is null and expires_at > now()
+        for update
+      `,
+      [tokenHash]
+    );
+    const challenge = challengeResult.rows[0];
+    if (!challenge || challenge.attempts >= ADMIN_MFA_MAX_ATTEMPTS) {
+      await client.query('commit');
+      return { ok: false, status: 401, error: 'Desafio MFA invalido ou expirado. Entre novamente.' };
+    }
+
+    const user = adminUsers.find((candidate) => candidate.username === challenge.username && !candidate.disabled);
+    if (!user || !adminRoleRequiresMfa(user.role)) {
+      await client.query(
+        'update preddita_admin_mfa_challenges set consumed_at = now() where token_hash = $1',
+        [tokenHash]
+      );
+      await client.query('commit');
+      return { ok: false, status: 401, error: 'Desafio MFA invalido ou expirado. Entre novamente.' };
+    }
+
+    const attempts = Number(challenge.attempts) + 1;
+    await client.query(
+      `
+        update preddita_admin_mfa_challenges
+        set attempts = $2::integer,
+            consumed_at = case when $2::integer >= $3::integer then now() else consumed_at end
+        where token_hash = $1
+      `,
+      [tokenHash, attempts, ADMIN_MFA_MAX_ATTEMPTS]
+    );
+
+    const mfaResult = await client.query(
+      `
+        select secret_ciphertext, last_used_step, recovery_codes
+        from preddita_admin_mfa
+        where username = $1
+        for update
+      `,
+      [user.username]
+    );
+    const mfa = mfaResult.rows[0];
+
+    if (challenge.kind === 'enroll') {
+      if (mfa || !challenge.pending_secret_ciphertext || recoveryCode) {
+        await client.query('commit');
+        return { ok: false, status: 409, error: 'O cadastro MFA mudou. Entre novamente.' };
+      }
+      const secret = decryptMfaSecret(challenge.pending_secret_ciphertext, ADMIN_MFA_ENCRYPTION_KEY);
+      const verified = verifyTotp(secret, code, { window: 1 });
+      if (!verified) {
+        await client.query('commit');
+        return { ok: false, status: 401, error: 'Codigo invalido. Confira o horario do autenticador e tente novamente.' };
+      }
+      const recovery = generateRecoveryCodes();
+      await client.query(
+        `
+          insert into preddita_admin_mfa (
+            username, secret_ciphertext, last_used_step, recovery_codes, enabled_at, updated_at
+          ) values ($1, $2, $3, $4::jsonb, now(), now())
+        `,
+        [user.username, challenge.pending_secret_ciphertext, verified.counter, JSON.stringify(recovery.records)]
+      );
+      await client.query(
+        'update preddita_admin_sessions set revoked_at = coalesce(revoked_at, now()) where username = $1',
+        [user.username]
+      );
+      await client.query(
+        'update preddita_admin_mfa_challenges set consumed_at = now() where token_hash = $1',
+        [tokenHash]
+      );
+      await client.query('commit');
+      return { ok: true, user, enrollment: true, recoveryCodes: recovery.codes };
+    }
+
+    if (!mfa || challenge.kind !== 'verify') {
+      await client.query('commit');
+      return { ok: false, status: 409, error: 'A configuracao MFA mudou. Entre novamente.' };
+    }
+
+    if (recoveryCode) {
+      const records = Array.isArray(mfa.recovery_codes) ? mfa.recovery_codes : [];
+      const matchedRecord = verifyRecoveryCode(recoveryCode, records);
+      if (!matchedRecord) {
+        await client.query('commit');
+        return { ok: false, status: 401, error: 'Codigo de recuperacao invalido ou ja utilizado.' };
+      }
+      await client.query(
+        `
+          update preddita_admin_mfa
+          set recovery_codes = $2::jsonb, updated_at = now()
+          where username = $1
+        `,
+        [user.username, JSON.stringify(records.filter((record) => record.id !== matchedRecord.id))]
+      );
+    } else {
+      const secret = decryptMfaSecret(mfa.secret_ciphertext, ADMIN_MFA_ENCRYPTION_KEY);
+      const verified = verifyTotp(secret, code, {
+        window: 1,
+        lastUsedCounter: Number(mfa.last_used_step),
+      });
+      if (!verified) {
+        await client.query('commit');
+        return { ok: false, status: 401, error: 'Codigo invalido, expirado ou ja utilizado.' };
+      }
+      await client.query(
+        'update preddita_admin_mfa set last_used_step = $2, updated_at = now() where username = $1',
+        [user.username, verified.counter]
+      );
+    }
+
+    await client.query(
+      'update preddita_admin_mfa_challenges set consumed_at = now() where token_hash = $1',
+      [tokenHash]
+    );
+    await client.query('commit');
+    return { ok: true, user, enrollment: false, recoveryCodes: [] };
+  } catch (error) {
+    await client.query('rollback');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 async function readJsonState(lockerId = DEFAULT_LOCKER_ID) {
@@ -1138,6 +1418,7 @@ function getRuntimeSummary(state) {
     deviceAuthMode: DEVICE_AUTH_MODE,
     storageMode: STORAGE_MODE,
     adminSessionStorage: isPostgresStorage() ? 'postgres' : 'memory',
+    adminMfa: isPostgresStorage() && ADMIN_MFA_ENCRYPTION_KEY ? 'privileged-roles' : 'disabled',
     securityWarnings: getSecurityWarnings(),
   };
 }
@@ -1202,6 +1483,11 @@ function getSecurityWarnings() {
   const warnings = [];
   if (!ADMIN_USERS_BOOTSTRAP_CONFIGURED && !isPostgresStorage()) {
     warnings.push('PREDDITA_ADMIN_USERS nao foi definido; usando usuarios e senhas locais de desenvolvimento.');
+  }
+  if (!ADMIN_MFA_ENCRYPTION_KEY) {
+    warnings.push('PREDDITA_MFA_ENCRYPTION_KEY nao foi definido; MFA de contas privilegiadas esta desabilitado.');
+  } else if (!isPostgresStorage()) {
+    warnings.push('MFA de contas privilegiadas requer armazenamento Postgres.');
   }
   if (ALLOW_LEGACY_ADMIN_TOKENS) {
     warnings.push('PREDDITA_LEGACY_ADMIN_TOKENS esta habilitado para compatibilidade local.');
@@ -2511,6 +2797,19 @@ async function handleApi(request, response) {
       sendError(response, 401, 'Usuario ou senha invalidos.');
       return;
     }
+    if (isAdminMfaEnabledFor(user)) {
+      const mfa = await beginAdminMfaLogin(user);
+      console.log(JSON.stringify({
+        level: 'info',
+        event: mfa.enrollment ? 'admin-mfa-enrollment-started' : 'admin-mfa-challenge-started',
+        username: user.username,
+        role: user.role,
+        client: getClientKey(request),
+        at: nowIso(),
+      }));
+      sendJson(response, 200, { ok: true, mfa });
+      return;
+    }
     const created = await adminSessionStore.create(user);
     console.log(JSON.stringify({
       level: 'info',
@@ -2524,6 +2823,63 @@ async function handleApi(request, response) {
       response,
       200,
       { ok: true, session: toPublicAdminSession(created.session, { includeCsrf: true }) },
+      { 'set-cookie': created.cookie }
+    );
+    return;
+  }
+
+  if (method === 'POST' && path === '/api/auth/mfa/verify') {
+    if (!checkRateLimit(request, 'admin-mfa', ADMIN_LOGIN_RATE_LIMIT_PER_MINUTE)) {
+      sendError(response, 429, 'Muitas tentativas de MFA. Aguarde um minuto.');
+      return;
+    }
+    if (!isPostgresStorage() || !ADMIN_MFA_ENCRYPTION_KEY) {
+      sendError(response, 404, 'MFA nao esta habilitado neste ambiente.');
+      return;
+    }
+    const body = await readBody(request);
+    const challengeToken = cleanText(body.challengeToken);
+    const code = cleanText(body.code);
+    const recoveryCode = cleanText(body.recoveryCode);
+    if (!/^[A-Za-z0-9_-]{40,80}$/.test(challengeToken)) {
+      sendError(response, 400, 'Desafio MFA invalido. Entre novamente.');
+      return;
+    }
+    if (!recoveryCode && !/^\d{6}$/.test(code)) {
+      sendError(response, 400, 'Informe o codigo de 6 digitos do autenticador.');
+      return;
+    }
+    if (recoveryCode && recoveryCode.length > 40) {
+      sendError(response, 400, 'Codigo de recuperacao invalido.');
+      return;
+    }
+
+    const verified = await completeAdminMfaLogin({ challengeToken, code, recoveryCode });
+    if (!verified.ok) {
+      sendError(response, verified.status, verified.error);
+      return;
+    }
+    const created = await adminSessionStore.create(verified.user);
+    console.log(JSON.stringify({
+      level: 'info',
+      event: verified.enrollment ? 'admin-mfa-enrolled' : 'admin-mfa-verified',
+      username: verified.user.username,
+      role: verified.user.role,
+      method: recoveryCode ? 'recovery-code' : 'totp',
+      client: getClientKey(request),
+      at: nowIso(),
+    }));
+    sendJson(
+      response,
+      200,
+      {
+        ok: true,
+        session: toPublicAdminSession(created.session, { includeCsrf: true }),
+        mfa: {
+          enrollmentComplete: verified.enrollment,
+          recoveryCodes: verified.recoveryCodes,
+        },
+      },
       { 'set-cookie': created.cookie }
     );
     return;

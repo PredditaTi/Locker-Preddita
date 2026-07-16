@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>PREDDITA Admin Online</title>
-    <link rel="stylesheet" href="./styles.css?v=20260507-admin-207" />
+    <link rel="stylesheet" href="./styles.css?v=20260715-admin-208" />
   </head>
   <body>
     <main id="login-screen" class="auth-shell" hidden>
@@ -22,6 +22,52 @@
           <button id="login-button" class="primary-button" type="submit">Entrar</button>
           <p id="login-message" class="auth-message" role="alert" hidden></p>
         </form>
+        <form id="mfa-form" class="auth-form" hidden>
+          <div class="auth-step-heading">
+            <p class="eyebrow">Verificacao em duas etapas</p>
+            <h2 id="mfa-title">Confirme seu acesso</h2>
+            <p id="mfa-description" class="muted">Digite o codigo atual do seu aplicativo autenticador.</p>
+          </div>
+          <section id="mfa-enrollment" class="mfa-enrollment" aria-labelledby="mfa-enrollment-title" hidden>
+            <h3 id="mfa-enrollment-title">Cadastre o autenticador</h3>
+            <img id="mfa-qr" class="mfa-qr" alt="QR code para cadastrar a conta PREDDITA no autenticador" />
+            <p class="small">Chave para cadastro manual</p>
+            <code id="mfa-secret" class="mfa-secret"></code>
+          </section>
+          <label id="mfa-code-label" for="mfa-code">Codigo do autenticador</label>
+          <input
+            id="mfa-code"
+            name="code"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            pattern="[0-9]{6}"
+            maxlength="6"
+            required
+          />
+          <label id="mfa-recovery-label" for="mfa-recovery-code" hidden>Codigo de recuperacao</label>
+          <input
+            id="mfa-recovery-code"
+            name="recoveryCode"
+            autocomplete="off"
+            maxlength="40"
+            hidden
+          />
+          <button id="mfa-button" class="primary-button" type="submit">Confirmar acesso</button>
+          <button id="mfa-recovery-toggle" class="auth-text-button" type="button">Usar codigo de recuperacao</button>
+          <button id="mfa-back-button" class="auth-text-button" type="button">Voltar ao login</button>
+          <p id="mfa-message" class="auth-message" role="alert" hidden></p>
+        </form>
+        <section id="mfa-recovery-codes" class="recovery-codes" aria-labelledby="recovery-title" hidden>
+          <p class="eyebrow">Cadastro concluido</p>
+          <h2 id="recovery-title">Guarde seus codigos</h2>
+          <p class="muted">Cada codigo substitui o autenticador uma unica vez.</p>
+          <ul id="recovery-code-list"></ul>
+          <div class="recovery-actions">
+            <button id="copy-recovery-codes" class="ghost-button" type="button">Copiar codigos</button>
+            <button id="continue-after-recovery" class="primary-button" type="button">Continuar</button>
+          </div>
+          <p id="recovery-message" class="small" aria-live="polite"></p>
+        </section>
       </section>
     </main>
 
@@ -76,6 +122,6 @@
       </form>
     </template>
 
-    <script type="module" src="./app.js?v=20260507-admin-207"></script>
+    <script type="module" src="./app.js?v=20260715-admin-208"></script>
   </body>
 </html>

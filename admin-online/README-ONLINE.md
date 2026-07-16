@@ -13,6 +13,7 @@ PREDDITA_DATABASE_URL=postgresql://preddita:troque-esta-senha@postgres:5432/pred
 PREDDITA_ADMIN_USERS='[{"username":"preddita","name":"Admin Geral PREDDITA","role":"super_admin","passwordHash":"scrypt-v1$...","tenantId":"residencial-aurora","lockerIds":["*"]},{"username":"sindico","name":"Sindico","role":"sindico","passwordHash":"scrypt-v1$...","tenantId":"residencial-aurora","lockerIds":["ks1062-aurora"]}]'
 PREDDITA_ADMIN_SESSION_TTL_MS=28800000
 PREDDITA_ADMIN_LOGIN_RATE_LIMIT_PER_MINUTE=12
+PREDDITA_MFA_ENCRYPTION_KEY=cole-uma-chave-base64-de-32-bytes
 PREDDITA_DEVICE_KEY=crie-uma-chave-forte-para-o-armario
 PREDDITA_DEVICE_KEYS={"ks1062-aurora":"crie-uma-chave-forte-para-o-armario"}
 PREDDITA_LOCKER_ID=ks1062-aurora
@@ -49,6 +50,12 @@ O token bruto existe apenas no cookie `HttpOnly`; o banco armazena seu SHA-256.
 Um restart preserva sessoes validas, e logout permanece revogado depois de novo
 restart. O modo JSON continua com sessoes somente em memoria.
 
+Contas `super_admin` e `suporte` cadastram um autenticador TOTP no primeiro
+login. Gere `PREDDITA_MFA_ENCRYPTION_KEY` uma unica vez com
+`openssl rand -base64 32` e guarde a chave fora do repositorio. O servidor cifra
+o segredo TOTP no Postgres e entrega dez codigos de recuperacao de uso unico.
+Trocar ou perder essa chave exige recadastrar o MFA das contas privilegiadas.
+
 As variaveis `PREDDITA_SMTP_*` sao usadas para enviar o PIN e o QR Code por e-mail quando uma entrega e confirmada no armario.
 
 `PREDDITA_DEVICE_KEY` ainda existe como compatibilidade do piloto. Para varios armarios, prefira `PREDDITA_DEVICE_KEYS`, no formato JSON:
@@ -57,9 +64,9 @@ As variaveis `PREDDITA_SMTP_*` sao usadas para enviar o PIN e o QR Code por e-ma
 PREDDITA_DEVICE_KEYS={"ks1062-aurora":"chave-1","ks1062-torre-b":"chave-2"}
 ```
 
-## Deploy com Docker em VPS
+## Laboratorio com Docker
 
-1. Copie esta pasta `admin-online` para o servidor.
+1. Copie esta pasta `admin-online` para a maquina de laboratorio.
 2. Crie um arquivo `.env` baseado no `.env.example`.
 3. Rode:
 
@@ -67,7 +74,7 @@ PREDDITA_DEVICE_KEYS={"ks1062-aurora":"chave-1","ks1062-torre-b":"chave-2"}
 docker compose up -d --build
 ```
 
-4. Configure um proxy HTTPS, como Nginx/Caddy/Traefik, apontando seu dominio para a porta `8787`.
+4. Para acesso fora da maquina, configure HTTPS antes de expor a porta `8787`.
 
 ## Deploy com Docker + HTTPS automatico
 
@@ -75,7 +82,7 @@ Se o dominio/subdominio ja apontar para a VPS, use o compose de producao com Cad
 
 1. Crie o DNS `A` do subdominio, por exemplo `locker.preddita.com`, apontando para o IP da VPS.
 2. Copie `.env.production.example` para `.env`.
-3. Gere `PREDDITA_ADMIN_USERS` e preencha `PREDDITA_DOMAIN`, `PREDDITA_DEVICE_KEY` e `PREDDITA_SMTP_*`.
+3. Gere `PREDDITA_ADMIN_USERS` e `PREDDITA_MFA_ENCRYPTION_KEY`; preencha `PREDDITA_DOMAIN`, as chaves dos armarios e `PREDDITA_SMTP_*`.
 4. Rode:
 
 ```bash

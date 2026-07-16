@@ -254,6 +254,17 @@ h3 {
   gap: 10px;
 }
 
+.auth-step-heading {
+  margin-bottom: 6px;
+}
+
+.auth-step-heading h2,
+.recovery-codes h2 {
+  margin-bottom: 8px;
+  font-size: 1.55rem;
+  letter-spacing: 0;
+}
+
 .auth-form .primary-button {
   margin-top: 8px;
   min-height: 48px;
@@ -267,6 +278,91 @@ h3 {
   color: #842f2f;
   background: #fff1f1;
   font-size: 0.9rem;
+}
+
+.mfa-enrollment {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f6faff;
+}
+
+.mfa-enrollment h3,
+.mfa-enrollment p {
+  margin: 0;
+  letter-spacing: 0;
+}
+
+.mfa-qr {
+  width: 184px;
+  height: 184px;
+  object-fit: contain;
+  border: 8px solid #ffffff;
+}
+
+.mfa-secret {
+  max-width: 100%;
+  padding: 8px 10px;
+  overflow-wrap: anywhere;
+  color: var(--brand-navy);
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 0.86rem;
+}
+
+.auth-text-button {
+  min-height: 38px;
+  padding: 4px 8px;
+  color: var(--accent-dark);
+  background: transparent;
+  font-weight: 800;
+}
+
+.auth-text-button:hover,
+.auth-text-button:focus-visible {
+  text-decoration: underline;
+}
+
+.recovery-codes {
+  display: grid;
+  gap: 12px;
+}
+
+.recovery-codes ul {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.recovery-codes li {
+  min-width: 0;
+  padding: 9px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #f6faff;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.78rem;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.recovery-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.recovery-actions button {
+  min-height: 46px;
+  border-radius: 8px;
 }
 
 label {
@@ -777,6 +873,28 @@ input:focus {
   }
 
   .delivery-meta-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .auth-shell {
+    align-items: start;
+    padding: 12px;
+  }
+
+  .auth-panel {
+    padding: 22px 18px;
+  }
+
+  .mfa-qr {
+    width: min(184px, 100%);
+    height: auto;
+    aspect-ratio: 1;
+  }
+
+  .recovery-codes ul,
+  .recovery-actions {
     grid-template-columns: 1fr;
   }
 }

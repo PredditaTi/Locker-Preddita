@@ -198,6 +198,8 @@ Servidor:
   papel, tenant e lockers permitidos.
 - `PREDDITA_ADMIN_SESSION_TTL_MS`: validade maxima da sessao administrativa.
 - `PREDDITA_ADMIN_LOGIN_RATE_LIMIT_PER_MINUTE`: limite de tentativas de login.
+- `PREDDITA_MFA_ENCRYPTION_KEY`: chave Base64 de 32 bytes usada para cifrar os
+  segredos TOTP de `super_admin` e `suporte` no Postgres.
 - `PREDDITA_DEVICE_KEY`: chave usada pelo armario.
 - `PREDDITA_DEVICE_KEYS`: mapa de uma chave diferente por `lockerId`.
 - `PREDDITA_DEVICE_AUTH_MODE`: `hmac` em producao; `dual` existe apenas para
@@ -240,17 +242,24 @@ guarda somente seu SHA-256 em `preddita_admin_sessions`. CSRF, expiracao,
 restauracao apos restart e revogacao por logout passam pelo store compartilhado.
 No modo JSON de laboratorio, as sessoes continuam somente na memoria.
 
+Contas `super_admin` e `suporte` exigem TOTP antes da criacao da sessao. O
+primeiro login cria um desafio de cadastro de cinco minutos e entrega dez
+codigos de recuperacao de uso unico. Segredos TOTP usam AES-256-GCM; desafios
+ficam apenas como SHA-256, aceitam no maximo cinco tentativas e sao consumidos
+atomicamente. O ultimo passo TOTP aceito e persistido para impedir replay entre
+replicas. Em producao, Postgres e `PREDDITA_MFA_ENCRYPTION_KEY` sao obrigatorios.
+
 ## Riscos conhecidos e proximos passos
 
 - `web/src/App.jsx` ainda e grande. Antes de escalar para muitos armarios, vale
   separar em hooks/componentes por fluxo: entregador, morador, admin local e
   sincronizacao remota.
-- `admin-online` usa JSON em arquivo, adequado para laboratorio e piloto. Para
-  30 armarios, migrar para Postgres e modelar `lockers`, `doors`, `residents`,
-  `deliveries`, `commands` e `events` por `lockerId`.
+- O estado operacional ja usa um snapshot JSONB por locker no Postgres. Para 30
+  armarios, normalizar `lockers`, `doors`, `residents`, `deliveries`, `commands`
+  e `events` por `lockerId`, com transacoes e indices proprios.
 - HTTPS e dominio proprio devem ser obrigatorios em producao.
 - O envio de e-mail depende de SMTP externo; falhas ficam registradas para
   reprocessamento/diagnostico.
-- As sessoes ja sao compartilhadas no Postgres, mas as mutacoes do snapshot por
-  locker ainda usam fila em memoria. Mantenha uma replica ate tornar essas
-  mutacoes transacionais; depois adicione MFA para contas privilegiadas.
+- Sessoes e MFA ja sao compartilhados no Postgres, mas as mutacoes do snapshot
+  por locker ainda usam fila em memoria. Mantenha uma replica ate normalizar as
+  entidades operacionais e tornar as mutacoes transacionais no banco.

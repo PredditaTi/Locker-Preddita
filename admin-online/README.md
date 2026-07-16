@@ -66,6 +66,7 @@ $env:PREDDITA_STORAGE="postgres"
 $env:PREDDITA_DATABASE_URL="postgresql://preddita:senha@localhost:5432/preddita_locker"
 $env:PREDDITA_TENANT_ID="residencial-aurora"
 $env:PREDDITA_LOCKER_ID="ks1062-aurora"
+$env:PREDDITA_MFA_ENCRYPTION_KEY="COLE_UMA_CHAVE_BASE64_DE_32_BYTES"
 $env:PREDDITA_DEVICE_KEYS='{"ks1062-aurora":"uma-chave-do-armario"}'
 $env:PREDDITA_DEVICE_AUTH_MODE="hmac"
 node server.mjs
@@ -77,6 +78,11 @@ as tabelas automaticamente no startup quando usa Postgres. No primeiro boot,
 `preddita_admin_users`. Sessoes ficam em `preddita_admin_sessions` e usam hash
 SHA-256 do token; restart e logout preservam validade e revogacao. Sem Postgres,
 usuarios continuam no ambiente e sessoes continuam na memoria.
+
+Em producao, `super_admin` e `suporte` cadastram TOTP no primeiro login. Os
+segredos ficam cifrados no Postgres com `PREDDITA_MFA_ENCRYPTION_KEY`; gere a
+chave uma vez com `openssl rand -base64 32`, guarde-a no gerenciador de segredos
+do servidor e nao a troque sem um plano de recadastro das contas.
 
 ## Teste local da v2
 

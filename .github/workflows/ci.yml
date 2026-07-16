@@ -87,6 +87,7 @@ jobs:
           node scripts/v2-commissioning-test.mjs
           node scripts/v2-state-recovery-test.mjs
           node scripts/AdminAuthTest.mjs
+          node scripts/AdminMfaTest.mjs
           node scripts/v2-native-device-auth-test.mjs
           node scripts/v2-smoke-test.mjs
           node scripts/v2-postgres-smoke-test.mjs
@@ -94,6 +95,7 @@ jobs:
       - name: Validate server syntax
         run: |
           node --check admin-online/server.mjs
+          node --check admin-online/adminMfa.mjs
           node --check admin-online/public/app.js
 
       - name: Test native RS-485 parser

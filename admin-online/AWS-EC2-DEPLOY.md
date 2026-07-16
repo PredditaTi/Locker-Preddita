@@ -69,6 +69,7 @@ docker compose -f docker-compose.prod.yml up -d --build
 PREDDITA_DOMAIN=locker.preddita.com
 PREDDITA_ADMIN_USERS='[{"username":"preddita","name":"Admin Geral PREDDITA","role":"super_admin","passwordHash":"scrypt-v1$...","tenantId":"residencial-aurora","lockerIds":["*"]},{"username":"sindico","name":"Sindico","role":"sindico","passwordHash":"scrypt-v1$...","tenantId":"residencial-aurora","lockerIds":["ks1062-aurora"]}]'
 PREDDITA_ADMIN_SESSION_TTL_MS=28800000
+PREDDITA_MFA_ENCRYPTION_KEY=cole-uma-chave-gerada-com-openssl-rand-base64-32
 PREDDITA_DEVICE_KEY=crie-uma-chave-forte-do-armario
 PREDDITA_DEVICE_KEYS={"ks1062-aurora":"crie-uma-chave-forte-do-armario"}
 PREDDITA_DEVICE_AUTH_MODE=hmac
