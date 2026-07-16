@@ -77,21 +77,41 @@ create table if not exists preddita_commands (
   type text not null default '',
   status text not null default '',
   door integer,
+  lease_id text not null default '',
   execution_id text not null default '',
+  delivery_attempt integer not null default 0,
   created_at timestamptz,
+  acknowledged_at timestamptz,
   completed_at timestamptz,
   lease_expires_at timestamptz,
   sort_order integer not null default 0,
   data jsonb not null,
+  revision bigint not null default 0,
+  updated_at timestamptz not null default now(),
   primary key (tenant_id, locker_id, command_id),
   foreign key (tenant_id, locker_id)
     references preddita_locker_states(tenant_id, locker_id) on delete cascade
 );
 
+alter table preddita_commands
+  add column if not exists lease_id text not null default '',
+  add column if not exists acknowledged_at timestamptz,
+  add column if not exists delivery_attempt integer not null default 0,
+  add column if not exists revision bigint not null default 0,
+  add column if not exists updated_at timestamptz not null default now();
+
 create index if not exists idx_preddita_commands_locker_status
   on preddita_commands (tenant_id, locker_id, status, created_at desc);
 
 create index if not exists idx_preddita_commands_execution
+  on preddita_commands (tenant_id, locker_id, execution_id)
+  where execution_id <> '';
+
+create unique index if not exists uq_preddita_commands_active_door
+  on preddita_commands (tenant_id, locker_id, door)
+  where status in ('pending', 'leased', 'executing');
+
+create unique index if not exists uq_preddita_commands_execution
   on preddita_commands (tenant_id, locker_id, execution_id)
   where execution_id <> '';
 

@@ -34,6 +34,9 @@ Write-Host "[PREDDITA v2] Teste de MFA das contas privilegiadas..."
 Write-Host "[PREDDITA v2] Teste do armazenamento operacional normalizado..."
 & $node (Join-Path $root "scripts\OperationalStoreTest.mjs")
 
+Write-Host "[PREDDITA v2] Teste das transicoes transacionais de comandos..."
+& $node (Join-Path $root "scripts\CommandStoreTest.mjs")
+
 Write-Host "[PREDDITA v2] Teste de correlacao do protocolo RS-485..."
 & $node (Join-Path $root "scripts\v2-serial-protocol-test.mjs")
 
@@ -71,6 +74,7 @@ Write-Host "[PREDDITA v2] Checagem de sintaxe do servidor e painel..."
 & $node --check (Join-Path $root "admin-online\server.mjs")
 & $node --check (Join-Path $root "admin-online\adminMfa.mjs")
 & $node --check (Join-Path $root "admin-online\operationalStore.mjs")
+& $node --check (Join-Path $root "admin-online\commandStore.mjs")
 & $node --check (Join-Path $root "admin-online\public\app.js")
 
 Write-Host "[PREDDITA v2] Auditoria de dependencias do admin..."

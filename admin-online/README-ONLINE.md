@@ -115,6 +115,12 @@ locker padrao, ele e usado como origem inicial. Snapshots Postgres anteriores a
 esta estrutura recebem backfill automatico no primeiro acesso, dentro de uma
 transacao, sem mudar o formato devolvido pela API.
 
+Comandos nao participam mais das substituicoes completas dessas colecoes. Cada
+transicao usa bloqueio de linha, `revision` e indices unicos para impedir dois
+comandos ativos na mesma porta ou o reuso de um `executionId`. Deadlock e falha
+de serializacao recebem ate tres tentativas; o smoke Postgres executa criacao,
+lease, ACK e conclusao simultaneamente em duas instancias do servidor.
+
 Schema de referencia:
 
 ```text

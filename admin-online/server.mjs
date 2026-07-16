@@ -33,14 +33,24 @@ import {
   persistOperationalState,
   readOperationalState,
 } from './operationalStore.mjs';
+import {
+  COMMAND_SCHEMA_VERSION,
+  COMMAND_TRANSACTION_RETRY_ATTEMPTS,
+  createOperationalCommand,
+  ensureCommandSchema,
+  leaseOperationalCommands,
+  mutateOperationalCommand,
+  reconcileOperationalCommand,
+  refreshOperationalCommands,
+} from './commandStore.mjs';
 
 const ROOT_DIR = fileURLToPath(new URL('.', import.meta.url));
 const PUBLIC_DIR = join(ROOT_DIR, 'public');
 const DATA_DIR = process.env.PREDDITA_DATA_DIR ? normalize(process.env.PREDDITA_DATA_DIR) : join(ROOT_DIR, 'data');
 const DB_PATH = join(DATA_DIR, 'state.json');
 const BACKUP_DIR = join(DATA_DIR, 'backups');
-const APP_VERSION = '2.0.18-lab';
-const SCHEMA_VERSION = 8;
+const APP_VERSION = '2.0.19-lab';
+const SCHEMA_VERSION = 9;
 const DEFAULT_ADMIN_TOKEN = 'preddita-admin-local';
 const DEFAULT_SUPER_ADMIN_TOKEN = 'preddita-super-admin-local';
 const DEFAULT_DEVICE_KEY = 'preddita-device-local';
@@ -597,6 +607,7 @@ async function ensurePostgres() {
       on preddita_locker_states (updated_at desc)
     `);
     await ensureOperationalSchema(postgresPool);
+    await ensureCommandSchema(postgresPool);
     await postgresPool.query(`
       create table if not exists preddita_admin_users (
         username text primary key,
@@ -1154,22 +1165,37 @@ async function readPostgresState(lockerId = DEFAULT_LOCKER_ID, tenantId = DEFAUL
       lockerId: normalizedLockerId,
     });
     if (Number(result.rows[0].operational_schema_version) < OPERATIONAL_SCHEMA_VERSION) {
-      await writePostgresState(storedState, normalizedLockerId, normalizedTenantId);
+      await writePostgresState(storedState, normalizedLockerId, normalizedTenantId, { synchronizeCommands: true });
       return storedState;
     }
-    const operationalState = await readOperationalState(pool, {
-      tenantId: normalizedTenantId,
-      lockerId: normalizedLockerId,
-    });
-    return migrateState(
-      { ...result.rows[0].state, ...operationalState },
-      { tenantId: normalizedTenantId, lockerId: normalizedLockerId }
-    );
+    return readNormalizedPostgresState(pool, normalizedLockerId, normalizedTenantId);
   }
 
   const initialState = await readInitialStateForPostgres(normalizedTenantId, normalizedLockerId);
-  await writePostgresState(initialState, normalizedLockerId, normalizedTenantId);
+  await writePostgresState(initialState, normalizedLockerId, normalizedTenantId, { synchronizeCommands: true });
   return initialState;
+}
+
+async function readNormalizedPostgresState(database, lockerId, tenantId) {
+  const normalizedTenantId = normalizeTenantId(tenantId);
+  const normalizedLockerId = normalizeLockerId(lockerId);
+  const result = await database.query(
+    `
+      select state
+      from preddita_locker_states
+      where tenant_id = $1 and locker_id = $2
+    `,
+    [normalizedTenantId, normalizedLockerId]
+  );
+  if (!result.rows[0]?.state) throw new Error('Estado normalizado do locker nao foi encontrado.');
+  const operationalState = await readOperationalState(database, {
+    tenantId: normalizedTenantId,
+    lockerId: normalizedLockerId,
+  });
+  return migrateState(
+    { ...result.rows[0].state, ...operationalState },
+    { tenantId: normalizedTenantId, lockerId: normalizedLockerId }
+  );
 }
 
 async function readInitialStateForPostgres(tenantId, lockerId) {
@@ -1226,7 +1252,12 @@ async function writeJsonState(state) {
   renameSync(tempPath, DB_PATH);
 }
 
-async function writePostgresState(state, lockerId = DEFAULT_LOCKER_ID, tenantId = DEFAULT_TENANT_ID) {
+async function writePostgresState(
+  state,
+  lockerId = DEFAULT_LOCKER_ID,
+  tenantId = DEFAULT_TENANT_ID,
+  options = {}
+) {
   const pool = await ensurePostgres();
   const normalizedTenantId = normalizeTenantId(state.tenant?.tenantId ?? tenantId);
   const normalizedLockerId = normalizeLockerId(state.tenant?.lockerId ?? state.device?.lockerId ?? lockerId);
@@ -1236,6 +1267,7 @@ async function writePostgresState(state, lockerId = DEFAULT_LOCKER_ID, tenantId 
     lockerId: normalizedLockerId,
     schemaVersion: SCHEMA_VERSION,
     state: next,
+    synchronizeCommands: options.synchronizeCommands === true,
   });
 }
 
@@ -1301,66 +1333,265 @@ function isTerminalCommandStatus(status) {
   return ['completed', 'failed'].includes(cleanText(status));
 }
 
+function withCommandRefreshAudit(state, result = {}) {
+  const expiredCount = Number(result.expiredCount) || 0;
+  const releasedLeaseCount = Number(result.releasedLeaseCount) || 0;
+  if (expiredCount === 0 && releasedLeaseCount === 0) return state;
+  return withAudit(
+    state,
+    expiredCount > 0 ? 'remote-open-expired' : 'remote-open-requeued',
+    expiredCount > 0
+      ? `${expiredCount} comando(s) remoto(s) expiraram.`
+      : `${releasedLeaseCount} comando(s) remoto(s) voltaram para a fila apos expirar o lease.`,
+    { expiredCount, releasedLeaseCount }
+  );
+}
+
+function applyCommandAcknowledgement(state, command, options = {}) {
+  const leaseId = cleanText(options.leaseId);
+  const executionId = cleanText(options.executionId);
+  const refreshedState = withCommandRefreshAudit(state, options.refresh);
+  const refreshChanged = refreshedState !== state;
+
+  if (isTerminalCommandStatus(command.status)) {
+    if (command.executionId && command.executionId === executionId) {
+      return {
+        status: 200,
+        payload: { ok: true, duplicate: true, terminal: true, command },
+        state: refreshChanged ? refreshedState : null,
+      };
+    }
+    return { status: 409, error: 'Comando ja foi finalizado por outra execucao.', state: refreshChanged ? refreshedState : null };
+  }
+
+  if (command.status === 'executing') {
+    if (command.leaseId === leaseId && command.executionId === executionId) {
+      return {
+        status: 200,
+        payload: { ok: true, duplicate: true, command },
+        state: refreshChanged ? refreshedState : null,
+      };
+    }
+    return { status: 409, error: 'Comando ja foi confirmado por outra execucao.', state: refreshChanged ? refreshedState : null };
+  }
+
+  if (command.status !== 'leased' || command.leaseId !== leaseId) {
+    return {
+      status: 409,
+      error: 'Lease ausente, expirado ou substituido. Busque um novo snapshot.',
+      state: refreshChanged ? refreshedState : null,
+    };
+  }
+
+  if (command.executionId && command.executionId !== executionId) {
+    return {
+      status: 409,
+      error: 'executionId diverge da execucao previamente registrada.',
+      state: refreshChanged ? refreshedState : null,
+    };
+  }
+
+  const acknowledgedAt = nowIso();
+  const acknowledgedCommand = {
+    ...command,
+    status: 'executing',
+    executionId,
+    acknowledgedAt,
+    leaseExpiresAt: new Date(Date.now() + COMMAND_EXECUTION_LEASE_MS).toISOString(),
+    timeline: [
+      ...(command.timeline ?? []),
+      {
+        status: 'executing',
+        at: acknowledgedAt,
+        detail: 'Armario confirmou o lease; execucao fisica autorizada.',
+      },
+    ],
+  };
+  const next = withAudit(
+    {
+      ...refreshedState,
+      commands: (refreshedState.commands ?? []).map((item) =>
+        item.id === command.id ? acknowledgedCommand : item
+      ),
+    },
+    'remote-open-acknowledged',
+    `Armario confirmou o comando remoto da porta ${command.door}.`,
+    { commandId: command.id, executionId, leaseId }
+  );
+  return {
+    status: 200,
+    payload: { ok: true, duplicate: false, command: acknowledgedCommand },
+    command: acknowledgedCommand,
+    state: next,
+  };
+}
+
+function applyCommandCompletion(state, command, body = {}, options = {}) {
+  const executionId = cleanText(body.executionId);
+  const refreshedState = withCommandRefreshAudit(state, options.refresh);
+  const refreshChanged = refreshedState !== state;
+  if (!executionId) {
+    return { status: 400, error: 'executionId e obrigatorio para finalizar o comando.', state: refreshChanged ? refreshedState : null };
+  }
+  if (executionId.length > 200) {
+    return { status: 400, error: 'executionId excede o tamanho permitido.', state: refreshChanged ? refreshedState : null };
+  }
+
+  const sameExecution = command.executionId && command.executionId === executionId;
+  if (isTerminalCommandStatus(command.status) && !(command.result?.expired && sameExecution)) {
+    if (sameExecution) {
+      return {
+        status: 200,
+        payload: { ok: true, duplicate: true, command },
+        state: refreshChanged ? refreshedState : null,
+      };
+    }
+    return { status: 409, error: 'Comando ja foi finalizado por outra execucao.', state: refreshChanged ? refreshedState : null };
+  }
+
+  if (!sameExecution) {
+    return {
+      status: 409,
+      error: 'Comando nao recebeu ACK para este executionId.',
+      state: refreshChanged ? refreshedState : null,
+    };
+  }
+
+  const commandDoor = Number.parseInt(command.door, 10);
+  const requestedDeliveryId = cleanText(body.releasedDeliveryId);
+  const requestedDelivery = (refreshedState.deliveries ?? []).find((delivery) =>
+    delivery.id === requestedDeliveryId &&
+    isActiveDeliveryStatus(delivery.status) &&
+    Number.parseInt(delivery.door, 10) === commandDoor
+  );
+  const deliveryOnDoor = requestedDelivery ?? (refreshedState.deliveries ?? []).find((delivery) =>
+    isActiveDeliveryStatus(delivery.status) && Number.parseInt(delivery.door, 10) === commandDoor
+  );
+  const doorHadOccupancy = (refreshedState.doors ?? []).some((door) =>
+    Number.parseInt(door.channel, 10) === commandDoor && door.occupancy === 'busy'
+  );
+  const physicalCloseProof = body.physicalCloseProof && typeof body.physicalCloseProof === 'object'
+    ? body.physicalCloseProof
+    : null;
+  const physicalOpenCycle = body.physicalOpenCycle && typeof body.physicalOpenCycle === 'object'
+    ? body.physicalOpenCycle
+    : null;
+  const cycleBaselineAt = Date.parse(cleanText(physicalOpenCycle?.baselineReadAt));
+  const cycleOpenedAt = Date.parse(cleanText(physicalOpenCycle?.openedAt));
+  const proofOpenedAt = Date.parse(cleanText(physicalCloseProof?.openedAt));
+  const proofClosedAt = Date.parse(cleanText(physicalCloseProof?.closedAt));
+  const physicalCloseConfirmed = Boolean(
+    body.physicalCloseConfirmed === true &&
+    physicalCloseProof &&
+    physicalOpenCycle &&
+    Number.parseInt(physicalOpenCycle.channel, 10) === commandDoor &&
+    Number.parseInt(physicalCloseProof.channel, 10) === commandDoor &&
+    ['zeroOpen', 'zeroClosed'].includes(cleanText(physicalOpenCycle.sensorPolarity)) &&
+    cleanText(physicalCloseProof.sensorPolarity) === cleanText(physicalOpenCycle.sensorPolarity) &&
+    Number.isInteger(Number(physicalOpenCycle.closedStateByte)) &&
+    Number.isInteger(Number(physicalOpenCycle.openStateByte)) &&
+    Number(physicalOpenCycle.closedStateByte) !== Number(physicalOpenCycle.openStateByte) &&
+    Number(physicalCloseProof.stateByte) === Number(physicalOpenCycle.closedStateByte) &&
+    cleanText(physicalCloseProof.openedAt) === cleanText(physicalOpenCycle.openedAt) &&
+    Number.isFinite(cycleBaselineAt) &&
+    Number.isFinite(cycleOpenedAt) &&
+    Number.isFinite(proofOpenedAt) &&
+    Number.isFinite(proofClosedAt) &&
+    cycleOpenedAt > cycleBaselineAt &&
+    proofClosedAt > proofOpenedAt
+  );
+  const shouldReleaseDoor = Boolean(
+    body.ok &&
+    body.releasedDoor === true &&
+    physicalCloseConfirmed &&
+    Number.isInteger(commandDoor) &&
+    (doorHadOccupancy || deliveryOnDoor)
+  );
+  const completedAt = nowIso();
+  const normalizedResult = {
+    ...body,
+    ok: Boolean(body.ok),
+    executionId,
+    door: commandDoor,
+    physicalCloseConfirmed,
+    physicalCloseProof: physicalCloseConfirmed ? physicalCloseProof : null,
+    releasedDoor: shouldReleaseDoor,
+    releasedDeliveryId: shouldReleaseDoor && deliveryOnDoor ? deliveryOnDoor.id : '',
+  };
+  const nextDeliveries = shouldReleaseDoor
+    ? (refreshedState.deliveries ?? []).map((delivery) => {
+        if (delivery.id !== normalizedResult.releasedDeliveryId) return delivery;
+        if (delivery.status === 'door_opened_for_dropoff') {
+          return {
+            ...delivery,
+            status: 'cancelled',
+            cancelledAt: completedAt,
+            cancelReason: 'Porta liberada por abertura remota do administrador.',
+          };
+        }
+        return {
+          ...delivery,
+          status: 'collected',
+          pickupOpenedAt: delivery.pickupOpenedAt || completedAt,
+          collectedAt: completedAt,
+        };
+      })
+    : refreshedState.deliveries;
+  const nextDoors = shouldReleaseDoor
+    ? (refreshedState.doors ?? []).map((door) =>
+        Number.parseInt(door.channel, 10) === commandDoor
+          ? { ...door, occupancy: 'free', delivery: null, lastSeenAt: completedAt }
+          : door
+      )
+    : refreshedState.doors;
+  const completedCommand = {
+    ...command,
+    status: body.ok ? 'completed' : 'failed',
+    completedAt,
+    leaseId: '',
+    leaseExpiresAt: '',
+    result: normalizedResult,
+    timeline: [
+      ...(command.timeline ?? []),
+      {
+        status: body.ok ? 'completed' : 'failed',
+        at: completedAt,
+        detail: body.ok
+          ? 'Armario confirmou o resultado do comando.'
+          : cleanText(body.error) || 'Armario retornou falha.',
+      },
+    ],
+  };
+  const next = withAudit(
+    {
+      ...refreshedState,
+      doors: nextDoors,
+      deliveries: nextDeliveries,
+      commands: (refreshedState.commands ?? []).map((item) =>
+        item.id === command.id ? completedCommand : item
+      ),
+    },
+    body.ok ? 'remote-open-completed' : 'remote-open-failed',
+    `Comando remoto da porta ${command.door} finalizado.`,
+    { commandId: command.id, executionId, result: normalizedResult }
+  );
+  return {
+    status: 200,
+    payload: { ok: true, duplicate: false, command: completedCommand },
+    command: completedCommand,
+    state: next,
+  };
+}
+
 function refreshCommandLeases(state) {
   const now = Date.now();
   let expiredCount = 0;
   let releasedLeaseCount = 0;
   const commands = (state.commands ?? []).map((command) => {
-    if (!isActiveCommandStatus(command.status)) return command;
-    const createdAt = Date.parse(command.createdAt);
-    if (Number.isFinite(createdAt) && now - createdAt > COMMAND_TTL_MS) {
-      expiredCount += 1;
-      const completedAt = nowIso();
-      return {
-        ...command,
-        status: 'failed',
-        completedAt,
-        leaseId: '',
-        leaseExpiresAt: '',
-        result: {
-          ok: false,
-          error: command.executionId
-            ? 'Comando expirou com resultado fisico desconhecido.'
-            : 'Comando expirou antes de o armario iniciar a execucao.',
-          expired: true,
-          executionId: command.executionId || '',
-        },
-        timeline: [
-          ...(command.timeline ?? []),
-          {
-            status: 'failed',
-            at: completedAt,
-            detail: command.executionId
-              ? 'Prazo total expirou depois do ACK; resultado fisico requer verificacao.'
-              : 'Prazo total expirou antes do ACK do armario.',
-          },
-        ],
-      };
-    }
-
-    if (!['leased', 'executing'].includes(command.status)) return command;
-    const leaseExpiresAt = Date.parse(command.leaseExpiresAt);
-    if (!Number.isFinite(leaseExpiresAt) || leaseExpiresAt > now) return command;
-
-    releasedLeaseCount += 1;
-    const releasedAt = nowIso();
-    return {
-      ...command,
-      status: 'pending',
-      leaseId: '',
-      leasedAt: '',
-      leaseExpiresAt: '',
-      timeline: [
-        ...(command.timeline ?? []),
-        {
-          status: 'lease-expired',
-          at: releasedAt,
-          detail: command.executionId
-            ? 'Lease de execucao expirou; aguardando reconciliacao idempotente do armario.'
-            : 'Lease de entrega expirou; comando voltou para a fila.',
-        },
-      ],
-    };
+    const reconciled = reconcileOperationalCommand(command, { nowMs: now, commandTtlMs: COMMAND_TTL_MS });
+    expiredCount += reconciled.expiredCount;
+    releasedLeaseCount += reconciled.releasedLeaseCount;
+    return reconciled.command;
   });
 
   if (expiredCount === 0 && releasedLeaseCount === 0) {
@@ -1369,18 +1600,24 @@ function refreshCommandLeases(state) {
 
   return {
     changed: true,
-    state: withAudit(
-      { ...state, commands },
-      expiredCount > 0 ? 'remote-open-expired' : 'remote-open-requeued',
-      expiredCount > 0
-        ? `${expiredCount} comando(s) remoto(s) expiraram.`
-        : `${releasedLeaseCount} comando(s) remoto(s) voltaram para a fila apos expirar o lease.`,
-      { expiredCount, releasedLeaseCount }
-    ),
+    state: withCommandRefreshAudit({ ...state, commands }, { expiredCount, releasedLeaseCount }),
   };
 }
 
 async function readFreshState(lockerId = DEFAULT_LOCKER_ID, tenantId = DEFAULT_TENANT_ID) {
+  if (isPostgresStorage()) {
+    const pool = await ensurePostgres();
+    const refresh = await refreshOperationalCommands(pool, {
+      tenantId: normalizeTenantId(tenantId),
+      lockerId: normalizeLockerId(lockerId),
+      commandTtlMs: COMMAND_TTL_MS,
+    });
+    const current = await readState(lockerId, tenantId);
+    if (refresh.expiredCount === 0 && refresh.releasedLeaseCount === 0) return current;
+    const next = withCommandRefreshAudit(current, refresh);
+    await writeState(next, lockerId, tenantId);
+    return next;
+  }
   const current = await readState(lockerId, tenantId);
   const result = refreshCommandLeases(current);
   if (result.changed) await writeState(result.state, lockerId, tenantId);
@@ -1439,6 +1676,9 @@ function getRuntimeSummary(state) {
     storageMode: STORAGE_MODE,
     operationalStorage: isPostgresStorage() ? 'normalized-postgres' : 'snapshot',
     operationalSchemaVersion: isPostgresStorage() ? OPERATIONAL_SCHEMA_VERSION : 0,
+    commandMutationStorage: isPostgresStorage() ? 'row-postgres' : 'snapshot',
+    commandSchemaVersion: isPostgresStorage() ? COMMAND_SCHEMA_VERSION : 0,
+    commandTransactionRetryAttempts: isPostgresStorage() ? COMMAND_TRANSACTION_RETRY_ATTEMPTS : 0,
     adminSessionStorage: isPostgresStorage() ? 'postgres' : 'memory',
     adminMfa: isPostgresStorage() && ADMIN_MFA_ENCRYPTION_KEY ? 'privileged-roles' : 'disabled',
     securityWarnings: getSecurityWarnings(),
@@ -3182,13 +3422,36 @@ async function handleApi(request, response) {
             { status: 'pending', at: createdAt, detail: 'Comando criado no painel online.' },
           ],
         };
-        const next = withAudit(
-          { ...current, commands: [command, ...(current.commands ?? [])] },
-          'remote-open-requested',
-          `Abertura remota solicitada para a porta ${door}.`,
-          { commandId: command.id, door, actor: adminActor(adminAuth) }
-        );
-        await writeState(next, requestLockerId);
+        const auditMeta = { commandId: command.id, door, actor: adminActor(adminAuth) };
+        if (isPostgresStorage()) {
+          const tenantId = normalizeTenantId(current.tenant?.tenantId ?? DEFAULT_TENANT_ID);
+          const lockerId = normalizeLockerId(requestLockerId);
+          const pool = await ensurePostgres();
+          const created = await createOperationalCommand(pool, {
+            tenantId,
+            lockerId,
+            schemaVersion: SCHEMA_VERSION,
+            command,
+            loadState: (client) => readNormalizedPostgresState(client, lockerId, tenantId),
+            buildState: (lockedState) => withAudit(
+              lockedState,
+              'remote-open-requested',
+              `Abertura remota solicitada para a porta ${door}.`,
+              auditMeta
+            ),
+          });
+          if (!created.created) {
+            return { status: 409, error: 'Ja existe um comando pendente para esta porta. Aguarde a confirmacao do armario.' };
+          }
+        } else {
+          const next = withAudit(
+            { ...current, commands: [command, ...(current.commands ?? [])] },
+            'remote-open-requested',
+            `Abertura remota solicitada para a porta ${door}.`,
+            auditMeta
+          );
+          await writeState(next, requestLockerId);
+        }
         return { status: 201, payload: { ok: true, command } };
       }
     );
@@ -3326,6 +3589,33 @@ async function handleApi(request, response) {
       requestLockerId,
       state.tenant?.tenantId ?? DEFAULT_TENANT_ID,
       async () => {
+        if (isPostgresStorage()) {
+          const tenantId = normalizeTenantId(state.tenant?.tenantId ?? DEFAULT_TENANT_ID);
+          const lockerId = normalizeLockerId(requestLockerId);
+          const pool = await ensurePostgres();
+          const leased = await leaseOperationalCommands(pool, {
+            tenantId,
+            lockerId,
+            commandTtlMs: COMMAND_TTL_MS,
+            leaseDurationMs: COMMAND_LEASE_MS,
+            leaseIdFactory: () => createId('lease'),
+          });
+          let current = await readState(lockerId, tenantId);
+          if (leased.expiredCount > 0 || leased.releasedLeaseCount > 0) {
+            current = withCommandRefreshAudit(current, leased);
+            await writeState(current, lockerId, tenantId);
+          }
+          return {
+            ok: true,
+            lockerId: current.tenant?.lockerId ?? DEFAULT_LOCKER_ID,
+            residents: current.residents ?? [],
+            residentsUpdatedAt: current.residentsUpdatedAt ?? current.updatedAt,
+            commands: leased.leasedCommands,
+            leaseDurationMs: COMMAND_LEASE_MS,
+            serverTime: nowIso(),
+          };
+        }
+
         const current = await readFreshState(requestLockerId);
         const leasedCommands = [];
         const commands = (current.commands ?? []).map((command) => {
@@ -3390,63 +3680,35 @@ async function handleApi(request, response) {
       requestLockerId,
       state.tenant?.tenantId ?? DEFAULT_TENANT_ID,
       async () => {
+        if (isPostgresStorage()) {
+          const tenantId = normalizeTenantId(state.tenant?.tenantId ?? DEFAULT_TENANT_ID);
+          const lockerId = normalizeLockerId(requestLockerId);
+          const pool = await ensurePostgres();
+          const mutation = await mutateOperationalCommand(pool, {
+            tenantId,
+            lockerId,
+            commandId,
+            schemaVersion: SCHEMA_VERSION,
+            commandTtlMs: COMMAND_TTL_MS,
+            loadState: (client) => readNormalizedPostgresState(client, lockerId, tenantId),
+            mutate: ({ command, state: lockedState, refresh }) =>
+              applyCommandAcknowledgement(lockedState, command, { leaseId, executionId, refresh }),
+          });
+          if (!mutation.found) return { status: 404, error: 'Comando nao encontrado.' };
+          if (mutation.conflict === 'execution-id') {
+            return { status: 409, error: 'executionId ja pertence a outro comando deste armario.' };
+          }
+          return mutation;
+        }
+
         const current = await readFreshState(requestLockerId);
         const command = (current.commands ?? []).find((item) => item.id === commandId);
         if (!command) {
           return { status: 404, error: 'Comando nao encontrado.' };
         }
-
-        if (isTerminalCommandStatus(command.status)) {
-          if (command.executionId && command.executionId === executionId) {
-            return { status: 200, payload: { ok: true, duplicate: true, terminal: true, command } };
-          }
-          return { status: 409, error: 'Comando ja foi finalizado por outra execucao.' };
-        }
-
-        if (command.status === 'executing') {
-          if (command.leaseId === leaseId && command.executionId === executionId) {
-            return { status: 200, payload: { ok: true, duplicate: true, command } };
-          }
-          return { status: 409, error: 'Comando ja foi confirmado por outra execucao.' };
-        }
-
-        if (command.status !== 'leased' || command.leaseId !== leaseId) {
-          return { status: 409, error: 'Lease ausente, expirado ou substituido. Busque um novo snapshot.' };
-        }
-
-        if (command.executionId && command.executionId !== executionId) {
-          return { status: 409, error: 'executionId diverge da execucao previamente registrada.' };
-        }
-
-        const acknowledgedAt = nowIso();
-        const acknowledgedCommand = {
-          ...command,
-          status: 'executing',
-          executionId,
-          acknowledgedAt,
-          leaseExpiresAt: new Date(Date.now() + COMMAND_EXECUTION_LEASE_MS).toISOString(),
-          timeline: [
-            ...(command.timeline ?? []),
-            {
-              status: 'executing',
-              at: acknowledgedAt,
-              detail: 'Armario confirmou o lease; execucao fisica autorizada.',
-            },
-          ],
-        };
-        const next = withAudit(
-          {
-            ...current,
-            commands: (current.commands ?? []).map((item) =>
-              item.id === commandId ? acknowledgedCommand : item
-            ),
-          },
-          'remote-open-acknowledged',
-          `Armario confirmou o comando remoto da porta ${command.door}.`,
-          { commandId, executionId, leaseId }
-        );
-        await writeState(next, requestLockerId);
-        return { status: 200, payload: { ok: true, duplicate: false, command: acknowledgedCommand } };
+        const outcome = applyCommandAcknowledgement(current, command, { leaseId, executionId });
+        if (outcome.state) await writeState(outcome.state, requestLockerId);
+        return outcome;
       }
     );
 
@@ -3462,158 +3724,36 @@ async function handleApi(request, response) {
   if (completeMatch && method === 'POST') {
     const commandId = decodeURIComponent(completeMatch[1]);
     const body = await readBody(request);
-    const executionId = cleanText(body.executionId);
     const completionResult = await withLockerStateMutation(
       requestLockerId,
       state.tenant?.tenantId ?? DEFAULT_TENANT_ID,
       async () => {
+        if (isPostgresStorage()) {
+          const tenantId = normalizeTenantId(state.tenant?.tenantId ?? DEFAULT_TENANT_ID);
+          const lockerId = normalizeLockerId(requestLockerId);
+          const pool = await ensurePostgres();
+          const mutation = await mutateOperationalCommand(pool, {
+            tenantId,
+            lockerId,
+            commandId,
+            schemaVersion: SCHEMA_VERSION,
+            commandTtlMs: COMMAND_TTL_MS,
+            loadState: (client) => readNormalizedPostgresState(client, lockerId, tenantId),
+            mutate: ({ command, state: lockedState, refresh }) =>
+              applyCommandCompletion(lockedState, command, body, { refresh }),
+          });
+          if (!mutation.found) return { status: 404, error: 'Comando nao encontrado.' };
+          return mutation;
+        }
+
         const current = await readFreshState(requestLockerId);
         const command = (current.commands ?? []).find((item) => item.id === commandId);
         if (!command) {
           return { status: 404, error: 'Comando nao encontrado.' };
         }
-
-        if (!executionId) {
-          return { status: 400, error: 'executionId e obrigatorio para finalizar o comando.' };
-        }
-        if (executionId.length > 200) {
-          return { status: 400, error: 'executionId excede o tamanho permitido.' };
-        }
-
-        const sameExecution = command.executionId && command.executionId === executionId;
-        if (isTerminalCommandStatus(command.status) && !(command.result?.expired && sameExecution)) {
-          if (sameExecution) {
-            return { status: 200, payload: { ok: true, duplicate: true, command } };
-          }
-          return { status: 409, error: 'Comando ja foi finalizado por outra execucao.' };
-        }
-
-        if (!sameExecution) {
-          return { status: 409, error: 'Comando nao recebeu ACK para este executionId.' };
-        }
-
-        const commandDoor = Number.parseInt(command.door, 10);
-        const requestedDeliveryId = cleanText(body.releasedDeliveryId);
-        const requestedDelivery = (current.deliveries ?? []).find((delivery) =>
-          delivery.id === requestedDeliveryId &&
-          isActiveDeliveryStatus(delivery.status) &&
-          Number.parseInt(delivery.door, 10) === commandDoor
-        );
-        const deliveryOnDoor = requestedDelivery ?? (current.deliveries ?? []).find((delivery) =>
-          isActiveDeliveryStatus(delivery.status) && Number.parseInt(delivery.door, 10) === commandDoor
-        );
-        const doorHadOccupancy = (current.doors ?? []).some((door) =>
-          Number.parseInt(door.channel, 10) === commandDoor && door.occupancy === 'busy'
-        );
-        const physicalCloseProof = body.physicalCloseProof && typeof body.physicalCloseProof === 'object'
-          ? body.physicalCloseProof
-          : null;
-        const physicalOpenCycle = body.physicalOpenCycle && typeof body.physicalOpenCycle === 'object'
-          ? body.physicalOpenCycle
-          : null;
-        const cycleBaselineAt = Date.parse(cleanText(physicalOpenCycle?.baselineReadAt));
-        const cycleOpenedAt = Date.parse(cleanText(physicalOpenCycle?.openedAt));
-        const proofOpenedAt = Date.parse(cleanText(physicalCloseProof?.openedAt));
-        const proofClosedAt = Date.parse(cleanText(physicalCloseProof?.closedAt));
-        const physicalCloseConfirmed = Boolean(
-          body.physicalCloseConfirmed === true &&
-          physicalCloseProof &&
-          physicalOpenCycle &&
-          Number.parseInt(physicalOpenCycle.channel, 10) === commandDoor &&
-          Number.parseInt(physicalCloseProof.channel, 10) === commandDoor &&
-          ['zeroOpen', 'zeroClosed'].includes(cleanText(physicalOpenCycle.sensorPolarity)) &&
-          cleanText(physicalCloseProof.sensorPolarity) === cleanText(physicalOpenCycle.sensorPolarity) &&
-          Number.isInteger(Number(physicalOpenCycle.closedStateByte)) &&
-          Number.isInteger(Number(physicalOpenCycle.openStateByte)) &&
-          Number(physicalOpenCycle.closedStateByte) !== Number(physicalOpenCycle.openStateByte) &&
-          Number(physicalCloseProof.stateByte) === Number(physicalOpenCycle.closedStateByte) &&
-          cleanText(physicalCloseProof.openedAt) === cleanText(physicalOpenCycle.openedAt) &&
-          Number.isFinite(cycleBaselineAt) &&
-          Number.isFinite(cycleOpenedAt) &&
-          Number.isFinite(proofOpenedAt) &&
-          Number.isFinite(proofClosedAt) &&
-          cycleOpenedAt > cycleBaselineAt &&
-          proofClosedAt > proofOpenedAt
-        );
-        const shouldReleaseDoor = Boolean(
-          body.ok &&
-          body.releasedDoor === true &&
-          physicalCloseConfirmed &&
-          Number.isInteger(commandDoor) &&
-          (doorHadOccupancy || deliveryOnDoor)
-        );
-        const completedAt = nowIso();
-        const normalizedResult = {
-          ...body,
-          ok: Boolean(body.ok),
-          executionId,
-          door: commandDoor,
-          physicalCloseConfirmed,
-          physicalCloseProof: physicalCloseConfirmed ? physicalCloseProof : null,
-          releasedDoor: shouldReleaseDoor,
-          releasedDeliveryId: shouldReleaseDoor && deliveryOnDoor ? deliveryOnDoor.id : '',
-        };
-        const nextDeliveries = shouldReleaseDoor
-          ? (current.deliveries ?? []).map((delivery) => {
-              if (delivery.id !== normalizedResult.releasedDeliveryId) return delivery;
-
-              if (delivery.status === 'door_opened_for_dropoff') {
-                return {
-                  ...delivery,
-                  status: 'cancelled',
-                  cancelledAt: completedAt,
-                  cancelReason: 'Porta liberada por abertura remota do administrador.',
-                };
-              }
-
-              return {
-                ...delivery,
-                status: 'collected',
-                pickupOpenedAt: delivery.pickupOpenedAt || completedAt,
-                collectedAt: completedAt,
-              };
-            })
-          : current.deliveries;
-        const nextDoors = shouldReleaseDoor
-          ? (current.doors ?? []).map((door) =>
-              Number.parseInt(door.channel, 10) === commandDoor
-                ? { ...door, occupancy: 'free', delivery: null, lastSeenAt: completedAt }
-                : door
-            )
-          : current.doors;
-        const completedCommand = {
-          ...command,
-          status: body.ok ? 'completed' : 'failed',
-          completedAt,
-          leaseId: '',
-          leaseExpiresAt: '',
-          result: normalizedResult,
-          timeline: [
-            ...(command.timeline ?? []),
-            {
-              status: body.ok ? 'completed' : 'failed',
-              at: completedAt,
-              detail: body.ok
-                ? 'Armario confirmou o resultado do comando.'
-                : cleanText(body.error) || 'Armario retornou falha.',
-            },
-          ],
-        };
-        const next = withAudit(
-          {
-            ...current,
-            doors: nextDoors,
-            deliveries: nextDeliveries,
-            commands: (current.commands ?? []).map((item) =>
-              item.id === commandId ? completedCommand : item
-            ),
-          },
-          body.ok ? 'remote-open-completed' : 'remote-open-failed',
-          `Comando remoto da porta ${command.door} finalizado.`,
-          { commandId, executionId, result: normalizedResult }
-        );
-        await writeState(next, requestLockerId);
-        return { status: 200, payload: { ok: true, duplicate: false, command: completedCommand } };
+        const outcome = applyCommandCompletion(current, command, body);
+        if (outcome.state) await writeState(outcome.state, requestLockerId);
+        return outcome;
       }
     );
 

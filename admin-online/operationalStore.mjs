@@ -70,8 +70,11 @@ export function buildOperationalRows(operationalData = {}) {
     type: cleanText(command.type),
     status: cleanText(command.status),
     door: toInteger(command.door),
+    lease_id: cleanText(command.leaseId),
     execution_id: cleanText(command.executionId),
+    delivery_attempt: Math.max(0, toInteger(command.deliveryAttempt) ?? 0),
     created_at: toIso(command.createdAt),
+    acknowledged_at: toIso(command.acknowledgedAt),
     completed_at: toIso(command.completedAt),
     lease_expires_at: toIso(command.leaseExpiresAt),
     sort_order: sortOrder,
@@ -155,12 +158,17 @@ export async function ensureOperationalSchema(database) {
       type text not null default '',
       status text not null default '',
       door integer,
+      lease_id text not null default '',
       execution_id text not null default '',
+      delivery_attempt integer not null default 0,
       created_at timestamptz,
+      acknowledged_at timestamptz,
       completed_at timestamptz,
       lease_expires_at timestamptz,
       sort_order integer not null default 0,
       data jsonb not null,
+      revision bigint not null default 0,
+      updated_at timestamptz not null default now(),
       primary key (tenant_id, locker_id, command_id),
       foreign key (tenant_id, locker_id)
         references preddita_locker_states(tenant_id, locker_id) on delete cascade
@@ -282,28 +290,37 @@ async function replaceCommands(client, tenantId, lockerId, rows) {
   await client.query(
     `
       insert into preddita_commands (
-        tenant_id, locker_id, command_id, type, status, door, execution_id,
-        created_at, completed_at, lease_expires_at, sort_order, data
+        tenant_id, locker_id, command_id, type, status, door, lease_id,
+        execution_id, delivery_attempt, created_at, acknowledged_at,
+        completed_at, lease_expires_at, sort_order, data
       )
       select $1, $2, item.command_id, item.type, item.status, item.door,
-        item.execution_id, nullif(item.created_at, '')::timestamptz,
+        item.lease_id, item.execution_id, item.delivery_attempt,
+        nullif(item.created_at, '')::timestamptz,
+        nullif(item.acknowledged_at, '')::timestamptz,
         nullif(item.completed_at, '')::timestamptz,
         nullif(item.lease_expires_at, '')::timestamptz, item.sort_order, item.data
       from jsonb_to_recordset($3::jsonb) as item(
-        command_id text, type text, status text, door integer, execution_id text,
-        created_at text, completed_at text, lease_expires_at text,
+        command_id text, type text, status text, door integer, lease_id text,
+        execution_id text, delivery_attempt integer, created_at text,
+        acknowledged_at text, completed_at text, lease_expires_at text,
         sort_order integer, data jsonb
       )
       on conflict (tenant_id, locker_id, command_id) do update set
         type = excluded.type,
         status = excluded.status,
         door = excluded.door,
+        lease_id = excluded.lease_id,
         execution_id = excluded.execution_id,
+        delivery_attempt = excluded.delivery_attempt,
         created_at = excluded.created_at,
+        acknowledged_at = excluded.acknowledged_at,
         completed_at = excluded.completed_at,
         lease_expires_at = excluded.lease_expires_at,
         sort_order = excluded.sort_order,
-        data = excluded.data
+        data = excluded.data,
+        revision = preddita_commands.revision + 1,
+        updated_at = now()
     `,
     [tenantId, lockerId, JSON.stringify(rows)]
   );
@@ -348,36 +365,48 @@ async function replaceAuditTrail(client, tenantId, lockerId, rows) {
   );
 }
 
-export async function persistOperationalState(pool, options = {}) {
+export async function persistOperationalStateInTransaction(client, options = {}) {
   const tenantId = cleanText(options.tenantId);
   const lockerId = cleanText(options.lockerId);
   const schemaVersion = Number.parseInt(options.schemaVersion, 10) || 1;
+  const synchronizeCommands = options.synchronizeCommands !== false;
   if (!tenantId || !lockerId) throw new Error('Tenant e locker sao obrigatorios para persistir o estado operacional.');
 
   const { coreState, operationalData } = splitOperationalState(options.state);
   const rows = buildOperationalRows(operationalData);
+  await client.query(
+    `
+      insert into preddita_locker_states (
+        tenant_id, locker_id, schema_version, operational_schema_version, state, updated_at
+      ) values ($1, $2, $3, $4, $5::jsonb, now())
+      on conflict (tenant_id, locker_id) do update set
+        schema_version = excluded.schema_version,
+        operational_schema_version = excluded.operational_schema_version,
+        state = excluded.state,
+        updated_at = now()
+    `,
+    [tenantId, lockerId, schemaVersion, OPERATIONAL_SCHEMA_VERSION, JSON.stringify(coreState)]
+  );
+  await replaceResidents(client, tenantId, lockerId, rows.residents);
+  await replaceDeliveries(client, tenantId, lockerId, rows.deliveries);
+  if (synchronizeCommands) {
+    await replaceCommands(client, tenantId, lockerId, rows.commands);
+  }
+  await replaceAuditTrail(client, tenantId, lockerId, rows.auditTrail);
+  return {
+    coreState,
+    commandsSynchronized: synchronizeCommands,
+    rowCounts: Object.fromEntries(Object.entries(rows).map(([key, value]) => [key, value.length])),
+  };
+}
+
+export async function persistOperationalState(pool, options = {}) {
   const client = await pool.connect();
   try {
     await client.query('begin');
-    await client.query(
-      `
-        insert into preddita_locker_states (
-          tenant_id, locker_id, schema_version, operational_schema_version, state, updated_at
-        ) values ($1, $2, $3, $4, $5::jsonb, now())
-        on conflict (tenant_id, locker_id) do update set
-          schema_version = excluded.schema_version,
-          operational_schema_version = excluded.operational_schema_version,
-          state = excluded.state,
-          updated_at = now()
-      `,
-      [tenantId, lockerId, schemaVersion, OPERATIONAL_SCHEMA_VERSION, JSON.stringify(coreState)]
-    );
-    await replaceResidents(client, tenantId, lockerId, rows.residents);
-    await replaceDeliveries(client, tenantId, lockerId, rows.deliveries);
-    await replaceCommands(client, tenantId, lockerId, rows.commands);
-    await replaceAuditTrail(client, tenantId, lockerId, rows.auditTrail);
+    const result = await persistOperationalStateInTransaction(client, options);
     await client.query('commit');
-    return { coreState, rowCounts: Object.fromEntries(Object.entries(rows).map(([key, value]) => [key, value.length])) };
+    return result;
   } catch (error) {
     await client.query('rollback');
     throw error;

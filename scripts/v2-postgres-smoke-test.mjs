@@ -28,6 +28,7 @@ const LOCKER_ID = `locker-test-${RUN_SUFFIX}`;
 const LEGACY_LOCKER_ID = `locker-legacy-${RUN_SUFFIX}`;
 const ADMIN_USERNAME = `postgres-admin-${RUN_SUFFIX}`;
 const PORT = 9898;
+const SECONDARY_PORT = 9899;
 const DATA_DIR = mkdtempSync(join(tmpdir(), 'preddita-v2-pg-smoke-'));
 const ADMIN_USERS = JSON.stringify([{
   username: ADMIN_USERNAME,
@@ -51,11 +52,12 @@ function delay(ms) {
 }
 
 async function request(path, options = {}) {
-  const response = await fetch(`http://127.0.0.1:${PORT}${path}`, {
-    ...options,
+  const { port = PORT, ...fetchOptions } = options;
+  const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+    ...fetchOptions,
     headers: {
       'content-type': 'application/json',
-      ...(options.headers || {}),
+      ...(fetchOptions.headers || {}),
     },
   });
   const payload = await response.json().catch(() => ({}));
@@ -70,10 +72,31 @@ async function requestOk(path, options = {}) {
   return payload;
 }
 
-async function waitForServer() {
+async function requestDevice(path, options = {}) {
+  const method = options.method || 'GET';
+  const body = options.body || '';
+  const headers = await createDeviceRequestAuthHeaders({
+    method,
+    path,
+    lockerId: LOCKER_ID,
+    deviceKey: DEVICE_KEY,
+    body,
+  });
+  return request(path, { ...options, method, body: body || undefined, headers });
+}
+
+async function requestDeviceOk(path, options = {}) {
+  const { response, payload } = await requestDevice(path, options);
+  if (!response.ok || payload.ok === false) {
+    throw new Error(`${path} failed: ${response.status} ${payload.error || response.statusText}`);
+  }
+  return payload;
+}
+
+async function waitForServer(port = PORT) {
   for (let index = 0; index < 60; index += 1) {
     try {
-      const { response } = await request('/api/healthz');
+      const { response } = await request('/api/healthz', { port });
       if (response.ok) return;
     } catch (_error) {
     }
@@ -132,14 +155,15 @@ function createKnownInvalidTotp(secret) {
 
 let serverLog = '';
 let server = null;
+let secondaryServer = null;
 let databaseClient = null;
 
-function spawnServer({ adminUsersBootstrap = '' } = {}) {
+function spawnServer({ adminUsersBootstrap = '', port = PORT } = {}) {
   const child = spawn(process.execPath, [SERVER_PATH], {
     cwd: ADMIN_DIR,
     env: {
       ...process.env,
-      PORT: String(PORT),
+      PORT: String(port),
       PREDDITA_STORAGE: 'postgres',
       PREDDITA_DATABASE_URL: DATABASE_URL,
       PREDDITA_DATA_DIR: DATA_DIR,
@@ -236,14 +260,83 @@ try {
     body: statusBody,
   });
 
-  const createdCommand = await requestOk('/api/admin/doors/2/open', {
+  secondaryServer = spawnServer({ port: SECONDARY_PORT });
+  await waitForServer(SECONDARY_PORT);
+  const commandRequest = {
     method: 'POST',
     headers: {
       cookie: adminHeaders.cookie,
       'x-csrf-token': adminHeaders.csrfToken,
     },
-    body: JSON.stringify({ reason: 'Validar persistencia operacional normalizada.' }),
+    body: JSON.stringify({ reason: 'Validar concorrencia transacional entre replicas.' }),
+  };
+  const concurrentCreations = await Promise.all([
+    request('/api/admin/doors/2/open', commandRequest),
+    request('/api/admin/doors/2/open', { ...commandRequest, port: SECONDARY_PORT }),
+  ]);
+  const successfulCreations = concurrentCreations.filter(({ response }) => response.status === 201);
+  const rejectedCreations = concurrentCreations.filter(({ response }) => response.status === 409);
+  if (successfulCreations.length !== 1 || rejectedCreations.length !== 1) {
+    throw new Error(`Criacao concorrente deveria produzir um comando: ${concurrentCreations.map(({ response }) => response.status)}`);
+  }
+  const createdCommand = successfulCreations[0].payload;
+
+  const concurrentSnapshots = await Promise.all([
+    requestDeviceOk('/api/device/snapshot'),
+    requestDeviceOk('/api/device/snapshot', { port: SECONDARY_PORT }),
+  ]);
+  const leasedCopies = concurrentSnapshots.flatMap((snapshot) =>
+    snapshot.commands.filter((command) => command.id === createdCommand.command.id)
+  );
+  if (leasedCopies.length !== 1 || leasedCopies[0].status !== 'leased' || !leasedCopies[0].leaseId) {
+    throw new Error('Duas replicas nao podem entregar o mesmo comando simultaneamente.');
+  }
+  const leasedCommand = leasedCopies[0];
+  const executionId = `execution-postgres-${RUN_SUFFIX}`;
+  const acknowledgementBody = JSON.stringify({ leaseId: leasedCommand.leaseId, executionId });
+  const concurrentAcknowledgements = await Promise.all([
+    requestDeviceOk(`/api/device/commands/${encodeURIComponent(createdCommand.command.id)}/ack`, {
+      method: 'POST',
+      body: acknowledgementBody,
+    }),
+    requestDeviceOk(`/api/device/commands/${encodeURIComponent(createdCommand.command.id)}/ack`, {
+      method: 'POST',
+      body: acknowledgementBody,
+      port: SECONDARY_PORT,
+    }),
+  ]);
+  if (
+    concurrentAcknowledgements.filter((result) => result.duplicate === false).length !== 1
+    || concurrentAcknowledgements.filter((result) => result.duplicate === true).length !== 1
+  ) {
+    throw new Error('ACK concorrente deveria registrar uma unica execucao e um replay idempotente.');
+  }
+
+  const completionBody = JSON.stringify({
+    ok: true,
+    confirmed: true,
+    executionId,
+    door: 2,
+    releasedDoor: false,
+    at: new Date().toISOString(),
   });
+  const concurrentCompletions = await Promise.all([
+    requestDeviceOk(`/api/device/commands/${encodeURIComponent(createdCommand.command.id)}/complete`, {
+      method: 'POST',
+      body: completionBody,
+    }),
+    requestDeviceOk(`/api/device/commands/${encodeURIComponent(createdCommand.command.id)}/complete`, {
+      method: 'POST',
+      body: completionBody,
+      port: SECONDARY_PORT,
+    }),
+  ]);
+  if (
+    concurrentCompletions.filter((result) => result.duplicate === false).length !== 1
+    || concurrentCompletions.filter((result) => result.duplicate === true).length !== 1
+  ) {
+    throw new Error('Conclusao concorrente deveria aplicar efeitos e auditoria uma unica vez.');
+  }
 
   const state = await requestOk(`/api/admin/state?lockerId=${encodeURIComponent(LOCKER_ID)}`, {
     headers: adminHeaders,
@@ -257,12 +350,17 @@ try {
   if (
     state.state.runtime?.operationalStorage !== 'normalized-postgres'
     || state.state.runtime?.operationalSchemaVersion !== 1
+    || state.state.runtime?.commandMutationStorage !== 'row-postgres'
+    || state.state.runtime?.commandSchemaVersion !== 1
+    || state.state.runtime?.commandTransactionRetryAttempts !== 3
   ) {
-    throw new Error('Runtime deveria informar dados operacionais normalizados no Postgres.');
+    throw new Error('Runtime deveria informar dados operacionais e comandos transacionais no Postgres.');
   }
   if (
     !state.state.deliveries.some((delivery) => delivery.id === normalizedDelivery.id)
-    || !state.state.commands.some((command) => command.id === createdCommand.command.id)
+    || !state.state.commands.some((command) =>
+      command.id === createdCommand.command.id && command.status === 'completed' && command.executionId === executionId
+    )
   ) {
     throw new Error('API deveria hidratar entregas e comandos a partir das tabelas normalizadas.');
   }
@@ -297,6 +395,37 @@ try {
   const counts = normalizedCounts.rows[0] || {};
   if (counts.residents < 1 || counts.deliveries !== 1 || counts.commands !== 1 || counts.audit_events < 2) {
     throw new Error(`Tabelas operacionais incompletas: ${JSON.stringify(counts)}`);
+  }
+  const commandRowResult = await databaseClient.query(
+    `
+      select status, lease_id, execution_id, delivery_attempt, revision, data,
+        to_regclass('uq_preddita_commands_active_door') is not null as active_door_unique,
+        to_regclass('uq_preddita_commands_execution') is not null as execution_unique,
+        (
+          select count(*)::integer
+          from preddita_audit_events
+          where tenant_id = $1 and locker_id = $2
+            and kind = 'remote-open-completed'
+            and meta->>'commandId' = $3
+        ) as completion_audits
+      from preddita_commands
+      where tenant_id = $1 and locker_id = $2 and command_id = $3
+    `,
+    ['tenant-postgres-smoke', LOCKER_ID, createdCommand.command.id]
+  );
+  const commandRow = commandRowResult.rows[0] || {};
+  if (
+    commandRow.status !== 'completed'
+    || commandRow.lease_id !== ''
+    || commandRow.execution_id !== executionId
+    || commandRow.delivery_attempt !== 1
+    || Number(commandRow.revision) !== 3
+    || commandRow.data?.status !== 'completed'
+    || commandRow.active_door_unique !== true
+    || commandRow.execution_unique !== true
+    || commandRow.completion_audits !== 1
+  ) {
+    throw new Error(`Linha transacional do comando ficou inconsistente: ${JSON.stringify(commandRow)}`);
   }
 
   const legacyAt = new Date().toISOString();
@@ -386,6 +515,8 @@ try {
     throw new Error(`Backfill relacional incompleto: ${JSON.stringify(migratedRow)}`);
   }
 
+  await stopServer(secondaryServer);
+  secondaryServer = null;
   await stopServer(server);
   server = spawnServer();
   await waitForServer();
@@ -496,6 +627,7 @@ try {
 
   console.log('PREDDITA_V2_POSTGRES_SMOKE_OK');
 } finally {
+  await stopServer(secondaryServer);
   await stopServer(server);
   if (databaseClient) await databaseClient.end();
   rmSync(DATA_DIR, { recursive: true, force: true });

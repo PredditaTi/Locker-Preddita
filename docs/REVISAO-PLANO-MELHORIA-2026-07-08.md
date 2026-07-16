@@ -207,6 +207,20 @@ Validacao do segundo lote:
   de um locker legado criado com o schema anterior.
 - Versao atualizada para `2.0.18-lab`, `schemaVersion 8` e `versionCode 18`.
 
+### Comandos transacionais em 2026-07-15
+
+- Escritas genericas do estado Postgres deixaram de substituir comandos lidos
+  anteriormente; backfill e primeiro boot continuam sincronizando a origem.
+- Criacao, lease, ACK, expiracao e conclusao usam bloqueios no banco, revisao por
+  linha e ate tres tentativas para deadlock ou falha de serializacao.
+- Indices unicos impedem mais de um comando ativo por porta e o reuso de
+  `executionId` entre comandos do mesmo locker.
+- Conclusao e seus efeitos em portas, entregas e auditoria ficam na mesma
+  transacao; replay retorna sucesso sem repetir efeitos.
+- O smoke Postgres sobe duas instancias concorrentes e exige apenas uma criacao,
+  um lease, um ACK efetivo, uma conclusao efetiva e uma auditoria.
+- Versao atualizada para `2.0.19-lab`, `schemaVersion 9` e `versionCode 19`.
+
 Primeiro pacote de Fase 0 aplicado apos esta revisao:
 
 - `admin-online`: `nodemailer` atualizado para versao sem vulnerabilidades no
