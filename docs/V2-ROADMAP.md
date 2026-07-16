@@ -103,11 +103,13 @@ Solucoes maduras de smart lockers se posicionam como plataformas completas, nao 
 - AWS IoT Core antecipa comandos, moradores e atualizacoes com wake-up MQTT QoS
   1. O Postgres e a API HMAC continuam como fonte de verdade; tickets STS usam
   session policy exata e o polling HTTP assume automaticamente em falhas.
+- O contrato consumidor-servidor agora executa o `remoteBridge` real contra o
+  Admin Online. Playwright percorre deposito e retirada no bundle Android com
+  leitura RS-485 simulada, provas de fechamento e persistencia apos reload.
 
 ## Proximas melhorias recomendadas
 
-1. Adicionar testes de contrato da API e testes de fluxo do kiosk.
-2. Criar LGPD/data-retention: CPF, telefone, e-mail, auditoria e expiracao de entregas.
+1. Criar LGPD/data-retention: CPF, telefone, e-mail, auditoria e expiracao de entregas.
 
 ## Criterio de produto para ficar competitivo
 

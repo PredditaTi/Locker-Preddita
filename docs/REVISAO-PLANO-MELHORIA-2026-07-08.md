@@ -279,6 +279,20 @@ Validacao do segundo lote:
 - Versao atualizada para `2.0.23-lab` e `versionCode 23`; `schemaVersion 11`
   permanece porque nao houve nova entidade persistida.
 
+### Contratos de API e E2E do kiosk em 2026-07-16
+
+- Um teste consumidor-servidor sobe o Admin Online isolado e usa o
+  `remoteBridge` real com a ponte HMAC do Android para validar sessao, morador,
+  heartbeat, snapshot, eventos, MQTT e o ciclo completo de comandos.
+- Playwright serve o bundle incorporado ao APK e percorre a jornada publica de
+  deposito e retirada com frames RS-485 deterministas.
+- O E2E exige fechamento fisico nos dois sentidos, confere a mesma porta e o
+  mesmo PIN e valida a persistencia `collected` depois do reload.
+- O CI instala Chromium, executa a jornada e publica screenshot, video e trace
+  somente quando houver falha.
+- Versao atualizada para `2.0.24-lab` e `versionCode 24`; `schemaVersion 11`
+  permanece porque a persistencia de produto nao mudou.
+
 Primeiro pacote de Fase 0 aplicado apos esta revisao:
 
 - `admin-online`: `nodemailer` atualizado para versao sem vulnerabilidades no

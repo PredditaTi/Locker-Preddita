@@ -86,6 +86,9 @@ try {
 Write-Host "[PREDDITA v2] Smoke test do admin online..."
 & $node (Join-Path $root "scripts\v2-smoke-test.mjs")
 
+Write-Host "[PREDDITA v2] Teste do contrato consumidor-servidor da API..."
+& $node (Join-Path $root "scripts\v2-api-contract-test.mjs")
+
 Write-Host "[PREDDITA v2] Teste de recuperacao do estado JSON..."
 & $node (Join-Path $root "scripts\v2-state-recovery-test.mjs")
 
@@ -115,6 +118,8 @@ try {
   if (-not $SkipBuild) {
     Write-Host "[PREDDITA v2] Build do app do armario..."
     & $npm run build
+    Write-Host "[PREDDITA v2] Fluxo E2E de deposito e retirada no kiosk..."
+    & $npm run test:e2e
   }
 } finally {
   Pop-Location

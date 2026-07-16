@@ -42,10 +42,10 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Set up Node.js 20
+      - name: Set up Node.js 20.19
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '20'
+          node-version: '20.19.0'
           cache: npm
           cache-dependency-path: |
             admin-online/package-lock.json
@@ -95,6 +95,7 @@ jobs:
           node scripts/OperationalLogStoreTest.mjs
           node scripts/CommandStoreTest.mjs
           node scripts/v2-native-device-auth-test.mjs
+          node scripts/v2-api-contract-test.mjs
           node scripts/v2-smoke-test.mjs
           node scripts/v2-postgres-smoke-test.mjs
 
@@ -152,6 +153,25 @@ jobs:
       - name: Build locker web assets
         run: npm run build
         working-directory: web
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: web
+
+      - name: Run kiosk end-to-end flow
+        run: npm run test:e2e
+        working-directory: web
+
+      - name: Upload kiosk end-to-end diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: kiosk-e2e-diagnostics-${{ github.run_number }}
+          path: |
+            web/playwright-report/
+            web/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Build debug APK
         run: ./gradlew --no-daemon assembleDebug
