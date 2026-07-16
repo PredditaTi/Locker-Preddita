@@ -235,6 +235,10 @@ Servidor:
 - `PREDDITA_COMMAND_TTL_MS`: prazo total do comando.
 - `PREDDITA_COMMAND_LEASE_MS`: prazo para o armario confirmar a entrega.
 - `PREDDITA_COMMAND_EXECUTION_LEASE_MS`: prazo da execucao antes de reconciliar.
+- `PREDDITA_OPERATIONAL_LOG_RETENTION_DAYS`: retencao dos logs tecnicos; 30 dias
+  por padrao.
+- `PREDDITA_MAX_JSON_OPERATIONAL_LOGS`: limite do arquivo JSONL no modo de
+  laboratorio; 5.000 registros por padrao.
 - `PREDDITA_ALLOWED_ORIGINS`: CORS permitido.
 - `PREDDITA_SMTP_HOST`, `PREDDITA_SMTP_PORT`, `PREDDITA_SMTP_SECURE`.
 - `PREDDITA_SMTP_USER`, `PREDDITA_SMTP_PASS`, `PREDDITA_SMTP_FROM`.
@@ -260,6 +264,13 @@ opaco, `HttpOnly`, `SameSite=Strict` e `Secure` em producao. Mutacoes exigem um
 CSRF token mantido somente em memoria pela pagina. Os papeis `sindico`,
 `operador`, `suporte` e `super_admin` sao validados no backend, inclusive para
 escopo por `lockerId`, dados pessoais, exportacoes e operacao remota.
+
+Cada chamada da API recebe um `x-request-id` e gera um registro estruturado sem
+corpo, query string ou cabecalhos de autenticacao. Em Postgres, os registros
+ficam em `preddita_operational_logs`; no modo local, em
+`operational-logs.jsonl`. Suporte e Admin Geral podem filtrar e exportar esses
+dados no painel. Senhas, tokens, PINs, CPF, contato e evidencias sao removidos
+recursivamente do contexto antes da persistencia.
 
 No modo Postgres, `PREDDITA_ADMIN_USERS` funciona como bootstrap e reconciliacao
 da tabela `preddita_admin_users`. O cookie recebe um token aleatorio, mas o banco

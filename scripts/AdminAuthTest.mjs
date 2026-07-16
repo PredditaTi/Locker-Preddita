@@ -37,6 +37,9 @@ assert.equal(adminUserCanAccessLocker(user, 'locker-02'), false);
 assert.equal(adminUserCanAccessLocker(user, 'locker-01', 'tenant-teste'), true);
 assert.equal(adminUserCanAccessLocker(user, 'locker-01', 'outro-tenant'), false);
 assert.equal(getAdminRolePermissions('operador').canManageApartments, false);
+assert.equal(getAdminRolePermissions('sindico').canViewOperationalLogs, false);
+assert.equal(getAdminRolePermissions('suporte').canViewOperationalLogs, true);
+assert.equal(getAdminRolePermissions('super_admin').canViewOperationalLogs, true);
 assert.throws(() => parseAdminUsers(JSON.stringify([
   { username: 'global', role: 'sindico', passwordHash, lockerIds: ['*'] },
 ])));

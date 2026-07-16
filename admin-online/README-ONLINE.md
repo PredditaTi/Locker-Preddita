@@ -20,6 +20,7 @@ PREDDITA_LOCKER_ID=ks1062-aurora
 PREDDITA_COMMAND_TTL_MS=120000
 PREDDITA_COMMAND_LEASE_MS=15000
 PREDDITA_COMMAND_EXECUTION_LEASE_MS=30000
+PREDDITA_OPERATIONAL_LOG_RETENTION_DAYS=30
 PREDDITA_SMTP_HOST=smtp.seu-provedor.com
 PREDDITA_SMTP_PORT=587
 PREDDITA_SMTP_SECURE=false
@@ -114,6 +115,12 @@ entregas, comandos e auditoria ficam em tabelas relacionais proprias, sempre por
 locker padrao, ele e usado como origem inicial. Snapshots Postgres anteriores a
 esta estrutura recebem backfill automatico no primeiro acesso, dentro de uma
 transacao, sem mudar o formato devolvido pela API.
+
+Logs de requisicao, autenticacao, startup e workers ficam em
+`preddita_operational_logs`, separados da auditoria de negocio. O painel de
+suporte permite filtrar e exportar CSV; corpo, query string, credenciais, PINs e
+dados pessoais nao sao persistidos. A limpeza no startup respeita
+`PREDDITA_OPERATIONAL_LOG_RETENTION_DAYS`.
 
 Comandos nao participam mais das substituicoes completas dessas colecoes. Cada
 transicao usa bloqueio de linha, `revision` e indices unicos para impedir dois

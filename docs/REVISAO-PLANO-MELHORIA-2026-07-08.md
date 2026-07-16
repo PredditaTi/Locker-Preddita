@@ -221,6 +221,20 @@ Validacao do segundo lote:
   um lease, um ACK efetivo, uma conclusao efetiva e uma auditoria.
 - Versao atualizada para `2.0.19-lab`, `schemaVersion 9` e `versionCode 19`.
 
+### Logs operacionais estruturados em 2026-07-15
+
+- Requisicoes da API agora recebem `x-request-id` e geram eventos com severidade,
+  origem, rota, status, duracao, tenant, locker e ator autenticado.
+- Autenticacao, MFA, startup e falhas do worker de notificacoes ganharam eventos
+  sem corpo da requisicao, query string, credenciais ou dados pessoais.
+- O modo local persiste JSONL limitado e o Postgres usa tabela propria com
+  indices por escopo, tempo, evento, severidade e requisicao.
+- Suporte e Admin Geral ganharam uma tela filtravel, paginada e exportavel em
+  CSV, separada da auditoria de negocio.
+- Sanitizacao recursiva, retencao automatica e testes JSON/Postgres impedem que
+  senha, chave do dispositivo, PIN, contato ou codigos MFA sejam persistidos.
+- Versao atualizada para `2.0.20-lab`, `schemaVersion 10` e `versionCode 20`.
+
 Primeiro pacote de Fase 0 aplicado apos esta revisao:
 
 - `admin-online`: `nodemailer` atualizado para versao sem vulnerabilidades no

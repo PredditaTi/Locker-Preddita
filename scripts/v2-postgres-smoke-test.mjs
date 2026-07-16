@@ -353,8 +353,10 @@ try {
     || state.state.runtime?.commandMutationStorage !== 'row-postgres'
     || state.state.runtime?.commandSchemaVersion !== 1
     || state.state.runtime?.commandTransactionRetryAttempts !== 3
+    || state.state.runtime?.operationalLogStorage !== 'postgres'
+    || state.state.runtime?.operationalLogSchemaVersion !== 1
   ) {
-    throw new Error('Runtime deveria informar dados operacionais e comandos transacionais no Postgres.');
+    throw new Error('Runtime deveria informar dados operacionais, logs e comandos transacionais no Postgres.');
   }
   if (
     !state.state.deliveries.some((delivery) => delivery.id === normalizedDelivery.id)
@@ -364,9 +366,33 @@ try {
   ) {
     throw new Error('API deveria hidratar entregas e comandos a partir das tabelas normalizadas.');
   }
+  const mfaOperationalLogs = await requestOk(
+    `/api/admin/logs?lockerId=${encodeURIComponent(LOCKER_ID)}&event=admin-mfa-enrolled`,
+    { headers: adminHeaders }
+  );
+  if (mfaOperationalLogs.logs[0]?.event !== 'admin-mfa-enrolled') {
+    throw new Error('Log de cadastro MFA deveria ser consultavel no Postgres.');
+  }
 
   databaseClient = new Client({ connectionString: DATABASE_URL });
   await databaseClient.connect();
+  const operationalLogRows = await databaseClient.query(
+    `
+      select count(*)::integer as count,
+        string_agg(message || ' ' || context::text, ' ') as searchable_content
+      from preddita_operational_logs
+      where tenant_id = $1 and locker_id = $2
+    `,
+    ['tenant-postgres-smoke', LOCKER_ID]
+  );
+  const persistedOperationalLogs = operationalLogRows.rows[0] || {};
+  const sensitiveValues = [ADMIN_PASSWORD, DEVICE_KEY, mfaSecret, ...recoveryCodes];
+  if (
+    Number(persistedOperationalLogs.count) < 3
+    || sensitiveValues.some((value) => String(persistedOperationalLogs.searchable_content || '').includes(value))
+  ) {
+    throw new Error('Logs Postgres deveriam persistir eventos sem credenciais ou codigos MFA.');
+  }
   const normalizedSnapshot = await databaseClient.query(
     `
       select operational_schema_version, state
@@ -526,6 +552,13 @@ try {
   });
   if (restoredSession.session?.id !== adminHeaders.sessionId) {
     throw new Error('Sessao administrativa deveria sobreviver ao restart do servidor.');
+  }
+  const restoredOperationalLogs = await requestOk(
+    `/api/admin/logs?lockerId=${encodeURIComponent(LOCKER_ID)}&event=server-started`,
+    { headers: { cookie: adminHeaders.cookie } }
+  );
+  if (restoredOperationalLogs.logs.length < 1) {
+    throw new Error('Logs operacionais deveriam sobreviver ao restart do servidor.');
   }
 
   await requestOk('/api/auth/logout', {

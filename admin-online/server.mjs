@@ -43,14 +43,24 @@ import {
   reconcileOperationalCommand,
   refreshOperationalCommands,
 } from './commandStore.mjs';
+import {
+  OPERATIONAL_LOG_SCHEMA_VERSION,
+  appendOperationalLog,
+  createJsonOperationalLogStore,
+  ensureOperationalLogSchema,
+  normalizeOperationalLog,
+  pruneOperationalLogs,
+  queryOperationalLogs,
+} from './operationalLogStore.mjs';
 
 const ROOT_DIR = fileURLToPath(new URL('.', import.meta.url));
 const PUBLIC_DIR = join(ROOT_DIR, 'public');
 const DATA_DIR = process.env.PREDDITA_DATA_DIR ? normalize(process.env.PREDDITA_DATA_DIR) : join(ROOT_DIR, 'data');
 const DB_PATH = join(DATA_DIR, 'state.json');
 const BACKUP_DIR = join(DATA_DIR, 'backups');
-const APP_VERSION = '2.0.19-lab';
-const SCHEMA_VERSION = 9;
+const OPERATIONAL_LOG_PATH = join(DATA_DIR, 'operational-logs.jsonl');
+const APP_VERSION = '2.0.20-lab';
+const SCHEMA_VERSION = 10;
 const DEFAULT_ADMIN_TOKEN = 'preddita-admin-local';
 const DEFAULT_SUPER_ADMIN_TOKEN = 'preddita-super-admin-local';
 const DEFAULT_DEVICE_KEY = 'preddita-device-local';
@@ -105,6 +115,8 @@ const DEVICE_RATE_LIMIT_PER_MINUTE = Number.parseInt(process.env.PREDDITA_DEVICE
 const OPEN_RATE_LIMIT_PER_MINUTE = Number.parseInt(process.env.PREDDITA_OPEN_RATE_LIMIT_PER_MINUTE ?? '18', 10);
 const NOTIFICATION_OUTBOX_INTERVAL_MS = Number.parseInt(process.env.PREDDITA_NOTIFICATION_OUTBOX_INTERVAL_MS ?? '30000', 10);
 const NOTIFICATION_OUTBOX_MAX_ATTEMPTS = Number.parseInt(process.env.PREDDITA_NOTIFICATION_OUTBOX_MAX_ATTEMPTS ?? '8', 10);
+const OPERATIONAL_LOG_RETENTION_DAYS = parsePositiveInteger(process.env.PREDDITA_OPERATIONAL_LOG_RETENTION_DAYS, 30);
+const MAX_JSON_OPERATIONAL_LOGS = parsePositiveInteger(process.env.PREDDITA_MAX_JSON_OPERATIONAL_LOGS, 5000);
 const TRUST_PROXY = String(process.env.PREDDITA_TRUST_PROXY ?? 'false').toLowerCase() === 'true';
 const ALLOWED_ORIGINS = cleanText(process.env.PREDDITA_ALLOWED_ORIGINS)
   .split(',')
@@ -140,6 +152,10 @@ let postgresPool = null;
 let postgresReadyPromise = null;
 const lockerStateMutationQueues = new Map();
 const deviceAuthNonces = new Map();
+const jsonOperationalLogStore = createJsonOperationalLogStore({
+  filePath: OPERATIONAL_LOG_PATH,
+  maxEntries: MAX_JSON_OPERATIONAL_LOGS,
+});
 
 function nowIso() {
   return new Date().toISOString();
@@ -147,6 +163,75 @@ function nowIso() {
 
 function createId(prefix) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+async function recordOperationalLog(entry) {
+  const normalized = normalizeOperationalLog({
+    tenantId: DEFAULT_TENANT_ID,
+    lockerId: DEFAULT_LOCKER_ID,
+    ...entry,
+  }, { createId });
+  const output = JSON.stringify({
+    type: 'operational-log',
+    schemaVersion: OPERATIONAL_LOG_SCHEMA_VERSION,
+    ...normalized,
+  });
+  (['warn', 'error'].includes(normalized.level) ? console.error : console.log)(output);
+
+  try {
+    if (isPostgresStorage()) {
+      if (postgresPool) await appendOperationalLog(postgresPool, normalized, { createId });
+    } else {
+      await jsonOperationalLogStore.append(normalized, { createId });
+    }
+  } catch (error) {
+    console.error(JSON.stringify({
+      type: 'operational-log-persistence-error',
+      level: 'error',
+      event: 'operational-log-persistence-failed',
+      errorCode: cleanText(error?.code || error?.name, 80),
+      occurredAt: nowIso(),
+    }));
+  }
+  return normalized;
+}
+
+function updateRequestOperationalContext(request, values = {}) {
+  request.predditaOperational = { ...(request.predditaOperational ?? {}), ...values };
+}
+
+function beginRequestOperationalLog(request, response) {
+  const path = routePath(request.url ?? '/');
+  const method = cleanText(request.method || 'GET').toUpperCase();
+  const requestId = createId('req');
+  updateRequestOperationalContext(request, {
+    requestId,
+    startedAt: Date.now(),
+    tenantId: DEFAULT_TENANT_ID,
+    lockerId: getRequestLockerId(request),
+    source: path.startsWith('/api/device') ? 'device' : path.startsWith('/api/') ? 'admin' : 'server',
+  });
+  response.setHeader('x-request-id', requestId);
+  response.once('finish', () => {
+    if (method === 'OPTIONS' || (path === '/api/healthz' && response.statusCode < 400)) return;
+    const context = request.predditaOperational ?? {};
+    const statusCode = response.statusCode;
+    void recordOperationalLog({
+      level: statusCode >= 500 ? 'error' : statusCode >= 400 ? 'warn' : 'info',
+      event: statusCode >= 400 ? 'http-request-rejected' : 'http-request-completed',
+      message: `${method} ${path} -> ${statusCode}`,
+      tenantId: context.tenantId,
+      lockerId: context.lockerId,
+      requestId: context.requestId,
+      actor: context.actor,
+      source: context.source,
+      httpMethod: method,
+      httpPath: path,
+      statusCode,
+      durationMs: Math.max(0, Date.now() - context.startedAt),
+      context: { role: context.role },
+    });
+  });
 }
 
 function cleanText(value) {
@@ -608,6 +693,8 @@ async function ensurePostgres() {
     `);
     await ensureOperationalSchema(postgresPool);
     await ensureCommandSchema(postgresPool);
+    await ensureOperationalLogSchema(postgresPool);
+    await pruneOperationalLogs(postgresPool, OPERATIONAL_LOG_RETENTION_DAYS);
     await postgresPool.query(`
       create table if not exists preddita_admin_users (
         username text primary key,
@@ -1676,6 +1763,9 @@ function getRuntimeSummary(state) {
     storageMode: STORAGE_MODE,
     operationalStorage: isPostgresStorage() ? 'normalized-postgres' : 'snapshot',
     operationalSchemaVersion: isPostgresStorage() ? OPERATIONAL_SCHEMA_VERSION : 0,
+    operationalLogStorage: isPostgresStorage() ? 'postgres' : 'jsonl',
+    operationalLogSchemaVersion: OPERATIONAL_LOG_SCHEMA_VERSION,
+    operationalLogRetentionDays: OPERATIONAL_LOG_RETENTION_DAYS,
     commandMutationStorage: isPostgresStorage() ? 'row-postgres' : 'snapshot',
     commandSchemaVersion: isPostgresStorage() ? COMMAND_SCHEMA_VERSION : 0,
     commandTransactionRetryAttempts: isPostgresStorage() ? COMMAND_TRANSACTION_RETRY_ATTEMPTS : 0,
@@ -2413,7 +2503,15 @@ async function processNotificationOutboxFromDisk(options = {}) {
       await writeState(result.state, lockerId, tenantId);
     }
   } catch (error) {
-    console.error(`[PREDDITA] Falha no outbox de e-mail: ${error.message}`);
+    await recordOperationalLog({
+      level: 'error',
+      event: 'notification-outbox-failed',
+      message: 'Falha ao processar a fila de notificacoes.',
+      tenantId: normalizeTenantId(options.tenantId),
+      lockerId: normalizeLockerId(options.lockerId),
+      source: 'worker',
+      context: { errorCode: error?.code || error?.name || 'Error' },
+    });
   } finally {
     notificationOutboxInFlight = false;
   }
@@ -2783,6 +2881,38 @@ function toCsv(headers, rows) {
   ].join('\n');
 }
 
+function operationalLogFiltersFromRequest(request, tenantId, lockerId, options = {}) {
+  const url = new URL(request.url, `http://localhost:${PORT}`);
+  return {
+    tenantId,
+    lockerId,
+    level: url.searchParams.get('level'),
+    source: url.searchParams.get('source'),
+    event: url.searchParams.get('event'),
+    query: url.searchParams.get('q'),
+    cursor: url.searchParams.get('cursor'),
+    limit: options.limit || url.searchParams.get('limit'),
+  };
+}
+
+async function readOperationalLogPage(filters) {
+  if (isPostgresStorage()) {
+    return queryOperationalLogs(await ensurePostgres(), filters);
+  }
+  return jsonOperationalLogStore.query(filters);
+}
+
+async function readOperationalLogsForExport(filters, maximum = 5000) {
+  const logs = [];
+  let cursor = '';
+  do {
+    const page = await readOperationalLogPage({ ...filters, cursor, limit: 200 });
+    logs.push(...page.logs);
+    cursor = page.nextCursor;
+  } while (cursor && logs.length < maximum);
+  return logs.slice(0, maximum);
+}
+
 function createLegacyAdminAuth(role, username, name) {
   const permissions = getAdminRolePermissions(role);
   const user = {
@@ -3028,6 +3158,9 @@ function serveStatic(request, response) {
 async function handleApi(request, response) {
   const path = routePath(request.url);
   const method = request.method ?? 'GET';
+  updateRequestOperationalContext(request, {
+    source: path.startsWith('/api/device') ? 'device' : 'admin',
+  });
 
   if (method === 'OPTIONS') {
     sendJson(response, 200, { ok: true });
@@ -3050,37 +3183,60 @@ async function handleApi(request, response) {
 
   if (method === 'POST' && path === '/api/auth/login') {
     if (!checkRateLimit(request, 'admin-login', ADMIN_LOGIN_RATE_LIMIT_PER_MINUTE)) {
+      await recordOperationalLog({
+        level: 'warn',
+        event: 'admin-login-rate-limited',
+        message: 'Tentativa de login bloqueada por limite de requisicoes.',
+        requestId: request.predditaOperational?.requestId,
+        source: 'admin',
+      });
       sendError(response, 429, 'Muitas tentativas de login. Aguarde um minuto.');
       return;
     }
     const body = await readBody(request);
     const user = authenticateAdminUser(adminUsers, body.username, body.password);
     if (!user) {
+      await recordOperationalLog({
+        level: 'warn',
+        event: 'admin-login-rejected',
+        message: 'Credenciais administrativas recusadas.',
+        requestId: request.predditaOperational?.requestId,
+        source: 'admin',
+      });
       sendError(response, 401, 'Usuario ou senha invalidos.');
       return;
     }
+    updateRequestOperationalContext(request, {
+      actor: user.username,
+      role: user.role,
+      tenantId: user.tenantId,
+    });
     if (isAdminMfaEnabledFor(user)) {
       const mfa = await beginAdminMfaLogin(user);
-      console.log(JSON.stringify({
+      await recordOperationalLog({
         level: 'info',
         event: mfa.enrollment ? 'admin-mfa-enrollment-started' : 'admin-mfa-challenge-started',
-        username: user.username,
-        role: user.role,
-        client: getClientKey(request),
-        at: nowIso(),
-      }));
+        message: mfa.enrollment ? 'Cadastro MFA iniciado.' : 'Desafio MFA iniciado.',
+        tenantId: user.tenantId,
+        actor: user.username,
+        requestId: request.predditaOperational?.requestId,
+        source: 'admin',
+        context: { role: user.role },
+      });
       sendJson(response, 200, { ok: true, mfa });
       return;
     }
     const created = await adminSessionStore.create(user);
-    console.log(JSON.stringify({
+    await recordOperationalLog({
       level: 'info',
       event: 'admin-login',
-      username: user.username,
-      role: user.role,
-      client: getClientKey(request),
-      at: nowIso(),
-    }));
+      message: 'Sessao administrativa iniciada.',
+      tenantId: user.tenantId,
+      actor: user.username,
+      requestId: request.predditaOperational?.requestId,
+      source: 'admin',
+      context: { role: user.role },
+    });
     sendJson(
       response,
       200,
@@ -3118,19 +3274,33 @@ async function handleApi(request, response) {
 
     const verified = await completeAdminMfaLogin({ challengeToken, code, recoveryCode });
     if (!verified.ok) {
+      await recordOperationalLog({
+        level: 'warn',
+        event: 'admin-mfa-rejected',
+        message: 'Verificacao MFA recusada.',
+        requestId: request.predditaOperational?.requestId,
+        source: 'admin',
+        context: { status: verified.status },
+      });
       sendError(response, verified.status, verified.error);
       return;
     }
+    updateRequestOperationalContext(request, {
+      actor: verified.user.username,
+      role: verified.user.role,
+      tenantId: verified.user.tenantId,
+    });
     const created = await adminSessionStore.create(verified.user);
-    console.log(JSON.stringify({
+    await recordOperationalLog({
       level: 'info',
       event: verified.enrollment ? 'admin-mfa-enrolled' : 'admin-mfa-verified',
-      username: verified.user.username,
-      role: verified.user.role,
-      method: recoveryCode ? 'recovery-code' : 'totp',
-      client: getClientKey(request),
-      at: nowIso(),
-    }));
+      message: verified.enrollment ? 'Cadastro MFA concluido.' : 'Verificacao MFA concluida.',
+      tenantId: verified.user.tenantId,
+      actor: verified.user.username,
+      requestId: request.predditaOperational?.requestId,
+      source: 'admin',
+      context: { role: verified.user.role, authenticationMethod: recoveryCode ? 'recovery-code' : 'totp' },
+    });
     sendJson(
       response,
       200,
@@ -3153,6 +3323,11 @@ async function handleApi(request, response) {
       sendError(response, 401, 'Sessao administrativa ausente ou expirada.');
       return;
     }
+    updateRequestOperationalContext(request, {
+      actor: adminActor(adminAuth),
+      role: adminAuth.session.user.role,
+      tenantId: adminAuth.session.user.tenantId,
+    });
     sendJson(response, 200, {
       ok: true,
       session: toPublicAdminSession(adminAuth.session, { includeCsrf: true }),
@@ -3170,14 +3345,22 @@ async function handleApi(request, response) {
       sendError(response, 403, 'Token CSRF invalido. Atualize a pagina e tente novamente.');
       return;
     }
+    updateRequestOperationalContext(request, {
+      actor: adminActor(adminAuth),
+      role: adminAuth.session.user.role,
+      tenantId: adminAuth.session.user.tenantId,
+    });
     const clearedCookie = await adminSessionStore.destroy(request.headers.cookie);
-    console.log(JSON.stringify({
+    await recordOperationalLog({
       level: 'info',
       event: 'admin-logout',
-      username: adminActor(adminAuth),
-      client: getClientKey(request),
-      at: nowIso(),
-    }));
+      message: 'Sessao administrativa encerrada.',
+      tenantId: adminAuth.session.user.tenantId,
+      actor: adminActor(adminAuth),
+      requestId: request.predditaOperational?.requestId,
+      source: 'admin',
+      context: { role: adminAuth.session.user.role },
+    });
     sendJson(response, 200, { ok: true }, { 'set-cookie': clearedCookie });
     return;
   }
@@ -3206,6 +3389,13 @@ async function handleApi(request, response) {
     sendError(response, 403, 'Token CSRF invalido. Atualize a pagina e tente novamente.');
     return;
   }
+  if (adminAuth) {
+    updateRequestOperationalContext(request, {
+      actor: adminActor(adminAuth),
+      role: adminAuth.session.user.role,
+      tenantId: adminAuth.session.user.tenantId,
+    });
+  }
 
   if (isDevicePath) {
     try {
@@ -3221,11 +3411,62 @@ async function handleApi(request, response) {
   }
 
   const requestLockerId = getRequestLockerId(request);
+  updateRequestOperationalContext(request, { lockerId: requestLockerId });
   if (isAdminPath && !adminUserCanAccessLocker(adminAuth.session.user, requestLockerId, DEFAULT_TENANT_ID)) {
     sendError(response, 403, 'Este usuario nao possui acesso ao locker solicitado.');
     return;
   }
   const adminSession = isAdminPath ? toPublicAdminSession(adminAuth.session) : null;
+
+  if (method === 'GET' && path === '/api/admin/logs') {
+    if (!hasAdminPermission(adminAuth, 'canViewOperationalLogs')) {
+      sendError(response, 403, 'Este papel nao pode consultar logs operacionais.');
+      return;
+    }
+    const filters = operationalLogFiltersFromRequest(
+      request,
+      adminAuth.session.user.tenantId || DEFAULT_TENANT_ID,
+      requestLockerId
+    );
+    const page = await readOperationalLogPage(filters);
+    sendJson(response, 200, {
+      ok: true,
+      logs: page.logs,
+      nextCursor: page.nextCursor,
+      retentionDays: OPERATIONAL_LOG_RETENTION_DAYS,
+      schemaVersion: OPERATIONAL_LOG_SCHEMA_VERSION,
+    });
+    return;
+  }
+
+  if (method === 'GET' && path === '/api/admin/export/logs.csv') {
+    if (!hasAdminPermission(adminAuth, 'canViewOperationalLogs')) {
+      sendError(response, 403, 'Este papel nao pode exportar logs operacionais.');
+      return;
+    }
+    const filters = operationalLogFiltersFromRequest(
+      request,
+      adminAuth.session.user.tenantId || DEFAULT_TENANT_ID,
+      requestLockerId
+    );
+    const logs = await readOperationalLogsForExport(filters);
+    sendText(
+      response,
+      200,
+      toCsv(
+        [
+          'occurredAt', 'level', 'event', 'message', 'source', 'lockerId',
+          'requestId', 'actor', 'httpMethod', 'httpPath', 'statusCode',
+          'durationMs', 'context',
+        ],
+        logs.map((log) => ({ ...log, context: JSON.stringify(log.context) }))
+      ),
+      'text/csv; charset=utf-8',
+      { 'content-disposition': 'attachment; filename="preddita-logs-operacionais.csv"' }
+    );
+    return;
+  }
+
   const state = await readFreshState(requestLockerId);
   if (isDevicePath) {
     const lockerValidation = validateDeviceLocker(state, request);
@@ -3770,17 +4011,40 @@ async function handleApi(request, response) {
 
 const startupConfigErrors = getStartupConfigErrors();
 if (startupConfigErrors.length > 0) {
-  console.error('[PREDDITA] Configuracao insegura para producao:');
-  for (const error of startupConfigErrors) {
-    console.error(`- ${error}`);
-  }
+  await recordOperationalLog({
+    level: 'error',
+    event: 'server-config-rejected',
+    message: 'Configuracao insegura impediu o startup do Admin Online.',
+    source: 'server',
+    context: { errors: startupConfigErrors },
+  });
   process.exit(1);
 }
 
 const server = createServer((request, response) => {
   applyCors(request, response);
   if ((request.url ?? '').startsWith('/api/')) {
-    handleApi(request, response).catch((error) => sendError(response, 500, error.message));
+    beginRequestOperationalLog(request, response);
+    handleApi(request, response).catch(async (error) => {
+      await recordOperationalLog({
+        level: 'error',
+        event: 'api-request-failed',
+        message: 'Falha interna ao processar requisicao da API.',
+        tenantId: request.predditaOperational?.tenantId,
+        lockerId: request.predditaOperational?.lockerId,
+        actor: request.predditaOperational?.actor,
+        requestId: request.predditaOperational?.requestId,
+        source: request.predditaOperational?.source,
+        httpMethod: request.method,
+        httpPath: routePath(request.url),
+        context: { errorCode: error?.code || error?.name || 'Error' },
+      });
+      const publicMessage = cleanText(error?.message).startsWith('Estado JSON invalido em ')
+        ? error.message
+        : 'Falha interna ao processar a requisicao.';
+      if (!response.headersSent) sendError(response, 500, publicMessage);
+      else response.destroy();
+    });
     return;
   }
   serveStatic(request, response);
@@ -3790,10 +4054,23 @@ async function startServer() {
   if (isPostgresStorage()) {
     await ensurePostgres();
     await initializePostgresAdminAuth();
+  } else {
+    await jsonOperationalLogStore.prune(OPERATIONAL_LOG_RETENTION_DAYS);
   }
 
   server.listen(PORT, '0.0.0.0', () => {
-    console.log(`[PREDDITA] Admin online em http://localhost:${PORT}`);
+    void recordOperationalLog({
+      level: 'info',
+      event: 'server-started',
+      message: `Admin Online iniciado na porta ${PORT}.`,
+      source: 'server',
+      context: {
+        appVersion: APP_VERSION,
+        schemaVersion: SCHEMA_VERSION,
+        storageMode: STORAGE_MODE,
+        operationalLogSchemaVersion: OPERATIONAL_LOG_SCHEMA_VERSION,
+      },
+    });
     void processNotificationOutboxFromDisk();
   });
 
@@ -3803,6 +4080,11 @@ async function startServer() {
 }
 
 startServer().catch((error) => {
-  console.error(`[PREDDITA] Falha ao iniciar servidor: ${error.message}`);
-  process.exit(1);
+  void recordOperationalLog({
+    level: 'error',
+    event: 'server-start-failed',
+    message: 'Falha ao iniciar o Admin Online.',
+    source: 'server',
+    context: { errorCode: error?.code || error?.name || 'Error' },
+  }).finally(() => process.exit(1));
 });

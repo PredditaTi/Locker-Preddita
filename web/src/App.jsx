@@ -96,7 +96,7 @@ const COMMANDS = createCommandSet(LOCKER_PROFILE);
 const DOORS_PER_PAGE = 8;
 const DOOR_COUNT_PRESETS = [8, 12, 16, 20, 24];
 const ADMIN_VIEWS = new Set(['admin', 'adminDeposit', 'adminPickup', 'doors', 'system']);
-const APP_VERSION = '2.0.19-lab';
+const APP_VERSION = '2.0.20-lab';
 const POPUP_BANNER_TITLES = new Set([
   'Porta pequena ainda aberta',
   'Sem porta grande disponivel',
