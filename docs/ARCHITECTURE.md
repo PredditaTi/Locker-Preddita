@@ -207,6 +207,14 @@ transacao. Registros antigos com `operational_schema_version=0` recebem backfill
 automatico no primeiro acesso; depois, a API hidrata o contrato antigo a partir
 das tabelas e o JSONB deixa de duplicar essas colecoes.
 
+Comandos sao a primeira entidade com mutacoes por linha. O Postgres bloqueia a
+linha durante ACK e conclusao e bloqueia o locker durante criacao e efeitos que
+tambem alteram portas, entregas ou auditoria. Indices unicos garantem uma unica
+operacao ativa por porta e um unico comando por `executionId`; `revision` registra
+cada transicao. Deadlocks e falhas de serializacao recebem ate tres tentativas.
+Escritas genericas do snapshot nao atualizam mais `preddita_commands`, portanto
+uma leitura antiga de outra instancia nao consegue regredir o comando.
+
 ## Variaveis de ambiente importantes
 
 Servidor:
@@ -276,6 +284,7 @@ replicas. Em producao, Postgres e `PREDDITA_MFA_ENCRYPTION_KEY` sao obrigatorios
 - HTTPS e dominio proprio devem ser obrigatorios em producao.
 - O envio de e-mail depende de SMTP externo; falhas ficam registradas para
   reprocessamento/diagnostico.
-- A sincronizacao das entidades e transacional, mas cada mutacao ainda substitui
-  o conjunto completo lido pela aplicacao. Mantenha uma replica ate comandos e
-  demais operacoes usarem updates por linha com controle de concorrencia no banco.
+- Comandos ja usam updates por linha e foram exercitados com duas instancias. As
+  demais entidades ainda substituem o conjunto completo lido pela aplicacao;
+  mantenha uma replica ate moradores, entregas, auditoria, snapshot e workers
+  tambem terem controle de concorrencia distribuido.

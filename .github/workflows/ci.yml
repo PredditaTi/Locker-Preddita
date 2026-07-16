@@ -89,6 +89,7 @@ jobs:
           node scripts/AdminAuthTest.mjs
           node scripts/AdminMfaTest.mjs
           node scripts/OperationalStoreTest.mjs
+          node scripts/CommandStoreTest.mjs
           node scripts/v2-native-device-auth-test.mjs
           node scripts/v2-smoke-test.mjs
           node scripts/v2-postgres-smoke-test.mjs
@@ -98,6 +99,7 @@ jobs:
           node --check admin-online/server.mjs
           node --check admin-online/adminMfa.mjs
           node --check admin-online/operationalStore.mjs
+          node --check admin-online/commandStore.mjs
           node --check admin-online/public/app.js
 
       - name: Test native RS-485 parser

@@ -140,8 +140,8 @@ tecnico diretamente. Esse atalho existe apenas no build de desenvolvimento.
 
 ## CI e release no GitHub
 
-O workflow `CI` executa testes, smoke Postgres, auditorias, build web e gera um
-APK debug em cada pull request. O workflow manual `Release APK` restaura a
+O workflow `CI` executa testes, smoke Postgres com duas instancias concorrentes,
+auditorias, build web e gera um APK debug em cada pull request. O workflow manual `Release APK` restaura a
 keystore a partir de GitHub Actions secrets, gera o release assinado, valida a
 assinatura e publica o APK com seu SHA-256.
 
@@ -174,7 +174,7 @@ cd web
 $env:VITE_PREDDITA_REMOTE_URL="https://locker.example.com"
 $env:VITE_PREDDITA_LOCKER_ID="ks1062-aurora"
 $env:VITE_PREDDITA_DEVICE_AUTH_MODE="hmac"
-$env:VITE_PREDDITA_EDGE_APP_VERSION="2.0.18-lab"
+$env:VITE_PREDDITA_EDGE_APP_VERSION="2.0.19-lab"
 npm run build
 Remove-Item Env:VITE_PREDDITA_REMOTE_URL
 Remove-Item Env:VITE_PREDDITA_LOCKER_ID
@@ -260,6 +260,8 @@ Armario nao abre porta:
 - Rodar diagnostico no app ou `web/src/diagnostics.js`.
 - Conferir a timeline `pending`, `leased`, `executing` e `completed/failed` no
   painel.
+- No Postgres, conferir `revision`, `lease_id`, `execution_id` e `delivery_attempt`
+  em `preddita_commands`; o mesmo `executionId` nao pode aparecer em duas linhas.
 - Conferir em `Sistema` se a polaridade selecionada corresponde ao byte lido
   com a porta fechada e aberta. Nao troque o perfil sem repetir o teste fisico.
 

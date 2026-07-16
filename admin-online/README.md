@@ -154,6 +154,8 @@ PREDDITA_V2_SMOKE_OK
   corpo; producao recusa autenticacao legada.
 - Comandos remotos com `pending -> leased -> executing -> completed/failed`,
   lease renovavel e `executionId` idempotente.
+- No Postgres, criacao, lease, ACK, expiracao e conclusao atualizam a linha do
+  comando com bloqueio transacional, revisao crescente e retry de deadlock.
 
 ## Rodar localmente com o armario via ADB
 

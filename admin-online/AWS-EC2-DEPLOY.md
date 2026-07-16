@@ -85,9 +85,11 @@ read -s PASSWORD && printf '%s\n' "$PASSWORD" | node scripts/generate-admin-pass
 unset PASSWORD
 ```
 
-Com Postgres, reiniciar o processo preserva sessoes validas e revogadas. Mantenha
-uma unica replica nesta versao porque as mutacoes do snapshot de cada locker e o
-worker de notificacoes ainda nao usam coordenacao distribuida.
+Com Postgres, reiniciar o processo preserva sessoes validas e revogadas. A fila
+de comandos ja coordena duas instancias por bloqueios de linha e idempotencia no
+banco. Mantenha uma unica replica nesta versao porque moradores, entregas,
+auditoria, snapshot e o worker de notificacoes ainda substituem conjuntos ou nao
+usam coordenacao distribuida.
 
 ## Verificar
 
