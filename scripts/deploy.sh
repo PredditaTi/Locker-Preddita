@@ -10,6 +10,7 @@ DEVICE_IP="${DEVICE_IP:-}"          # Ex: export DEVICE_IP=192.168.1.20
 ADB_PORT=5555
 PACKAGE="com.preddita.entregaslocker"
 APK_PATH="android/app/build/outputs/apk/debug/app-debug.apk"
+SERIAL_PORT="${PREDDITA_SERIAL_PORT:-/dev/ttyS5}"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; NC='\033[0m'; BOLD='\033[1m'
@@ -90,35 +91,36 @@ setup_kiosk() {
 
 # ── 6. Testar porta serial RS-485 ─────────────────────────────────────────
 test_serial() {
-  log "Testando porta serial /dev/ttyS1..."
+  [[ "$SERIAL_PORT" =~ ^/dev/ttyS[0-9]+$ ]] || err "Porta serial invalida: $SERIAL_PORT"
+  log "Testando porta serial $SERIAL_PORT..."
 
   # Verificar se o device existe
   adb shell "ls -la /dev/ttyS*" || err "/dev/ttyS* não encontrado"
 
   log "Configurando porta serial (9600,8,N,1)..."
-  adb shell "stty -F /dev/ttyS1 9600 cs8 -cstopb -parenb raw -echo" 2>/dev/null || \
-  adb shell "su -c 'stty -F /dev/ttyS1 9600 cs8 -cstopb -parenb raw -echo'" 2>/dev/null || \
+  adb shell "stty -F $SERIAL_PORT 9600 cs8 -cstopb -parenb raw -echo" 2>/dev/null || \
+  adb shell "su -c 'stty -F $SERIAL_PORT 9600 cs8 -cstopb -parenb raw -echo'" 2>/dev/null || \
   warn "stty falhou — pode precisar de root ou permissão do fabricante"
 
   # Envia comando de query de firmware: 82 01 00 22 A1
   log "Enviando query de firmware (82 01 00 22 A1)..."
-  adb shell "printf '\x82\x01\x00\x22\xA1' > /dev/ttyS1" 2>/dev/null || \
-  adb shell "su -c \"printf '\\x82\\x01\\x00\\x22\\xA1' > /dev/ttyS1\"" 2>/dev/null || \
+  adb shell "printf '\x82\x01\x00\x22\xA1' > $SERIAL_PORT" 2>/dev/null || \
+  adb shell "su -c \"printf '\\x82\\x01\\x00\\x22\\xA1' > $SERIAL_PORT\"" 2>/dev/null || \
   warn "Escrita na serial falhou"
 
   log "Aguardando resposta (2s)..."
-  adb shell "timeout 2 cat /dev/ttyS1 | xxd" 2>/dev/null | head -5 || warn "Sem resposta — verifique se a placa CM06 está energizada e conectada"
+  adb shell "timeout 2 cat $SERIAL_PORT | xxd" 2>/dev/null | head -5 || warn "Sem resposta — verifique se a placa CM06 está energizada e conectada"
 
   # Testa abrir canal 1: 8A 01 01 11 9B
   echo ""
   log "Testando abertura do canal 1 (8A 01 01 11 9B)..."
   echo -n "Deseja enviar o comando de abertura? (s/N): "; read confirm
   if [ "$confirm" = "s" ] || [ "$confirm" = "S" ]; then
-    adb shell "printf '\x8A\x01\x01\x11\x9B' > /dev/ttyS1" 2>/dev/null || \
-    adb shell "su -c \"printf '\\x8A\\x01\\x01\\x11\\x9B' > /dev/ttyS1\"" 2>/dev/null
+    adb shell "printf '\x8A\x01\x01\x11\x9B' > $SERIAL_PORT" 2>/dev/null || \
+    adb shell "su -c \"printf '\\x8A\\x01\\x01\\x11\\x9B' > $SERIAL_PORT\"" 2>/dev/null
     ok "Comando enviado! A trava do canal 1 deveria ter aberto."
     log "Resposta esperada: 8A 01 01 11 9B (success)"
-    adb shell "timeout 1 cat /dev/ttyS1 | xxd" 2>/dev/null | head -3
+    adb shell "timeout 1 cat $SERIAL_PORT | xxd" 2>/dev/null | head -3
   fi
 }
 

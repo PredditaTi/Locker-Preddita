@@ -2,7 +2,8 @@
 
 Painel web do sindico para acompanhar o locker, cadastrar moradores e enviar comandos remotos para abertura de portas.
 
-Esta pasta pertence a copia experimental `preddita-entregas-retiradas-v2` e nao altera o servidor que esta rodando em producao.
+Esta pasta contem a base `2.0.25-lab`. Use Postgres, HTTPS, HMAC, MFA e os
+demais requisitos documentados antes de promover uma instalacao para producao.
 
 Para entender o desenho completo entre armario, Admin Online, eventos offline e
 comandos remotos, veja `../docs/ARCHITECTURE.md`. Para comandos de setup,
@@ -12,8 +13,9 @@ privacidade esta em `../docs/PRIVACY-DATA-LIFECYCLE.md`.
 ## Rodar localmente
 
 ```powershell
-cd "C:\Users\Usuario\Documents\App armário preddita\preddita-entregas-retiradas-v2\admin-online"
-node server.mjs
+cd admin-online
+npm ci
+npm start
 ```
 
 Depois acesse:
@@ -106,10 +108,9 @@ do servidor e nao a troque sem um plano de recadastro das contas.
 
 ## Teste local da v2
 
-Na raiz da copia v2:
+Na raiz do repositorio:
 
 ```powershell
-cd "C:\Users\Usuario\Documents\App armário preddita\preddita-entregas-retiradas-v2"
 powershell -ExecutionPolicy Bypass -File scripts\v2-verify.ps1
 ```
 
@@ -180,8 +181,7 @@ PREDDITA_V2_SMOKE_OK
 Quando o roteador bloqueia conexoes diretas entre o armario e o computador, use o tunel ADB:
 
 ```powershell
-cd "C:\Users\Usuario\Documents\App armário preddita\preddita-entregas-retiradas-v2\admin-online"
-powershell -ExecutionPolicy Bypass -File .\start-admin-online.ps1
+powershell -ExecutionPolicy Bypass -File admin-online\start-admin-online.ps1
 ```
 
 Isso faz:
