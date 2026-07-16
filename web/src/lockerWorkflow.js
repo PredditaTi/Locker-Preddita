@@ -206,6 +206,9 @@ function ensureDeliveries(items) {
       cancelledAt: cleanText(delivery.cancelledAt),
       cancelReason: cleanText(delivery.cancelReason),
       expiresAt: cleanText(delivery.expiresAt),
+      credentialsErasedAt: cleanText(delivery.credentialsErasedAt),
+      evidenceErasedAt: cleanText(delivery.evidenceErasedAt),
+      personalDataAnonymizedAt: cleanText(delivery.personalDataAnonymizedAt),
       dropoffDoorCycle: isValidDoorOpenCycle(delivery.dropoffDoorCycle, {
         channel: delivery.door,
         operation: 'dropoff',
@@ -726,12 +729,12 @@ export function cancelDelivery(state, deliveryId, reason = 'Reserva cancelada.')
       ...state,
       deliveries: state.deliveries.map((delivery) =>
         delivery.id === deliveryId
-          ? {
+          ? eraseDeliveryCredentials({
               ...delivery,
               status: 'cancelled',
               cancelledAt: nowIso(),
               cancelReason: cleanText(reason) || 'Reserva cancelada.',
-            }
+            })
           : delivery
       ),
     },
@@ -739,6 +742,20 @@ export function cancelDelivery(state, deliveryId, reason = 'Reserva cancelada.')
     `Reserva da porta ${target.door} cancelada.`,
     { deliveryId, door: target.door, reason: cleanText(reason) || 'Reserva cancelada.' }
   );
+}
+
+export function eraseDeliveryCredentials(delivery = {}, erasedAt = nowIso()) {
+  if (!delivery.pin && !delivery.token && !delivery.qrPayload && !delivery.externalCode) {
+    return delivery;
+  }
+  return {
+    ...delivery,
+    pin: '',
+    token: '',
+    qrPayload: '',
+    externalCode: '',
+    credentialsErasedAt: cleanText(delivery.credentialsErasedAt) || erasedAt,
+  };
 }
 
 function parseCollectQr(rawValue) {
@@ -859,12 +876,12 @@ export function completePickup(state, deliveryId, closeProof = null) {
       ...state,
       deliveries: state.deliveries.map((delivery) =>
         delivery.id === deliveryId
-          ? {
+          ? eraseDeliveryCredentials({
               ...delivery,
               status: 'collected',
               collectedAt: normalizeDoorCloseProof(closeProof).closedAt,
               pickupCloseProof: normalizeDoorCloseProof(closeProof),
-            }
+            }, normalizeDoorCloseProof(closeProof).closedAt)
           : delivery
       ),
     },
@@ -886,14 +903,14 @@ export function releaseDoorOccupancy(state, door, source = 'admin', closeProof =
 
   const isUnfinishedDeposit = target.status === 'door_opened_for_dropoff';
   const nextDelivery = isUnfinishedDeposit
-    ? {
+    ? eraseDeliveryCredentials({
         ...target,
         status: 'cancelled',
         cancelledAt: nowIso(),
         cancelReason: source === 'remote-admin'
           ? 'Porta liberada por abertura remota do administrador.'
           : 'Porta liberada antes da confirmacao de deposito.',
-      }
+      })
     : null;
 
   if (!isUnfinishedDeposit) {

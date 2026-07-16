@@ -263,6 +263,10 @@ const pickupCompletedState = completePickup(
 );
 const pickupCompletedDelivery = pickupCompletedState.deliveries.find((delivery) => delivery.id === smallReservation.delivery.id);
 assert.equal(pickupCompletedDelivery.status, 'collected', 'retirada so libera apos confirmacao final');
+assert.equal(pickupCompletedDelivery.pin, '', 'retirada concluida deve apagar o PIN imediatamente');
+assert.equal(pickupCompletedDelivery.token, '', 'retirada concluida deve apagar o token imediatamente');
+assert.equal(pickupCompletedDelivery.qrPayload, '', 'retirada concluida deve apagar o QR imediatamente');
+assert.ok(pickupCompletedDelivery.credentialsErasedAt, 'retirada concluida deve registrar quando as credenciais foram apagadas');
 assert.equal(
   getDoorOccupancyMap(pickupCompletedState.deliveries)[smallReservation.delivery.door],
   undefined,
@@ -325,6 +329,13 @@ const cancelledSmallState = cancelDelivery(
   courierSmallReservation.delivery.id,
   'Entrega nao coube na porta pequena.'
 );
+const cancelledSmallDelivery = cancelledSmallState.deliveries.find(
+  (delivery) => delivery.id === courierSmallReservation.delivery.id
+);
+assert.equal(cancelledSmallDelivery.pin, '', 'reserva cancelada deve apagar o PIN imediatamente');
+assert.equal(cancelledSmallDelivery.token, '', 'reserva cancelada deve apagar o token imediatamente');
+assert.equal(cancelledSmallDelivery.qrPayload, '', 'reserva cancelada deve apagar o QR imediatamente');
+assert.ok(cancelledSmallDelivery.credentialsErasedAt, 'reserva cancelada deve registrar a limpeza das credenciais');
 assert.equal(
   getDoorOccupancyMap(cancelledSmallState.deliveries)[courierSmallReservation.delivery.door],
   undefined,

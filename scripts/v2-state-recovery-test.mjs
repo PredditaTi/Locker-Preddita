@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -169,9 +169,17 @@ async function verifyBomStateIsPreserved() {
     assert.equal(payload.state.residents[0].id, 'resident-recovered');
     assert.equal(payload.state.deliveries.length, 1);
     assert.equal(payload.state.deliveries[0].id, 'delivery-recovered');
+    assert.equal(payload.state.deliveries[0].pin, '');
+    assert.ok(payload.state.deliveries[0].credentialsErasedAt);
     assert.equal(payload.state.commands[0].status, 'failed');
     assert.equal(payload.state.commands[0].result.legacyDeliveryUnknown, true);
-    assert.equal(hashFile(statePath), originalHash, 'Leitura nao deve reescrever o estado recuperado.');
+    assert.notEqual(hashFile(statePath), originalHash, 'Startup deve remover credencial terminal recuperada.');
+    const backupPaths = readdirSync(join(dataDir, 'backups')).map((name) => join(dataDir, 'backups', name));
+    assert.equal(
+      backupPaths.some((path) => hashFile(path) === originalHash),
+      true,
+      'Sanitizacao deve preservar uma copia exata no backup sujeito a retencao.'
+    );
   } finally {
     await stopServer(server.child);
     rmSync(dataDir, { recursive: true, force: true });

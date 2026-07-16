@@ -6,7 +6,8 @@ Esta pasta pertence a copia experimental `preddita-entregas-retiradas-v2` e nao 
 
 Para entender o desenho completo entre armario, Admin Online, eventos offline e
 comandos remotos, veja `../docs/ARCHITECTURE.md`. Para comandos de setup,
-build e teste, veja `../docs/DEVELOPER-RUNBOOK.md`.
+build e teste, veja `../docs/DEVELOPER-RUNBOOK.md`. A politica tecnica de
+privacidade esta em `../docs/PRIVACY-DATA-LIFECYCLE.md`.
 
 ## Rodar localmente
 
@@ -63,6 +64,14 @@ Logs tecnicos ficam em `operational-logs.jsonl` no modo JSON e na tabela
 `preddita_operational_logs` no modo Postgres. A retencao e configurada por
 `PREDDITA_OPERATIONAL_LOG_RETENTION_DAYS` (30 dias por padrao); somente suporte
 e Admin Geral podem consultar ou exportar esses registros sanitizados.
+
+O ciclo de privacidade apaga credenciais de entregas encerradas imediatamente,
+remove evidencias e anonimiza dados pessoais nos prazos configurados. Sindico e
+Admin Geral podem consultar a politica, exportar dados de um titular, eliminar
+um cadastro sem entrega ativa e executar a retencao pela tela `Privacidade`.
+Defina `PREDDITA_PRIVACY_CONTROLLER_NAME` e
+`PREDDITA_PRIVACY_CONTACT_EMAIL` antes de operar; veja todos os prazos e as
+limitacoes no documento de privacidade.
 
 Exemplo Postgres:
 
@@ -161,6 +170,10 @@ PREDDITA_V2_SMOKE_OK
   lease renovavel e `executionId` idempotente.
 - No Postgres, criacao, lease, ACK, expiracao e conclusao atualizam a linha do
   comando com bloqueio transacional, revisao crescente e retry de deadlock.
+- Ciclo de vida configuravel para credenciais, evidencias, entregas, auditoria,
+  comandos, notificacoes, eventos, backups e logs, aplicado em JSON e Postgres.
+- Exportacao por titular sem credenciais e eliminacao com anonimização de
+  historico terminal, bloqueada enquanto houver entrega ativa.
 
 ## Rodar localmente com o armario via ADB
 

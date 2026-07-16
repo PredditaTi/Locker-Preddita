@@ -189,7 +189,7 @@ cd web
 $env:VITE_PREDDITA_REMOTE_URL="https://locker.example.com"
 $env:VITE_PREDDITA_LOCKER_ID="ks1062-aurora"
 $env:VITE_PREDDITA_DEVICE_AUTH_MODE="hmac"
-$env:VITE_PREDDITA_EDGE_APP_VERSION="2.0.24-lab"
+$env:VITE_PREDDITA_EDGE_APP_VERSION="2.0.25-lab"
 npm run build
 Remove-Item Env:VITE_PREDDITA_REMOTE_URL
 Remove-Item Env:VITE_PREDDITA_LOCKER_ID
@@ -203,6 +203,31 @@ Depois:
 cd ..\android
 .\gradlew.bat assembleDebug
 ```
+
+## Configurar privacidade e retencao
+
+Antes de publicar o Admin Online, defina o controlador, o contato para
+solicitacoes e confirme os prazos com quem responde pelo tratamento dos dados:
+
+```powershell
+$env:PREDDITA_PRIVACY_CONTROLLER_NAME="Condominio Residencial Aurora"
+$env:PREDDITA_PRIVACY_CONTACT_EMAIL="lgpd@condominio.example.com"
+$env:PREDDITA_DELIVERY_EVIDENCE_RETENTION_DAYS="30"
+$env:PREDDITA_DELIVERY_PERSONAL_DATA_RETENTION_DAYS="90"
+$env:PREDDITA_DELIVERY_RECORD_RETENTION_DAYS="730"
+$env:PREDDITA_AUDIT_RETENTION_DAYS="365"
+$env:PREDDITA_COMMAND_RETENTION_DAYS="365"
+$env:PREDDITA_NOTIFICATION_RETENTION_DAYS="30"
+$env:PREDDITA_PROCESSED_EVENT_RETENTION_DAYS="365"
+$env:PREDDITA_BACKUP_RETENTION_DAYS="7"
+```
+
+No painel, `Privacidade` mostra os prazos e itens vencidos. `Executar agora`
+aplica a politica; a mesma rotina roda no startup, antes de persistir estado e a
+cada seis horas. Use `Exportar dados` somente depois de validar a identidade do
+solicitante. `Eliminar cadastro` e irreversivel e fica bloqueado se houver uma
+entrega ativa. O procedimento completo e suas limitacoes estao em
+`docs/PRIVACY-DATA-LIFECYCLE.md`.
 
 ## Instalar no armario por ADB
 
@@ -228,7 +253,7 @@ Ver versao instalada:
 
 `2.0.22-lab` introduz o bridge nativo do atualizador. Instale essa versao uma
 vez por ADB em cada equipamento existente; o rollout remoto passa a valer para
-`versionCode 24` e superiores.
+`versionCode 25` e superiores.
 
 1. Incremente `versionCode` e `versionName` em `android/app/build.gradle`.
 2. Mescle a versao validada na `main` e execute `Release APK` com o canal
