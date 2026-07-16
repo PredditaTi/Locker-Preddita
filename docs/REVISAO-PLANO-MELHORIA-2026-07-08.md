@@ -193,6 +193,20 @@ Validacao do segundo lote:
   rotacao de senha; a interface foi validada em desktop e 390 px.
 - Versao atualizada para `2.0.17-lab` e `versionCode 17`.
 
+### Dados operacionais normalizados em 2026-07-15
+
+- Moradores, entregas, comandos e auditoria sairam do JSONB principal e passaram
+  para tabelas com chave `tenant_id + locker_id + id` e indices por uso.
+- Entregas e comandos preservam o payload completo, mas expõem status, porta,
+  destinatario, execucao e datas em colunas pesquisaveis.
+- O servidor grava snapshot principal e entidades na mesma transacao e hidrata o
+  contrato existente da API sem exigir mudancas no painel ou no armario.
+- Snapshots legados recebem backfill automatico no primeiro acesso e passam a
+  registrar `operational_schema_version=1` sem duplicar as quatro colecoes.
+- O smoke Postgres inspeciona as tabelas diretamente e cobre tambem a migracao
+  de um locker legado criado com o schema anterior.
+- Versao atualizada para `2.0.18-lab`, `schemaVersion 8` e `versionCode 18`.
+
 Primeiro pacote de Fase 0 aplicado apos esta revisao:
 
 - `admin-online`: `nodemailer` atualizado para versao sem vulnerabilidades no

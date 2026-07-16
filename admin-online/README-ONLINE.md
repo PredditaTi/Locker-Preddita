@@ -107,7 +107,13 @@ Em VPS com Docker Compose sem Postgres, o destino final precisa ser:
 /data/state.json
 ```
 
-No modo recomendado de producao (`PREDDITA_STORAGE=postgres`), o servidor cria a tabela `preddita_locker_states` automaticamente e separa os snapshots por `tenant_id` e `locker_id`. Se existir `/data/state.json` no primeiro boot do locker padrao, ele e usado como origem inicial para preencher o Postgres.
+No modo recomendado de producao (`PREDDITA_STORAGE=postgres`), o servidor separa
+configuracao, portas e filas auxiliares em `preddita_locker_states`; moradores,
+entregas, comandos e auditoria ficam em tabelas relacionais proprias, sempre por
+`tenant_id` e `locker_id`. Se existir `/data/state.json` no primeiro boot do
+locker padrao, ele e usado como origem inicial. Snapshots Postgres anteriores a
+esta estrutura recebem backfill automatico no primeiro acesso, dentro de uma
+transacao, sem mudar o formato devolvido pela API.
 
 Schema de referencia:
 

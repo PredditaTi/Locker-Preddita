@@ -1,14 +1,13 @@
 -- PREDDITA Admin Online - schema inicial Postgres
 --
--- Esta primeira etapa usa snapshots JSONB por tenant/locker. E uma migracao
--- segura a partir do state.json atual: preserva o dominio existente e separa
--- os dados por armario. A etapa seguinte pode normalizar este snapshot em
--- tabelas relacionais para moradores, portas, entregas, comandos e auditoria.
+-- O snapshot guarda configuracao, portas, dispositivo e filas auxiliares.
+-- Moradores, entregas, comandos e auditoria usam tabelas por entidade.
 
 create table if not exists preddita_locker_states (
   tenant_id text not null,
   locker_id text not null,
   schema_version integer not null,
+  operational_schema_version integer not null default 0,
   state jsonb not null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -20,6 +19,98 @@ create index if not exists idx_preddita_locker_states_updated_at
 
 create index if not exists idx_preddita_locker_states_state_gin
   on preddita_locker_states using gin (state);
+
+alter table preddita_locker_states
+  add column if not exists operational_schema_version integer not null default 0;
+
+create table if not exists preddita_residents (
+  tenant_id text not null,
+  locker_id text not null,
+  resident_id text not null,
+  apartment text not null default '',
+  building text not null default '',
+  floor text not null default '',
+  phone text not null default '',
+  email text not null default '',
+  created_at timestamptz not null,
+  updated_at timestamptz not null,
+  sort_order integer not null default 0,
+  primary key (tenant_id, locker_id, resident_id),
+  foreign key (tenant_id, locker_id)
+    references preddita_locker_states(tenant_id, locker_id) on delete cascade
+);
+
+create index if not exists idx_preddita_residents_locker_unit
+  on preddita_residents (tenant_id, locker_id, building, apartment);
+
+create table if not exists preddita_deliveries (
+  tenant_id text not null,
+  locker_id text not null,
+  delivery_id text not null,
+  recipient_id text not null default '',
+  status text not null default '',
+  door integer,
+  size text not null default '',
+  recipient_email text not null default '',
+  unit text not null default '',
+  created_at timestamptz,
+  deposited_at timestamptz,
+  collected_at timestamptz,
+  expires_at timestamptz,
+  sort_order integer not null default 0,
+  data jsonb not null,
+  primary key (tenant_id, locker_id, delivery_id),
+  foreign key (tenant_id, locker_id)
+    references preddita_locker_states(tenant_id, locker_id) on delete cascade
+);
+
+create index if not exists idx_preddita_deliveries_locker_status
+  on preddita_deliveries (tenant_id, locker_id, status, deposited_at desc);
+
+create index if not exists idx_preddita_deliveries_recipient
+  on preddita_deliveries (tenant_id, locker_id, recipient_id, created_at desc);
+
+create table if not exists preddita_commands (
+  tenant_id text not null,
+  locker_id text not null,
+  command_id text not null,
+  type text not null default '',
+  status text not null default '',
+  door integer,
+  execution_id text not null default '',
+  created_at timestamptz,
+  completed_at timestamptz,
+  lease_expires_at timestamptz,
+  sort_order integer not null default 0,
+  data jsonb not null,
+  primary key (tenant_id, locker_id, command_id),
+  foreign key (tenant_id, locker_id)
+    references preddita_locker_states(tenant_id, locker_id) on delete cascade
+);
+
+create index if not exists idx_preddita_commands_locker_status
+  on preddita_commands (tenant_id, locker_id, status, created_at desc);
+
+create index if not exists idx_preddita_commands_execution
+  on preddita_commands (tenant_id, locker_id, execution_id)
+  where execution_id <> '';
+
+create table if not exists preddita_audit_events (
+  tenant_id text not null,
+  locker_id text not null,
+  audit_id text not null,
+  kind text not null default '',
+  message text not null default '',
+  meta jsonb not null default '{}'::jsonb,
+  occurred_at timestamptz not null,
+  sort_order integer not null default 0,
+  primary key (tenant_id, locker_id, audit_id),
+  foreign key (tenant_id, locker_id)
+    references preddita_locker_states(tenant_id, locker_id) on delete cascade
+);
+
+create index if not exists idx_preddita_audit_events_locker_time
+  on preddita_audit_events (tenant_id, locker_id, occurred_at desc);
 
 create table if not exists preddita_admin_users (
   username text primary key,

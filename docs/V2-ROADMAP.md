@@ -82,18 +82,18 @@ Solucoes maduras de smart lockers se posicionam como plataformas completas, nao 
   validade ou revogacao do cookie.
 - MFA TOTP obrigatorio para `super_admin` e `suporte`, com segredo cifrado,
   limite por desafio, bloqueio de replay e codigos de recuperacao de uso unico.
+- Moradores, entregas, comandos e auditoria em tabelas Postgres por entidade,
+  com indices, escrita atomica e backfill automatico dos snapshots anteriores.
 
 ## Proximas melhorias recomendadas
 
-1. Normalizar entregas, comandos, moradores e auditoria que ainda ficam no
-   snapshot JSONB por locker.
-2. Criar tabela/colecao de comandos com idempotencia e retry.
-3. Implementar logs estruturados e exportaveis.
-4. Separar `Edge Agent` e `Kiosk UI`.
-5. Criar fluxo de atualizacao remota do APK.
-6. Trocar polling por AWS IoT Core/MQTT.
-7. Adicionar testes de contrato da API e testes de fluxo do kiosk.
-8. Criar LGPD/data-retention: CPF, telefone, e-mail, auditoria e expiracao de entregas.
+1. Tornar comandos transacionais por linha, com idempotencia no banco e retry.
+2. Implementar logs estruturados e exportaveis.
+3. Separar `Edge Agent` e `Kiosk UI`.
+4. Criar fluxo de atualizacao remota do APK.
+5. Trocar polling por AWS IoT Core/MQTT.
+6. Adicionar testes de contrato da API e testes de fluxo do kiosk.
+7. Criar LGPD/data-retention: CPF, telefone, e-mail, auditoria e expiracao de entregas.
 
 ## Criterio de produto para ficar competitivo
 

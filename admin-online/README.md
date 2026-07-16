@@ -79,6 +79,12 @@ as tabelas automaticamente no startup quando usa Postgres. No primeiro boot,
 SHA-256 do token; restart e logout preservam validade e revogacao. Sem Postgres,
 usuarios continuam no ambiente e sessoes continuam na memoria.
 
+Moradores, entregas, comandos e auditoria usam, respectivamente,
+`preddita_residents`, `preddita_deliveries`, `preddita_commands` e
+`preddita_audit_events`. No primeiro acesso a cada locker, um snapshot antigo e
+migrado automaticamente e essas colecoes sao removidas do JSONB principal. A
+API continua devolvendo o mesmo formato depois de hidratar as tabelas.
+
 Em producao, `super_admin` e `suporte` cadastram TOTP no primeiro login. Os
 segredos ficam cifrados no Postgres com `PREDDITA_MFA_ENCRYPTION_KEY`; gere a
 chave uma vez com `openssl rand -base64 32`, guarde-a no gerenciador de segredos
@@ -141,8 +147,8 @@ PREDDITA_V2_SMOKE_OK
 - API tambem bloqueia abertura remota se o armario estiver offline, stale, sem serial ou ja tiver comando pendente para a mesma porta.
 - Painel exibe avisos se usuarios locais, chave padrao ou CORS permissivo forem usados.
 - Dependencias auditadas com `npm audit --omit=dev`.
-- Persistencia opcional em Postgres por `tenant_id`/`locker_id`, mantendo
-  `state.json` como modo local.
+- Persistencia em Postgres por `tenant_id`/`locker_id`, com entidades
+  operacionais normalizadas e `state.json` preservado como modo local.
 - Chave por armario via `PREDDITA_DEVICE_KEYS`.
 - Requisicoes do armario assinadas com HMAC-SHA256, timestamp, nonce e hash do
   corpo; producao recusa autenticacao legada.

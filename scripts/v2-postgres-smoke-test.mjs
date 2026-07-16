@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,6 +16,8 @@ if (!DATABASE_URL) {
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const ADMIN_DIR = join(ROOT, 'admin-online');
+const requireAdmin = createRequire(join(ADMIN_DIR, 'package.json'));
+const { Client } = requireAdmin('pg');
 const SERVER_PATH = join(ADMIN_DIR, 'server.mjs');
 const ADMIN_PASSWORD = 'v2-admin-postgres-password';
 const ROTATED_ADMIN_PASSWORD = 'v2-admin-postgres-password-rotated';
@@ -22,6 +25,7 @@ const DEVICE_KEY = 'v2-device-postgres-key';
 const MFA_ENCRYPTION_KEY = Buffer.alloc(32, 17).toString('base64');
 const RUN_SUFFIX = Date.now().toString(36);
 const LOCKER_ID = `locker-test-${RUN_SUFFIX}`;
+const LEGACY_LOCKER_ID = `locker-legacy-${RUN_SUFFIX}`;
 const ADMIN_USERNAME = `postgres-admin-${RUN_SUFFIX}`;
 const PORT = 9898;
 const DATA_DIR = mkdtempSync(join(tmpdir(), 'preddita-v2-pg-smoke-'));
@@ -128,6 +132,7 @@ function createKnownInvalidTotp(secret) {
 
 let serverLog = '';
 let server = null;
+let databaseClient = null;
 
 function spawnServer({ adminUsersBootstrap = '' } = {}) {
   const child = spawn(process.execPath, [SERVER_PATH], {
@@ -190,10 +195,32 @@ try {
     throw new Error('Cadastro MFA deveria emitir codigos de recuperacao de uso unico.');
   }
   const adminHeaders = sessionHeaders(enrollmentVerification.response, enrollmentVerification.payload);
+  const normalizedDelivery = {
+    id: `delivery-postgres-${RUN_SUFFIX}`,
+    recipientId: 'unit-torre-a-203',
+    recipientName: 'Apartamento 203',
+    recipientEmail: 'postgres-smoke@example.com',
+    unit: 'Torre A - 2 andar - Ap 203',
+    building: 'Torre A',
+    floor: '2',
+    apartment: '203',
+    door: 1,
+    size: 'P',
+    pin: '123456',
+    token: `TOKEN-${RUN_SUFFIX}`,
+    status: 'stored',
+    createdAt: new Date().toISOString(),
+    depositedAt: new Date().toISOString(),
+  };
   const statusBody = JSON.stringify({
     lockerId: LOCKER_ID,
     device: { online: true, serialOpen: true, serialPath: '/dev/ttyS5', doorCount: 10 },
-    doors: Array.from({ length: 10 }, (_, index) => ({ channel: index + 1, status: 'closed' })),
+    doors: Array.from({ length: 10 }, (_, index) => ({
+      channel: index + 1,
+      status: 'closed',
+      ...(index === 0 ? { delivery: normalizedDelivery } : {}),
+    })),
+    deliveries: [normalizedDelivery],
   });
   const deviceHeaders = await createDeviceRequestAuthHeaders({
     method: 'POST',
@@ -209,6 +236,15 @@ try {
     body: statusBody,
   });
 
+  const createdCommand = await requestOk('/api/admin/doors/2/open', {
+    method: 'POST',
+    headers: {
+      cookie: adminHeaders.cookie,
+      'x-csrf-token': adminHeaders.csrfToken,
+    },
+    body: JSON.stringify({ reason: 'Validar persistencia operacional normalizada.' }),
+  });
+
   const state = await requestOk(`/api/admin/state?lockerId=${encodeURIComponent(LOCKER_ID)}`, {
     headers: adminHeaders,
   });
@@ -217,6 +253,137 @@ try {
   }
   if (state.state.runtime?.adminSessionStorage !== 'postgres') {
     throw new Error('Runtime deveria informar sessoes administrativas no Postgres.');
+  }
+  if (
+    state.state.runtime?.operationalStorage !== 'normalized-postgres'
+    || state.state.runtime?.operationalSchemaVersion !== 1
+  ) {
+    throw new Error('Runtime deveria informar dados operacionais normalizados no Postgres.');
+  }
+  if (
+    !state.state.deliveries.some((delivery) => delivery.id === normalizedDelivery.id)
+    || !state.state.commands.some((command) => command.id === createdCommand.command.id)
+  ) {
+    throw new Error('API deveria hidratar entregas e comandos a partir das tabelas normalizadas.');
+  }
+
+  databaseClient = new Client({ connectionString: DATABASE_URL });
+  await databaseClient.connect();
+  const normalizedSnapshot = await databaseClient.query(
+    `
+      select operational_schema_version, state
+      from preddita_locker_states
+      where tenant_id = $1 and locker_id = $2
+    `,
+    ['tenant-postgres-smoke', LOCKER_ID]
+  );
+  const normalizedCoreState = normalizedSnapshot.rows[0]?.state || {};
+  if (
+    Number(normalizedSnapshot.rows[0]?.operational_schema_version) !== 1
+    || ['residents', 'deliveries', 'commands', 'auditTrail'].some((key) => key in normalizedCoreState)
+  ) {
+    throw new Error('Snapshot central deveria guardar apenas o estado principal apos a normalizacao.');
+  }
+  const normalizedCounts = await databaseClient.query(
+    `
+      select
+        (select count(*)::integer from preddita_residents where tenant_id = $1 and locker_id = $2) as residents,
+        (select count(*)::integer from preddita_deliveries where tenant_id = $1 and locker_id = $2) as deliveries,
+        (select count(*)::integer from preddita_commands where tenant_id = $1 and locker_id = $2) as commands,
+        (select count(*)::integer from preddita_audit_events where tenant_id = $1 and locker_id = $2) as audit_events
+    `,
+    ['tenant-postgres-smoke', LOCKER_ID]
+  );
+  const counts = normalizedCounts.rows[0] || {};
+  if (counts.residents < 1 || counts.deliveries !== 1 || counts.commands !== 1 || counts.audit_events < 2) {
+    throw new Error(`Tabelas operacionais incompletas: ${JSON.stringify(counts)}`);
+  }
+
+  const legacyAt = new Date().toISOString();
+  const legacyState = {
+    schemaVersion: 7,
+    tenant: {
+      tenantId: 'tenant-postgres-smoke',
+      lockerId: LEGACY_LOCKER_ID,
+      siteName: 'Migracao Postgres',
+      lockerName: 'Locker legado',
+    },
+    residents: [{
+      id: 'resident-legacy',
+      apartment: '901',
+      building: 'Torre Legada',
+      floor: '9',
+      phone: '',
+      email: '',
+      createdAt: legacyAt,
+      updatedAt: legacyAt,
+    }],
+    deliveries: [{
+      id: 'delivery-legacy',
+      recipientId: 'resident-legacy',
+      unit: 'Torre Legada - 9 andar - Ap 901',
+      door: 3,
+      size: 'P',
+      status: 'stored',
+      createdAt: legacyAt,
+      depositedAt: legacyAt,
+    }],
+    commands: [{
+      id: 'command-legacy',
+      type: 'openDoor',
+      door: 4,
+      status: 'pending',
+      createdAt: legacyAt,
+      timeline: [],
+    }],
+    auditTrail: [{
+      id: 'audit-legacy',
+      kind: 'legacy-state',
+      message: 'Estado anterior a normalizacao.',
+      at: legacyAt,
+    }],
+    updatedAt: legacyAt,
+  };
+  await databaseClient.query(
+    `
+      insert into preddita_locker_states (
+        tenant_id, locker_id, schema_version, operational_schema_version, state, updated_at
+      ) values ($1, $2, 7, 0, $3::jsonb, now())
+    `,
+    ['tenant-postgres-smoke', LEGACY_LOCKER_ID, JSON.stringify(legacyState)]
+  );
+  const migratedLegacyState = await requestOk(
+    `/api/admin/state?lockerId=${encodeURIComponent(LEGACY_LOCKER_ID)}`,
+    { headers: adminHeaders }
+  );
+  if (
+    migratedLegacyState.state.residents[0]?.id !== 'resident-legacy'
+    || migratedLegacyState.state.deliveries[0]?.id !== 'delivery-legacy'
+    || migratedLegacyState.state.commands[0]?.id !== 'command-legacy'
+    || migratedLegacyState.state.auditTrail[0]?.id !== 'audit-legacy'
+  ) {
+    throw new Error('Backfill deveria preservar todas as entidades do snapshot legado.');
+  }
+  const migratedLegacySnapshot = await databaseClient.query(
+    `
+      select operational_schema_version, state,
+        (select count(*)::integer from preddita_residents where tenant_id = $1 and locker_id = $2) as residents,
+        (select count(*)::integer from preddita_deliveries where tenant_id = $1 and locker_id = $2) as deliveries,
+        (select count(*)::integer from preddita_commands where tenant_id = $1 and locker_id = $2) as commands,
+        (select count(*)::integer from preddita_audit_events where tenant_id = $1 and locker_id = $2) as audit_events
+      from preddita_locker_states
+      where tenant_id = $1 and locker_id = $2
+    `,
+    ['tenant-postgres-smoke', LEGACY_LOCKER_ID]
+  );
+  const migratedRow = migratedLegacySnapshot.rows[0] || {};
+  if (
+    Number(migratedRow.operational_schema_version) !== 1
+    || [migratedRow.residents, migratedRow.deliveries, migratedRow.commands, migratedRow.audit_events]
+      .some((count) => count !== 1)
+    || ['residents', 'deliveries', 'commands', 'auditTrail'].some((key) => key in (migratedRow.state || {}))
+  ) {
+    throw new Error(`Backfill relacional incompleto: ${JSON.stringify(migratedRow)}`);
   }
 
   await stopServer(server);
@@ -330,6 +497,7 @@ try {
   console.log('PREDDITA_V2_POSTGRES_SMOKE_OK');
 } finally {
   await stopServer(server);
+  if (databaseClient) await databaseClient.end();
   rmSync(DATA_DIR, { recursive: true, force: true });
   if (serverLog && server?.exitCode && server.exitCode !== 0) {
     console.error(serverLog);
