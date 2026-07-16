@@ -1019,7 +1019,8 @@ async function completeAdminMfaLogin({ challengeToken, code, recoveryCode }) {
     await client.query(
       `
         update preddita_admin_mfa_challenges
-        set attempts = $2, consumed_at = case when $2 >= $3 then now() else consumed_at end
+        set attempts = $2::integer,
+            consumed_at = case when $2::integer >= $3::integer then now() else consumed_at end
         where token_hash = $1
       `,
       [tokenHash, attempts, ADMIN_MFA_MAX_ATTEMPTS]
