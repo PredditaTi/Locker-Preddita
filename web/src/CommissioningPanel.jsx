@@ -12,7 +12,7 @@ import {
   createDoorOpenCycle,
   validateDirectDoorReading,
 } from './doorSafety.js';
-import Serial, { parseResponse } from './serial.js';
+import edgeAgent, { parseResponse } from './edgeAgent.js';
 
 const OPEN_ATTEMPTS = 12;
 const CLOSE_ATTEMPTS = 45;
@@ -121,7 +121,7 @@ export default function CommissioningPanel({ lockerState, onComplete }) {
   }
 
   async function queryDoor(channel, sensorPolarity) {
-    const result = await Serial.readStatus(board, channel);
+    const result = await edgeAgent.readStatus(board, channel);
     const parsed = result.ok ? parseResponse(result.hex, { sensorPolarity }) : null;
     return { result, parsed, reading: createReading(parsed) };
   }
@@ -153,13 +153,13 @@ export default function CommissioningPanel({ lockerState, onComplete }) {
       if (!baseline.ok) throw new Error(explainFailure(baseline.reason));
 
       setStage(`Porta ${channel}: configurando acionamento de ${unlockTimeoutSeconds}s...`);
-      const timeoutResult = await Serial.setTimeout(board, channel, unlockTimeoutSeconds);
+      const timeoutResult = await edgeAgent.setTimeout(board, channel, unlockTimeoutSeconds);
       if (!timeoutResult.ok) {
         throw new Error(`A placa recusou o tempo de acionamento: ${timeoutResult.error || 'sem resposta'}.`);
       }
 
       setStage(`Porta ${channel}: abrindo para identificacao...`);
-      const unlockResult = await Serial.unlock(board, channel);
+      const unlockResult = await edgeAgent.unlock(board, channel);
       let cycleResult = null;
       for (let attempt = 0; attempt < OPEN_ATTEMPTS; attempt += 1) {
         await wait(attempt === 0 ? 450 : 500);
@@ -175,7 +175,7 @@ export default function CommissioningPanel({ lockerState, onComplete }) {
       setStage(`Porta ${channel}: identificada. Feche a porta para concluir.`);
       if (unlockResult.simulated) {
         await wait(500);
-        await Serial.close(board, channel);
+        await edgeAgent.close(board, channel);
       }
 
       let closeResult = null;

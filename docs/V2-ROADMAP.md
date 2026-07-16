@@ -88,14 +88,16 @@ Solucoes maduras de smart lockers se posicionam como plataformas completas, nao 
   por porta ativa e `executionId`, retry e smoke concorrente entre duas replicas.
 - Logs tecnicos estruturados em JSONL/Postgres, com `requestId`, filtros,
   paginacao, exportacao CSV, retencao e sanitizacao de segredos e dados pessoais.
+- `Edge Agent` ganhou contrato proprio para RS-485, credencial Android,
+  persistencia offline, heartbeat e comandos; a `Kiosk UI` nao acessa mais os
+  transportes ou diarios diretamente.
 
 ## Proximas melhorias recomendadas
 
-1. Separar `Edge Agent` e `Kiosk UI`.
-2. Criar fluxo de atualizacao remota do APK.
-3. Trocar polling por AWS IoT Core/MQTT.
-4. Adicionar testes de contrato da API e testes de fluxo do kiosk.
-5. Criar LGPD/data-retention: CPF, telefone, e-mail, auditoria e expiracao de entregas.
+1. Criar fluxo de atualizacao remota do APK.
+2. Trocar polling por AWS IoT Core/MQTT.
+3. Adicionar testes de contrato da API e testes de fluxo do kiosk.
+4. Criar LGPD/data-retention: CPF, telefone, e-mail, auditoria e expiracao de entregas.
 
 ## Criterio de produto para ficar competitivo
 

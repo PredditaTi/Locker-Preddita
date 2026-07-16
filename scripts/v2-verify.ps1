@@ -22,6 +22,9 @@ Write-Host "[PREDDITA v2] Teste do diario duravel de eventos offline..."
 Write-Host "[PREDDITA v2] Teste do diario idempotente de comandos remotos..."
 & $node (Join-Path $root "scripts\v2-remote-command-journal-test.mjs")
 
+Write-Host "[PREDDITA v2] Teste do contrato entre Edge Agent e Kiosk UI..."
+& $node (Join-Path $root "scripts\v2-edge-agent-contract-test.mjs")
+
 Write-Host "[PREDDITA v2] Teste de leitura QR do app do armario..."
 & $node (Join-Path $root "scripts\v2-qr-scanner-test.mjs")
 

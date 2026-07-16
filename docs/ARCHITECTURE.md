@@ -12,10 +12,11 @@ precisar reconstruir toda a historia do armario. A solucao tem dois produtos:
 flowchart LR
   Courier["Entregador"] --> Kiosk["App do armario (React/WebView)"]
   Resident["Morador"] --> Kiosk
-  Kiosk --> Android["Android bridge"]
+  Kiosk --> Edge["Edge Agent contract"]
+  Edge --> Android["Android bridge"]
   Android --> RS485["Serial /dev/ttyS5"]
   RS485 --> Board["Placa CM06 / portas"]
-  Kiosk <--> Admin["Admin Online Node.js"]
+  Edge <--> Admin["Admin Online Node.js"]
   Admin --> SMTP["SMTP e-mail"]
   Manager["Sindico/Admin Geral"] --> Admin
 ```
@@ -28,8 +29,10 @@ eventos pendentes ao painel online.
 
 Principais arquivos:
 
-- `web/src/App.jsx`: tela kiosk, fluxos de entregador, morador, admin local,
-  ponte remota e chamadas de abertura de porta.
+- `web/src/App.jsx`: Kiosk UI e fluxos de entregador, morador e admin local.
+- `web/src/edgeAgent.js`: contrato operacional entre a UI e o dispositivo. E a
+  unica camada web que acessa serial, credencial nativa, persistencia offline,
+  heartbeat, eventos e comandos do Admin Online.
 - `web/src/lockerWorkflow.js`: regras puras de negocio. Nao acessa DOM, serial
   ou HTTP. E o melhor lugar para adicionar testes de regras.
 - `web/src/serial.js`: protocolo RS-485, comandos e parse das respostas da placa.
@@ -39,6 +42,21 @@ Principais arquivos:
 - `web/src/diagnostics.js`: testes de diagnostico executaveis dentro do armario.
 - `android/app/src/main/java/.../MainActivity.java`: WebView e ponte JavaScript
   para ler/escrever na serial.
+
+### Fronteira Edge Agent / Kiosk UI
+
+O React nao importa `serial.js`, `remoteBridge.js` nem os diarios locais. Ele
+consome uma instancia de `EdgeAgentRuntime`, envia snapshots de apresentacao e
+fornece callbacks das transicoes de negocio. Assim, transporte e recuperacao
+offline podem evoluir sem acoplar telas publicas a Android, HTTP ou
+`localStorage`.
+
+O contrato atual tem versao `1` e permite injetar hardware, rede, relogio e
+storage em testes. O agente serializa cada ciclo remoto, persiste um comando
+antes do acionamento e bloqueia reexecucao automatica quando um restart deixa o
+resultado fisico desconhecido. A implementacao continua no mesmo APK para
+preservar o deploy atual; transformar o agente em um Android Service separado
+nao exige mudar os fluxos da Kiosk UI.
 
 Fluxo do entregador:
 
@@ -90,7 +108,7 @@ Endpoints criticos:
 
 ## Persistencia e sincronizacao offline
 
-No app do armario:
+No Edge Agent do armario:
 
 - Estado operacional fica em `localStorage` (`preddita_entregas_locker_state_v1`).
 - Eventos offline usam um registro por evento sob o prefixo

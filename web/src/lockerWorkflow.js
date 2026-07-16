@@ -288,13 +288,23 @@ export function createInitialState() {
   };
 }
 
-export function loadLockerState() {
-  if (typeof window === 'undefined' || !window.localStorage) {
+function resolveLockerStorage(storage) {
+  if (storage !== undefined) return storage;
+  try {
+    return typeof window !== 'undefined' ? window.localStorage : null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+export function loadLockerState(storage) {
+  const resolvedStorage = resolveLockerStorage(storage);
+  if (!resolvedStorage) {
     return createInitialState();
   }
 
   try {
-    const rawValue = window.localStorage.getItem(STORAGE_KEY);
+    const rawValue = resolvedStorage.getItem(STORAGE_KEY);
     if (!rawValue) {
       return createInitialState();
     }
@@ -337,13 +347,14 @@ export function loadLockerState() {
   }
 }
 
-export function persistLockerState(state) {
-  if (typeof window === 'undefined' || !window.localStorage) {
+export function persistLockerState(state, storage) {
+  const resolvedStorage = resolveLockerStorage(storage);
+  if (!resolvedStorage) {
     return;
   }
 
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    resolvedStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (_error) {
   }
 }

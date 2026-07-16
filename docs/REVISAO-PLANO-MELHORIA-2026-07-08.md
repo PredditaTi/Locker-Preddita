@@ -235,6 +235,19 @@ Validacao do segundo lote:
   senha, chave do dispositivo, PIN, contato ou codigos MFA sejam persistidos.
 - Versao atualizada para `2.0.20-lab`, `schemaVersion 10` e `versionCode 20`.
 
+### Edge Agent separado da Kiosk UI em 2026-07-15
+
+- `web/src/edgeAgent.js` passou a ser a unica fronteira web para RS-485,
+  credencial Android, estado offline, Admin Online e diarios duraveis.
+- `App.jsx`, comissionamento e diagnosticos deixaram de importar a serial e o
+  transporte remoto diretamente.
+- Heartbeat, moradores, eventos e comandos remotos sairam do ciclo de vida da
+  UI; o agente impede ciclos concorrentes e preserva a idempotencia em restart.
+- Testes injetam hardware, storage e rede para cobrir queda de conexao,
+  recuperacao, replay, execucao interrompida e o limite arquitetural.
+- Versao atualizada para `2.0.21-lab` e `versionCode 21`; o `schemaVersion`
+  permanece `10` porque o contrato persistido do servidor nao mudou.
+
 Primeiro pacote de Fase 0 aplicado apos esta revisao:
 
 - `admin-online`: `nodemailer` atualizado para versao sem vulnerabilidades no
