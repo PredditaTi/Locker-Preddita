@@ -64,6 +64,19 @@ try {
   Remove-Item $javaTestOutput -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+Write-Host "[PREDDITA v2] Teste do contrato nativo de atualizacao do APK..."
+$javaUpdateTestOutput = Join-Path ([System.IO.Path]::GetTempPath()) "preddita-app-update-test"
+Remove-Item $javaUpdateTestOutput -Recurse -Force -ErrorAction SilentlyContinue
+New-Item $javaUpdateTestOutput -ItemType Directory | Out-Null
+try {
+  & $javac -d $javaUpdateTestOutput `
+    (Join-Path $root "android\app\src\main\java\com\preddita\entregaslocker\AppUpdateContract.java") `
+    (Join-Path $root "scripts\AppUpdateContractTest.java")
+  & $java -cp $javaUpdateTestOutput AppUpdateContractTest
+} finally {
+  Remove-Item $javaUpdateTestOutput -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 Write-Host "[PREDDITA v2] Smoke test do admin online..."
 & $node (Join-Path $root "scripts\v2-smoke-test.mjs")
 

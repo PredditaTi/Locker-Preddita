@@ -40,6 +40,9 @@ assert.equal(getAdminRolePermissions('operador').canManageApartments, false);
 assert.equal(getAdminRolePermissions('sindico').canViewOperationalLogs, false);
 assert.equal(getAdminRolePermissions('suporte').canViewOperationalLogs, true);
 assert.equal(getAdminRolePermissions('super_admin').canViewOperationalLogs, true);
+assert.equal(getAdminRolePermissions('sindico').canManageUpdates, false);
+assert.equal(getAdminRolePermissions('suporte').canManageUpdates, true);
+assert.equal(getAdminRolePermissions('super_admin').canManageUpdates, true);
 assert.throws(() => parseAdminUsers(JSON.stringify([
   { username: 'global', role: 'sindico', passwordHash, lockerIds: ['*'] },
 ])));

@@ -15,6 +15,7 @@ flowchart LR
   Kiosk --> Edge["Edge Agent contract"]
   Edge --> Android["Android bridge"]
   Android --> RS485["Serial /dev/ttyS5"]
+  Android --> Installer["Instalador Android"]
   RS485 --> Board["Placa CM06 / portas"]
   Edge <--> Admin["Admin Online Node.js"]
   Admin --> SMTP["SMTP e-mail"]
@@ -42,6 +43,8 @@ Principais arquivos:
 - `web/src/diagnostics.js`: testes de diagnostico executaveis dentro do armario.
 - `android/app/src/main/java/.../MainActivity.java`: WebView e ponte JavaScript
   para ler/escrever na serial.
+- `android/app/src/main/java/.../AppUpdateManager.java`: download, verificacao
+  criptografica e handoff do APK ao instalador do sistema.
 
 ### Fronteira Edge Agent / Kiosk UI
 
@@ -51,7 +54,8 @@ fornece callbacks das transicoes de negocio. Assim, transporte e recuperacao
 offline podem evoluir sem acoplar telas publicas a Android, HTTP ou
 `localStorage`.
 
-O contrato atual tem versao `1` e permite injetar hardware, rede, relogio e
+O contrato atual tem versao `2` e permite injetar hardware, rede, relogio,
+atualizador e
 storage em testes. O agente serializa cada ciclo remoto, persiste um comando
 antes do acionamento e bloqueia reexecucao automatica quando um restart deixa o
 resultado fisico desconhecido. A implementacao continua no mesmo APK para
@@ -99,12 +103,32 @@ Endpoints criticos:
 - `GET /api/admin/state`: estado completo para o painel.
 - `POST /api/admin/residents`: cria apartamento/morador.
 - `POST /api/admin/doors/:door/open`: cria comando remoto de abertura.
+- `PUT /api/admin/update-policy`: publica ou pausa o rollout remoto do APK.
 - `GET /api/device/snapshot`: armario busca moradores e comandos pendentes.
 - `POST /api/device/status`: armario publica heartbeat, portas e entregas.
 - `POST /api/device/events`: armario reenvia eventos offline.
 - `POST /api/device/commands/:id/ack`: armario confirma o lease e registra o
   `executionId` antes de acionar a porta.
 - `POST /api/device/commands/:id/complete`: armario confirma comando remoto.
+
+## Atualizacao remota do APK
+
+O Admin Online persiste uma politica por locker. O snapshot autenticado so
+inclui o manifesto quando a distribuicao esta ativa, o locker pertence ao
+percentual de rollout e o `versionCode` reportado ainda e inferior ao destino.
+Somente `suporte` e `super_admin` podem alterar essa politica.
+
+O Edge Agent anexa `device.appUpdater` ao heartbeat. Um manifesto so e entregue
+ao bridge nativo na tela inicial, sem deposito/retirada aguardando fechamento e
+sem comando remoto no ciclo. No Android, cada redirecionamento continua
+obrigatoriamente em HTTPS, o arquivo tem limite de 250 MB e o SHA-256 e
+comparado em tempo constante. O APK precisa manter o mesmo `applicationId`, ser
+uma versao superior e usar exatamente o certificado do app instalado.
+
+O instalador do sistema continua sendo a autoridade final. A primeira
+atualizacao pode exigir autorizacao da fonte; ao retornar, hash, pacote, versao
+e assinatura sao verificados novamente. Downgrade remoto e recusado: uma
+recuperacao deve usar novo `versionCode` e a mesma chave de assinatura.
 
 ## Persistencia e sincronizacao offline
 

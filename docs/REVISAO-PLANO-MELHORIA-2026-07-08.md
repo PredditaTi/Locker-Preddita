@@ -248,6 +248,21 @@ Validacao do segundo lote:
 - Versao atualizada para `2.0.21-lab` e `versionCode 21`; o `schemaVersion`
   permanece `10` porque o contrato persistido do servidor nao mudou.
 
+### Atualizacao remota segura do APK em 2026-07-15
+
+- Suporte e Admin Geral podem publicar ou pausar um manifesto por locker com
+  canal, rollout deterministico, release, versoes, URL HTTPS e SHA-256.
+- O Edge Agent reporta a telemetria nativa no heartbeat e so entrega o
+  manifesto com a Kiosk UI ociosa, sem porta em operacao e sem comando remoto
+  no mesmo ciclo.
+- O Android limita o download a 250 MB, revalida HTTPS em cada redirecionamento
+  e exige hash, pacote, versao superior e certificado iguais aos do app
+  instalado antes de abrir o instalador do sistema.
+- Retomada apos permissao revalida o arquivo; falhas possuem cooldown e ficam
+  visiveis no painel sem disparar downloads repetidos.
+- O workflow `Release APK` publica APK e checksum em uma release imutavel.
+- Versao atualizada para `2.0.22-lab`, `versionCode 22` e `schemaVersion 11`.
+
 Primeiro pacote de Fase 0 aplicado apos esta revisao:
 
 - `admin-online`: `nodemailer` atualizado para versao sem vulnerabilidades no

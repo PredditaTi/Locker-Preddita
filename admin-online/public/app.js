@@ -80,6 +80,7 @@ const NAV_BY_ROLE = {
     ['doors', 'Portas'],
     ['deliveries', 'Entregas'],
     ['audit', 'Auditoria'],
+    ['updates', 'Atualizacoes'],
     ['logs', 'Logs'],
     ['system', 'Sistema'],
   ],
@@ -90,6 +91,7 @@ const NAV_BY_ROLE = {
     ['residents', 'Apartamentos'],
     ['deliveries', 'Entregas'],
     ['audit', 'Auditoria'],
+    ['updates', 'Atualizacoes'],
     ['logs', 'Logs'],
     ['system', 'Sistema'],
   ],
@@ -125,6 +127,19 @@ function deliveryStatusLabel(status) {
     cancelled: 'Cancelada',
   };
   return labels[status] || status || 'Sem status';
+}
+
+function appUpdateStatusLabel(status) {
+  return {
+    idle: 'Aguardando',
+    offered: 'Oferta recebida',
+    downloading: 'Baixando',
+    downloaded: 'Download verificado',
+    'awaiting-permission': 'Aguardando permissao',
+    installing: 'Instalador aberto',
+    failed: 'Falha',
+    'up-to-date': 'Atualizado',
+  }[status] || 'Sem telemetria';
 }
 
 function doorSizeLabel(size) {
@@ -1086,6 +1101,95 @@ function renderSystem() {
   `;
 }
 
+function renderUpdates() {
+  title.textContent = 'Atualizacoes do app';
+  if (!session().canManageUpdates) {
+    root.innerHTML = '<section class="panel"><h3>Acesso restrito</h3><p class="muted">Esta area e reservada ao suporte PREDDITA.</p></section>';
+    return;
+  }
+  const policy = state.data.appUpdate || {};
+  const updater = state.data.device?.appUpdater || {};
+  const status = updater.status || 'unknown';
+  root.innerHTML = `
+    <div class="grid">
+      <div class="grid stats">
+        <article class="stat-card"><span class="muted">App instalado</span><strong>${escapeHtml(updater.currentVersionName || state.data.device?.edgeAppVersion || '--')}</strong></article>
+        <article class="stat-card"><span class="muted">Version code</span><strong>${escapeHtml(updater.currentVersionCode || '--')}</strong></article>
+        <article class="stat-card"><span class="muted">Atualizador</span><strong>${escapeHtml(appUpdateStatusLabel(status))}</strong></article>
+        <article class="stat-card"><span class="muted">Progresso</span><strong>${escapeHtml(updater.progressPercentage || 0)}%</strong></article>
+      </div>
+
+      <section class="panel update-status-panel ${status === 'failed' ? 'is-warning' : ''}">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Telemetria do dispositivo</p>
+            <h3>${escapeHtml(appUpdateStatusLabel(status))}</h3>
+          </div>
+          <span class="tag">${updater.available ? 'Nativo disponivel' : 'Aguardando app'}</span>
+        </div>
+        <div class="health-grid">
+          <div><span class="muted">Release</span><strong>${escapeHtml(updater.releaseId || '--')}</strong></div>
+          <div><span class="muted">Destino</span><strong>${escapeHtml(updater.targetVersionName || '--')}</strong></div>
+          <div><span class="muted">Atualizado em</span><strong>${escapeHtml(updater.updatedAt || '--')}</strong></div>
+          <div><span class="muted">Ultimo erro</span><strong>${escapeHtml(updater.lastError || 'Nenhum')}</strong></div>
+        </div>
+      </section>
+
+      <form class="panel update-policy-form" id="update-policy-form">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Distribuicao controlada</p>
+            <h3>Publicar APK assinado</h3>
+          </div>
+          <span class="tag">${policy.enabled ? 'Ativa' : 'Pausada'}</span>
+        </div>
+
+        <div class="update-toggle-grid">
+          <label class="toggle-row">
+            <input type="checkbox" name="enabled" ${policy.enabled ? 'checked' : ''}>
+            <span>Distribuicao ativa</span>
+          </label>
+        </div>
+
+        <div class="form-grid update-form-grid">
+          <label>Canal
+            <select name="channel" required>
+              <option value="lab" ${policy.channel === 'lab' ? 'selected' : ''}>Laboratorio</option>
+              <option value="pilot" ${policy.channel === 'pilot' ? 'selected' : ''}>Piloto</option>
+              <option value="production" ${policy.channel === 'production' ? 'selected' : ''}>Producao</option>
+            </select>
+          </label>
+          <label>Rollout (%)
+            <input name="rolloutPercentage" type="number" min="0" max="100" step="1" value="${escapeHtml(policy.rolloutPercentage ?? 0)}" required>
+          </label>
+          <label>Release
+            <input name="releaseId" maxlength="120" value="${escapeHtml(policy.releaseId || '')}" placeholder="v2.0.22-lab">
+          </label>
+          <label>Version code
+            <input name="versionCode" type="number" min="1" max="2147483647" step="1" value="${escapeHtml(policy.versionCode || '')}" placeholder="22">
+          </label>
+          <label>Version name
+            <input name="versionName" maxlength="80" value="${escapeHtml(policy.versionName || '')}" placeholder="2.0.22-lab">
+          </label>
+          <label class="update-field-wide">URL HTTPS do APK
+            <input name="apkUrl" type="url" maxlength="2048" value="${escapeHtml(policy.apkUrl || '')}" placeholder="https://github.com/.../PREDDITA-Locker.apk">
+          </label>
+          <label class="update-field-full">SHA-256
+            <input class="monospace-input" name="sha256" minlength="64" maxlength="64" value="${escapeHtml(policy.sha256 || '')}" placeholder="64 caracteres hexadecimais">
+          </label>
+          <label class="update-field-full">Notas da versao
+            <textarea name="notes" maxlength="500" rows="4" placeholder="Mudancas operacionais desta versao">${escapeHtml(policy.notes || '')}</textarea>
+          </label>
+        </div>
+        <div class="form-actions">
+          <p class="muted">O APK so sera instalado quando o locker estiver ocioso e passar por todas as verificacoes nativas.</p>
+          <button class="primary-button" type="submit">Salvar distribuicao</button>
+        </div>
+      </form>
+    </div>
+  `;
+}
+
 function render() {
   if (!state.data) return;
   updateChrome();
@@ -1096,6 +1200,7 @@ function render() {
   if (state.view === 'deliveries') renderDeliveries();
   if (state.view === 'audit') renderAudit();
   if (state.view === 'logs') renderLogs();
+  if (state.view === 'updates') renderUpdates();
   if (state.view === 'system') renderSystem();
 }
 
@@ -1317,6 +1422,30 @@ document.addEventListener('submit', async (event) => {
     };
     state.operationalLogs.loaded = false;
     await loadOperationalLogs().catch((error) => showMessage(error.message, true));
+    return;
+  }
+  if (event.target.id === 'update-policy-form') {
+    event.preventDefault();
+    const form = event.target;
+    const values = Object.fromEntries(new FormData(form).entries());
+    try {
+      await api('/api/admin/update-policy', {
+        method: 'PUT',
+        body: JSON.stringify({
+          ...values,
+          enabled: form.elements.enabled.checked,
+          rolloutPercentage: Number(values.rolloutPercentage),
+          versionCode: Number(values.versionCode),
+        }),
+      });
+    } catch (error) {
+      showMessage(error.message, true);
+      return;
+    }
+    showMessage(form.elements.enabled.checked
+      ? 'Distribuicao atualizada. Os lockers elegiveis receberao o manifesto no proximo ciclo seguro.'
+      : 'Distribuicao pausada.');
+    await loadState({ skipCapture: true });
     return;
   }
   if (!event.target.matches('.resident-form')) return;

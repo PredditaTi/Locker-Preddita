@@ -74,6 +74,7 @@ public class MainActivity extends Activity {
     private final Rs485FrameParser serialFrameParser = new Rs485FrameParser();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private DeviceCredentialStore deviceCredentialStore;
+    private AppUpdateManager appUpdateManager;
     private volatile String lastDeviceAuthError = "";
 
     private volatile boolean serialOpen = false;
@@ -102,6 +103,7 @@ public class MainActivity extends Activity {
         webView = new WebView(this);
         setContentView(webView);
         deviceCredentialStore = new DeviceCredentialStore(getApplicationContext());
+        appUpdateManager = new AppUpdateManager(this, this::dispatchAppUpdateStatus);
 
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -124,6 +126,7 @@ public class MainActivity extends Activity {
 
         webView.addJavascriptInterface(new RS485Bridge(), "Android");
         webView.addJavascriptInterface(new DeviceAuthBridge(), "PredditaDeviceAuth");
+        webView.addJavascriptInterface(new AppUpdateBridge(), "PredditaUpdater");
         WebView.setWebContentsDebuggingEnabled(isDebuggableBuild());
 
         webView.setWebChromeClient(new WebChromeClient() {
@@ -278,10 +281,28 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        if (appUpdateManager != null) appUpdateManager.resumePendingInstall();
+    }
+
+    @Override
     protected void onDestroy() {
-        super.onDestroy();
+        if (appUpdateManager != null) appUpdateManager.shutdown();
         stopSerialThread();
         closeSerialStreams();
+        super.onDestroy();
+    }
+
+    private void dispatchAppUpdateStatus(String statusJson) {
+        mainHandler.post(() -> {
+            if (webView == null) return;
+            String encoded = org.json.JSONObject.quote(statusJson == null ? "{}" : statusJson);
+            webView.evaluateJavascript(
+                "window.dispatchEvent(new CustomEvent('preddita-update-status',{detail:JSON.parse(" + encoded + ")}))",
+                null
+            );
+        });
     }
 
     private synchronized void initSerial() {
@@ -577,6 +598,18 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void openProvisioning(String suggestedBaseUrl, String suggestedLockerId) {
             mainHandler.post(() -> showDeviceProvisioningDialog(suggestedBaseUrl, suggestedLockerId));
+        }
+    }
+
+    public class AppUpdateBridge {
+        @JavascriptInterface
+        public String getStatus() {
+            return appUpdateManager.getStatusJson();
+        }
+
+        @JavascriptInterface
+        public boolean requestUpdate(String manifestJson) {
+            return appUpdateManager.requestUpdate(manifestJson);
         }
     }
 

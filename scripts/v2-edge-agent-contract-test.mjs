@@ -217,6 +217,88 @@ async function testConcurrentCycles() {
   assert.equal((await first).ok, true);
 }
 
+async function testSafeAppUpdateHandoff() {
+  const requested = [];
+  const publishedStatuses = [];
+  const manifest = {
+    releaseId: 'v2.0.22-lab',
+    versionCode: 22,
+    versionName: '2.0.22-lab',
+    apkUrl: 'https://downloads.example.com/preddita.apk',
+    sha256: 'a'.repeat(64),
+  };
+  const remote = createRemote({
+    fetchRemoteSnapshot: async () => ({ residents: [], commands: [], appUpdate: manifest }),
+    publishRemoteStatus: async (status) => {
+      publishedStatuses.push(status);
+      return true;
+    },
+  });
+  const agent = new EdgeAgentRuntime({
+    storage: new MemoryStorage(),
+    hardware: createHardware(),
+    remote,
+    appUpdater: {
+      getStatus: () => ({
+        available: true,
+        currentVersionCode: 21,
+        currentVersionName: '2.0.21-lab',
+        status: 'idle',
+      }),
+      requestUpdate: (update) => {
+        requested.push(update);
+        return true;
+      },
+    },
+  });
+
+  const blocked = await agent.runRemoteCycle({
+    doorCount: 8,
+    canInstallUpdate: false,
+    status: { device: { edgeAppVersion: '2.0.21-lab' } },
+    onOpenDoor: async () => ({ ok: true }),
+  });
+  assert.equal(blocked.updateRequested, false);
+  assert.equal(requested.length, 0, 'busy kiosk must not hand an APK to Android');
+  assert.equal(publishedStatuses[0].device.appUpdater.currentVersionCode, 21);
+
+  const accepted = await agent.runRemoteCycle({
+    doorCount: 8,
+    canInstallUpdate: true,
+    onOpenDoor: async () => ({ ok: true }),
+  });
+  assert.equal(accepted.updateRequested, true);
+  assert.deepEqual(requested, [manifest]);
+}
+
+async function testUpdateWaitsForRemoteCommand() {
+  let updateRequests = 0;
+  const agent = new EdgeAgentRuntime({
+    storage: new MemoryStorage(),
+    hardware: createHardware(),
+    remote: createRemote({
+      fetchRemoteSnapshot: async () => ({
+        residents: [],
+        appUpdate: { releaseId: 'v2.0.22-lab' },
+        commands: [{ id: 'command-before-update', type: 'openDoor', door: 1, leaseId: 'lease-update' }],
+      }),
+    }),
+    appUpdater: {
+      getStatus: () => ({ available: true, status: 'idle' }),
+      requestUpdate: () => {
+        updateRequests += 1;
+        return true;
+      },
+    },
+  });
+  await agent.runRemoteCycle({
+    doorCount: 8,
+    canInstallUpdate: true,
+    onOpenDoor: async () => ({ ok: true, confirmed: true }),
+  });
+  assert.equal(updateRequests, 0, 'remote door command must complete before update handoff');
+}
+
 async function testKioskBoundary() {
   const root = join(dirname(fileURLToPath(import.meta.url)), '..', 'web', 'src');
   const kioskModules = ['App.jsx', 'CommissioningPanel.jsx', 'DiagnosticsView.jsx', 'diagnostics.js'];
@@ -227,12 +309,14 @@ async function testKioskBoundary() {
   }
 }
 
-assert.equal(EDGE_AGENT_CONTRACT_VERSION, 1);
+assert.equal(EDGE_AGENT_CONTRACT_VERSION, 2);
 await testOfflineEventRecovery();
 await testOperationalStateStorage();
 await testIdempotentRemoteCommand();
 await testUnknownExecutionAfterRestart();
 await testConcurrentCycles();
+await testSafeAppUpdateHandoff();
+await testUpdateWaitsForRemoteCommand();
 await testKioskBoundary();
 
-console.log('PASS Edge Agent contract, offline recovery, idempotency and kiosk boundary');
+console.log('PASS Edge Agent contract, offline recovery, idempotency, safe updates and kiosk boundary');
