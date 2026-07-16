@@ -27,14 +27,20 @@ import {
   verifyRecoveryCode,
   verifyTotp,
 } from './adminMfa.mjs';
+import {
+  OPERATIONAL_SCHEMA_VERSION,
+  ensureOperationalSchema,
+  persistOperationalState,
+  readOperationalState,
+} from './operationalStore.mjs';
 
 const ROOT_DIR = fileURLToPath(new URL('.', import.meta.url));
 const PUBLIC_DIR = join(ROOT_DIR, 'public');
 const DATA_DIR = process.env.PREDDITA_DATA_DIR ? normalize(process.env.PREDDITA_DATA_DIR) : join(ROOT_DIR, 'data');
 const DB_PATH = join(DATA_DIR, 'state.json');
 const BACKUP_DIR = join(DATA_DIR, 'backups');
-const APP_VERSION = '2.0.17-lab';
-const SCHEMA_VERSION = 7;
+const APP_VERSION = '2.0.18-lab';
+const SCHEMA_VERSION = 8;
 const DEFAULT_ADMIN_TOKEN = 'preddita-admin-local';
 const DEFAULT_SUPER_ADMIN_TOKEN = 'preddita-super-admin-local';
 const DEFAULT_DEVICE_KEY = 'preddita-device-local';
@@ -590,6 +596,7 @@ async function ensurePostgres() {
       create index if not exists idx_preddita_locker_states_updated_at
       on preddita_locker_states (updated_at desc)
     `);
+    await ensureOperationalSchema(postgresPool);
     await postgresPool.query(`
       create table if not exists preddita_admin_users (
         username text primary key,
@@ -1134,11 +1141,30 @@ async function readPostgresState(lockerId = DEFAULT_LOCKER_ID, tenantId = DEFAUL
   const normalizedTenantId = normalizeTenantId(tenantId);
   const normalizedLockerId = normalizeLockerId(lockerId);
   const result = await pool.query(
-    'select state from preddita_locker_states where tenant_id = $1 and locker_id = $2',
+    `
+      select state, operational_schema_version
+      from preddita_locker_states
+      where tenant_id = $1 and locker_id = $2
+    `,
     [normalizedTenantId, normalizedLockerId]
   );
   if (result.rows[0]?.state) {
-    return migrateState(result.rows[0].state, { tenantId: normalizedTenantId, lockerId: normalizedLockerId });
+    const storedState = migrateState(result.rows[0].state, {
+      tenantId: normalizedTenantId,
+      lockerId: normalizedLockerId,
+    });
+    if (Number(result.rows[0].operational_schema_version) < OPERATIONAL_SCHEMA_VERSION) {
+      await writePostgresState(storedState, normalizedLockerId, normalizedTenantId);
+      return storedState;
+    }
+    const operationalState = await readOperationalState(pool, {
+      tenantId: normalizedTenantId,
+      lockerId: normalizedLockerId,
+    });
+    return migrateState(
+      { ...result.rows[0].state, ...operationalState },
+      { tenantId: normalizedTenantId, lockerId: normalizedLockerId }
+    );
   }
 
   const initialState = await readInitialStateForPostgres(normalizedTenantId, normalizedLockerId);
@@ -1205,18 +1231,12 @@ async function writePostgresState(state, lockerId = DEFAULT_LOCKER_ID, tenantId 
   const normalizedTenantId = normalizeTenantId(state.tenant?.tenantId ?? tenantId);
   const normalizedLockerId = normalizeLockerId(state.tenant?.lockerId ?? state.device?.lockerId ?? lockerId);
   const next = { ...migrateState(state, { tenantId: normalizedTenantId, lockerId: normalizedLockerId }), updatedAt: nowIso() };
-  await pool.query(
-    `
-      insert into preddita_locker_states (tenant_id, locker_id, schema_version, state, updated_at)
-      values ($1, $2, $3, $4::jsonb, now())
-      on conflict (tenant_id, locker_id)
-      do update set
-        schema_version = excluded.schema_version,
-        state = excluded.state,
-        updated_at = now()
-    `,
-    [normalizedTenantId, normalizedLockerId, SCHEMA_VERSION, JSON.stringify(next)]
-  );
+  await persistOperationalState(pool, {
+    tenantId: normalizedTenantId,
+    lockerId: normalizedLockerId,
+    schemaVersion: SCHEMA_VERSION,
+    state: next,
+  });
 }
 
 async function writeState(state, lockerId = DEFAULT_LOCKER_ID, tenantId = DEFAULT_TENANT_ID) {
@@ -1417,6 +1437,8 @@ function getRuntimeSummary(state) {
     failedNotificationCount: notificationOutbox.filter((item) => cleanText(item.status) === 'failed').length,
     deviceAuthMode: DEVICE_AUTH_MODE,
     storageMode: STORAGE_MODE,
+    operationalStorage: isPostgresStorage() ? 'normalized-postgres' : 'snapshot',
+    operationalSchemaVersion: isPostgresStorage() ? OPERATIONAL_SCHEMA_VERSION : 0,
     adminSessionStorage: isPostgresStorage() ? 'postgres' : 'memory',
     adminMfa: isPostgresStorage() && ADMIN_MFA_ENCRYPTION_KEY ? 'privileged-roles' : 'disabled',
     securityWarnings: getSecurityWarnings(),

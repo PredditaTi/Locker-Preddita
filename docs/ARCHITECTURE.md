@@ -190,6 +190,23 @@ reporta resultado fisico desconhecido para verificacao manual.
 Se o armario estiver offline, stale, sem serial ou com comando pendente para a
 mesma porta, a API bloqueia a abertura.
 
+## Persistencia operacional
+
+No modo Postgres, `preddita_locker_states` guarda somente configuracao, portas,
+estado do dispositivo, outbox e diarios auxiliares. As colecoes principais sao
+fontes relacionais separadas:
+
+- `preddita_residents`: unidade, contato e revisao do cadastro.
+- `preddita_deliveries`: status, porta, destinatario, datas e payload completo.
+- `preddita_commands`: estado, lease, execucao, datas e timeline completa.
+- `preddita_audit_events`: tipo, mensagem, metadados e horario do evento.
+
+Todas usam chave composta por `tenant_id`, `locker_id` e identificador da
+entidade. A escrita do estado principal e das quatro colecoes ocorre na mesma
+transacao. Registros antigos com `operational_schema_version=0` recebem backfill
+automatico no primeiro acesso; depois, a API hidrata o contrato antigo a partir
+das tabelas e o JSONB deixa de duplicar essas colecoes.
+
 ## Variaveis de ambiente importantes
 
 Servidor:
@@ -254,12 +271,11 @@ replicas. Em producao, Postgres e `PREDDITA_MFA_ENCRYPTION_KEY` sao obrigatorios
 - `web/src/App.jsx` ainda e grande. Antes de escalar para muitos armarios, vale
   separar em hooks/componentes por fluxo: entregador, morador, admin local e
   sincronizacao remota.
-- O estado operacional ja usa um snapshot JSONB por locker no Postgres. Para 30
-  armarios, normalizar `lockers`, `doors`, `residents`, `deliveries`, `commands`
-  e `events` por `lockerId`, com transacoes e indices proprios.
+- Moradores, entregas, comandos e auditoria ja usam tabelas por locker. Portas,
+  dispositivo, outbox e diarios auxiliares ainda ficam no snapshot JSONB.
 - HTTPS e dominio proprio devem ser obrigatorios em producao.
 - O envio de e-mail depende de SMTP externo; falhas ficam registradas para
   reprocessamento/diagnostico.
-- Sessoes e MFA ja sao compartilhados no Postgres, mas as mutacoes do snapshot
-  por locker ainda usam fila em memoria. Mantenha uma replica ate normalizar as
-  entidades operacionais e tornar as mutacoes transacionais no banco.
+- A sincronizacao das entidades e transacional, mas cada mutacao ainda substitui
+  o conjunto completo lido pela aplicacao. Mantenha uma replica ate comandos e
+  demais operacoes usarem updates por linha com controle de concorrencia no banco.

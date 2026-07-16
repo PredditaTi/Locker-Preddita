@@ -174,7 +174,7 @@ cd web
 $env:VITE_PREDDITA_REMOTE_URL="https://locker.example.com"
 $env:VITE_PREDDITA_LOCKER_ID="ks1062-aurora"
 $env:VITE_PREDDITA_DEVICE_AUTH_MODE="hmac"
-$env:VITE_PREDDITA_EDGE_APP_VERSION="2.0.17-lab"
+$env:VITE_PREDDITA_EDGE_APP_VERSION="2.0.18-lab"
 npm run build
 Remove-Item Env:VITE_PREDDITA_REMOTE_URL
 Remove-Item Env:VITE_PREDDITA_LOCKER_ID
@@ -223,6 +223,8 @@ Ver versao instalada:
 - Login, logout, CSRF e os papeis administrativos passaram no smoke test.
 - `PREDDITA_MFA_ENCRYPTION_KEY` foi gerada fora do repositorio, esta protegida
   no deploy e o cadastro TOTP de `super_admin` e `suporte` foi validado.
+- O smoke Postgres confirmou `operational_schema_version=1`, as quatro tabelas
+  operacionais e o backfill de um snapshot legado sem duplicacao no JSONB.
 - `PREDDITA_DEVICE_KEY` nao usa valor padrao.
 - `PREDDITA_DEVICE_AUTH_MODE=hmac` no servidor e assinador nativo ativo no APK.
 - O build recusou `VITE_PREDDITA_DEVICE_KEY` e o equipamento aparece como
