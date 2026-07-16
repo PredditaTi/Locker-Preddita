@@ -1,12 +1,12 @@
 import React, { startTransition, useDeferredValue, useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
-import Serial, {
+import edgeAgent, {
   SENSOR_POLARITY_OPTIONS,
   createCommandSet,
   decodePackedStates,
   formatHex,
   parseResponse,
-} from './serial.js';
+} from './edgeAgent.js';
 import {
   PACKAGE_SIZES,
   applyDeviceCommissioning,
@@ -21,11 +21,9 @@ import {
   formatRecipientApartment,
   getDeliveryStatusLabel,
   getDoorOccupancyMap,
-  loadLockerState,
   markDeliveryNotification,
   markDepositDoorOpened,
   markPickupDoorOpened,
-  persistLockerState,
   reserveDelivery,
   resolvePickupRequest,
   updateDeviceConfig,
@@ -46,20 +44,6 @@ import {
   joinClasses,
   trimCode,
 } from './appUi.jsx';
-import {
-  acknowledgeRemoteCommand,
-  completeRemoteCommand,
-  fetchRemoteSnapshot,
-  mapRemoteResidentToRecipient,
-  publishRemoteEvents,
-  publishRemoteStatus,
-} from './remoteBridge.js';
-import {
-  loadRemoteCommandExecutions,
-  saveRemoteCommandExecutions,
-  updateRemoteCommandExecution,
-  upsertRemoteCommandExecution,
-} from './remoteCommandJournal.js';
 import { resolveScannedPickupCredential, scanQrFromVideo } from './qrScanner.js';
 import {
   applyBackspaceKey,
@@ -78,16 +62,9 @@ import {
   ResidentPickupStep,
 } from './publicKioskUi.jsx';
 import {
-  applyDeviceEventSyncResult,
   buildDeliveryCollectedEventId,
   buildDeliveryStoredEventId,
-  upsertDeviceEventQueue,
 } from './deviceEventQueue.js';
-import {
-  loadDeviceEventJournal,
-  removeDeviceEventJournalEvents,
-  saveDeviceEventJournalEvents,
-} from './deviceEventJournal.js';
 import DiagnosticsView from './DiagnosticsView.jsx';
 import useDiagnosticGate from './useDiagnosticGate.js';
 
@@ -96,16 +73,12 @@ const COMMANDS = createCommandSet(LOCKER_PROFILE);
 const DOORS_PER_PAGE = 8;
 const DOOR_COUNT_PRESETS = [8, 12, 16, 20, 24];
 const ADMIN_VIEWS = new Set(['admin', 'adminDeposit', 'adminPickup', 'doors', 'system']);
-const APP_VERSION = '2.0.20-lab';
+const APP_VERSION = '2.0.21-lab';
 const POPUP_BANNER_TITLES = new Set([
   'Porta pequena ainda aberta',
   'Sem porta grande disponivel',
   'Portas grandes ocupadas',
 ]);
-const REMOTE_COMPLETIONS_STORAGE_KEY = 'preddita_pending_remote_completions_v1';
-const MAX_PENDING_REMOTE_COMPLETIONS = 20;
-const MAX_PENDING_DEVICE_EVENTS = 160;
-const MAX_DEVICE_EVENTS_PER_FLUSH = 4;
 const COURIER_SUCCESS_RETURN_MS = 10000;
 const DOOR_COMPLETION_CLOSE_TIMEOUT_MS = 45000;
 const SMALL_DOOR_CLOSE_TIMEOUT_MS = 60000;
@@ -127,60 +100,6 @@ const PICKUP_METHODS = [
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function normalizePendingRemoteCompletion(item) {
-  if (!item || typeof item !== 'object') return null;
-
-  const commandId = String(item.commandId ?? '').trim();
-  if (!commandId) return null;
-
-  return {
-    commandId,
-    result: item.result && typeof item.result === 'object' ? item.result : {},
-    attempts: Number.isFinite(Number(item.attempts)) ? Math.max(0, Number(item.attempts)) : 0,
-    queuedAt: String(item.queuedAt ?? new Date().toISOString()),
-    lastAttemptAt: String(item.lastAttemptAt ?? ''),
-  };
-}
-
-function loadPendingRemoteCompletions() {
-  if (typeof window === 'undefined' || !window.localStorage) return [];
-
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(REMOTE_COMPLETIONS_STORAGE_KEY) || '[]');
-    if (!Array.isArray(parsed)) return [];
-
-    return parsed
-      .map(normalizePendingRemoteCompletion)
-      .filter(Boolean)
-      .slice(-MAX_PENDING_REMOTE_COMPLETIONS);
-  } catch (_error) {
-    return [];
-  }
-}
-
-function savePendingRemoteCompletions(items) {
-  if (typeof window === 'undefined' || !window.localStorage) return;
-
-  try {
-    const safeItems = Array.isArray(items)
-      ? items.map(normalizePendingRemoteCompletion).filter(Boolean).slice(-MAX_PENDING_REMOTE_COMPLETIONS)
-      : [];
-
-    if (safeItems.length === 0) {
-      window.localStorage.removeItem(REMOTE_COMPLETIONS_STORAGE_KEY);
-      return;
-    }
-
-    window.localStorage.setItem(REMOTE_COMPLETIONS_STORAGE_KEY, JSON.stringify(safeItems));
-  } catch (_error) {
-  }
-}
-
-function createDeviceEventId(type) {
-  const suffix = Math.random().toString(36).slice(2, 10);
-  return `edge-${type}-${Date.now().toString(36)}-${suffix}`;
 }
 
 function getDeliveryNotificationText(delivery) {
@@ -390,7 +309,7 @@ function buildDoorPresentation(door, physicalState, delivery) {
 export default function App() {
   const initialStateRef = useRef(null);
   const [lockerState, setLockerState] = useState(() => {
-    const loadedState = loadLockerState();
+    const loadedState = edgeAgent.loadLockerState();
     initialStateRef.current = loadedState;
     return loadedState;
   });
@@ -398,7 +317,7 @@ export default function App() {
   const [view, setView] = useState('home');
   const [banner, setBanner] = useState(PUBLIC_READY_BANNER);
   const [dismissedBannerKey, setDismissedBannerKey] = useState('');
-  const [hardwareInfo, setHardwareInfo] = useState(() => Serial.getHardwareInfo());
+  const [hardwareInfo, setHardwareInfo] = useState(() => edgeAgent.getHardwareInfo());
   const [doorStates, setDoorStates] = useState(() => createDoorStates(initialState.deviceConfig.doorCount));
   const [isBusy, setIsBusy] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -441,9 +360,7 @@ export default function App() {
   const lockerStateRef = useRef(initialState);
   const doorStatesRef = useRef(doorStates);
   const syncInFlightRef = useRef(false);
-  const remoteInFlightRef = useRef(false);
   const remoteCloseInFlightRef = useRef(false);
-  const deviceEventsInFlightRef = useRef(false);
   const courierOpenInFlightRef = useRef(false);
   const smallCloseCancelRef = useRef(false);
   const pickupAutoSubmitRef = useRef('');
@@ -455,9 +372,6 @@ export default function App() {
   const labelVideoRef = useRef(null);
   const labelCanvasRef = useRef(null);
   const labelStreamRef = useRef(null);
-  const pendingRemoteCompletionsRef = useRef(loadPendingRemoteCompletions());
-  const remoteCommandExecutionsRef = useRef(loadRemoteCommandExecutions());
-  const pendingDeviceEventsRef = useRef(loadDeviceEventJournal({ maxItems: MAX_PENDING_DEVICE_EVENTS }));
   const remoteResidentsRevisionRef = useRef(initialState.remoteResidentsRevision || '');
   const packedAlignmentRef = useRef('auto');
   const diagnosticGate = useDiagnosticGate();
@@ -516,7 +430,7 @@ export default function App() {
       setLockerState((current) => {
         const nextState = typeof transformer === 'function' ? transformer(current) : transformer;
         lockerStateRef.current = nextState;
-        persistLockerState(nextState);
+        edgeAgent.persistLockerState(nextState);
         return nextState;
       });
     });
@@ -534,13 +448,13 @@ export default function App() {
     setLastPreview(formatHex(COMMANDS.readAll(board)));
 
     try {
-      const result = await Serial.readAll(board, LOCKER_PROFILE);
+      const result = await edgeAgent.readAll(board, LOCKER_PROFILE);
       const parsed = result.ok
         ? parseResponse(result.hex, {
             sensorPolarity: lockerStateRef.current.deviceConfig.sensorPolarity,
           })
         : null;
-      setHardwareInfo(Serial.getHardwareInfo());
+      setHardwareInfo(edgeAgent.getHardwareInfo());
 
       if (result.ok && parsed?.type === 'all') {
         let packedAlignment = packedAlignmentRef.current;
@@ -768,25 +682,7 @@ export default function App() {
   }, [credentialDelivery?.qrPayload]);
 
   function queueDeviceEvent(type, payload = {}, options = {}) {
-    const eventId = String(options.id ?? '').trim() || createDeviceEventId(type);
-    const existing = pendingDeviceEventsRef.current.find((item) => item.id === eventId);
-    const event = {
-      id: eventId,
-      type,
-      payload,
-      occurredAt: String(options.occurredAt ?? '').trim() || new Date().toISOString(),
-      attempts: existing?.attempts ?? 0,
-      queuedAt: existing?.queuedAt || new Date().toISOString(),
-      lastAttemptAt: existing?.lastAttemptAt || '',
-    };
-
-    pendingDeviceEventsRef.current = upsertDeviceEventQueue(
-      pendingDeviceEventsRef.current,
-      event,
-      MAX_PENDING_DEVICE_EVENTS
-    );
-    saveDeviceEventJournalEvents([event], { maxItems: MAX_PENDING_DEVICE_EVENTS });
-    return event;
+    return edgeAgent.queueEvent(type, payload, options);
   }
 
   function queueDoorOpenedEvent(channel, outcome, successText) {
@@ -828,7 +724,7 @@ export default function App() {
         return rememberOpened(outcome);
       }
 
-      const timeoutResult = await Serial.setTimeout(
+      const timeoutResult = await edgeAgent.setTimeout(
         board,
         channel,
         lockerStateRef.current.deviceConfig.unlockTimeoutSeconds,
@@ -849,7 +745,7 @@ export default function App() {
         return rememberOpened(outcome);
       }
 
-      const result = await Serial.unlock(board, channel, LOCKER_PROFILE);
+      const result = await edgeAgent.unlock(board, channel, LOCKER_PROFILE);
       let cycleResult = null;
       for (let attempt = 0; attempt < 5; attempt += 1) {
         await wait(attempt === 0 ? 450 : 350);
@@ -893,7 +789,7 @@ export default function App() {
   async function readDoorPhysicalStatus(channel) {
     const board = lockerStateRef.current.deviceConfig.board;
     const sensorPolarity = lockerStateRef.current.deviceConfig.sensorPolarity;
-    const result = await Serial.readStatus(board, channel, LOCKER_PROFILE);
+    const result = await edgeAgent.readStatus(board, channel, LOCKER_PROFILE);
     const parsed = result.ok ? parseResponse(result.hex, { sensorPolarity }) : null;
     const reading = createSingleDoorReading(parsed);
 
@@ -1005,7 +901,7 @@ export default function App() {
 
     const channelsToProbe = Math.min(3, doorCount);
     for (let channel = 1; channel <= channelsToProbe; channel += 1) {
-      const probeResult = await Serial.readStatus(board, channel, LOCKER_PROFILE);
+      const probeResult = await edgeAgent.readStatus(board, channel, LOCKER_PROFILE);
       const probeParsed = probeResult.ok
         ? parseResponse(probeResult.hex, {
             sensorPolarity: lockerStateRef.current.deviceConfig.sensorPolarity,
@@ -1939,15 +1835,9 @@ export default function App() {
     }));
   }
 
-  function syncRemoteResidents(residents, residentsUpdatedAt = '') {
-    if (!Array.isArray(residents)) return;
-
-    const nextRevision =
-      residentsUpdatedAt ||
-      residents.map((resident) => `${resident.id ?? ''}:${resident.updatedAt ?? ''}`).join('|');
+  function syncRemoteResidents(recipients, nextRevision = '') {
+    if (!Array.isArray(recipients)) return;
     if (nextRevision && nextRevision === remoteResidentsRevisionRef.current) return;
-
-    const recipients = residents.map(mapRemoteResidentToRecipient).filter((recipient) => recipient.id);
     const syncedAt = new Date().toISOString();
 
     commitState((current) => ({
@@ -1992,233 +1882,73 @@ export default function App() {
     setCourierSuccessDelivery((current) => current && patches.has(current.id) ? { ...current, ...patches.get(current.id) } : current);
   }
 
-  /*
-   * Fila offline do armario.
-   *
-   * Cada entrega guardada, retirada ou abertura local ocupa um registro isolado
-   * no diario do localStorage antes do envio ao Admin Online. Se o locker perder
-   * internet ou reiniciar, flushPendingDeviceEvents reenvia tudo. O servidor usa
-   * o id do evento para manter idempotencia, entao reenviar e seguro.
-   */
   async function flushPendingDeviceEvents() {
-    if (deviceEventsInFlightRef.current) return false;
-    const pending = pendingDeviceEventsRef.current;
-    if (pending.length === 0) return false;
-
-    deviceEventsInFlightRef.current = true;
-    const attemptedAt = new Date().toISOString();
-    const batch = pending.slice(0, MAX_DEVICE_EVENTS_PER_FLUSH);
-    const batchIds = new Set(batch.map((item) => item.id));
-    try {
-      const result = await publishRemoteEvents(batch);
-      if (!result?.ok) {
-        const updatedBatch = pendingDeviceEventsRef.current
-          .map((item) => (batchIds.has(item.id) ? { ...item, attempts: item.attempts + 1, lastAttemptAt: attemptedAt } : item))
-          .slice(-MAX_PENDING_DEVICE_EVENTS);
-        pendingDeviceEventsRef.current = updatedBatch;
-        saveDeviceEventJournalEvents(
-          updatedBatch.filter((item) => batchIds.has(item.id)),
-          { maxItems: MAX_PENDING_DEVICE_EVENTS }
-        );
-        return false;
-      }
-
-      const syncResult = applyDeviceEventSyncResult(
-        pendingDeviceEventsRef.current,
-        result,
-        attemptedAt,
-        MAX_PENDING_DEVICE_EVENTS
-      );
-
-      pendingDeviceEventsRef.current = syncResult.pending;
-      removeDeviceEventJournalEvents(syncResult.acceptedIds);
-      saveDeviceEventJournalEvents(syncResult.failed, { maxItems: MAX_PENDING_DEVICE_EVENTS });
-      applyRemoteEventNotifications(result.notifications);
-      return syncResult.acceptedIds.length > 0;
-    } finally {
-      deviceEventsInFlightRef.current = false;
-    }
-  }
-
-  function registerRemoteCommandExecution(command) {
-    const registration = upsertRemoteCommandExecution(remoteCommandExecutionsRef.current, command);
-    remoteCommandExecutionsRef.current = saveRemoteCommandExecutions(registration.records);
-    return registration;
-  }
-
-  function setRemoteCommandExecution(commandId, updates) {
-    const updated = updateRemoteCommandExecution(
-      remoteCommandExecutionsRef.current,
-      commandId,
-      updates
-    );
-    remoteCommandExecutionsRef.current = saveRemoteCommandExecutions(updated.records);
-    return updated.execution;
-  }
-
-  async function submitRemoteCommandCompletion(commandId, result) {
-    const completed = await completeRemoteCommand(commandId, result);
-    if (!completed) {
-      queueRemoteCompletion(commandId, result);
-    }
-    return Boolean(completed);
-  }
-
-  /*
-   * Loop de sincronizacao remota.
-   *
-   * A cada ciclo o app:
-   * 1. entrega confirmacoes/comandos pendentes;
-   * 2. publica eventos offline acumulados;
-   * 3. publica status atual do hardware e portas;
-   * 4. busca moradores e comandos remotos para executar localmente.
-   */
-  async function processRemoteBridge() {
-    await flushPendingRemoteCompletions();
-    await flushPendingDeviceEvents();
-    await publishRemoteStatus({
-      device: {
-        serialOpen: hardwareInfo.serialOpen,
-        serialPath: hardwareInfo.serialPath,
-        bridgeVersion: hardwareInfo.bridgeVersion,
-        edgeAppVersion: APP_VERSION,
-        board: lockerState.deviceConfig.board,
-        doorCount: lockerState.deviceConfig.doorCount,
-        sensorPolarity: lockerState.deviceConfig.sensorPolarity,
-        unlockTimeoutSeconds: lockerState.deviceConfig.unlockTimeoutSeconds,
-        doorSizes: lockerState.deviceConfig.doorSizes,
-        commissioningStatus: lockerState.deviceConfig.commissioning?.status || 'pending',
-        commissionedAt: lockerState.deviceConfig.commissioning?.completedAt || '',
-        residentCount: lockerState.recipients.length,
-        residentsSyncedAt: lockerState.residentsSyncedAt || '',
-        remoteResidentsRevision: lockerState.remoteResidentsRevision || '',
-      },
-      doors: buildRemoteDoorStatus(),
-      deliveries: buildRemoteDeliveryStatus(),
+    return edgeAgent.flushPendingEvents({
+      onNotifications: applyRemoteEventNotifications,
     });
+  }
 
-    const snapshot = await fetchRemoteSnapshot();
-    if (!snapshot) return;
-
-    syncRemoteResidents(snapshot.residents, snapshot.residentsUpdatedAt);
-
-    const commands = Array.isArray(snapshot.commands) ? snapshot.commands : [];
-    for (const command of commands) {
-      if (command.type !== 'openDoor') continue;
-
-      const registration = registerRemoteCommandExecution(command);
-      let execution = registration.execution;
-      if (!execution) continue;
-
-      if (execution.status === 'completed' && execution.result) {
-        await submitRemoteCommandCompletion(command.id, execution.result);
-        continue;
-      }
-
-      if (registration.conflict || ['executing', 'unknown'].includes(execution.status)) {
-        const unknownResult = {
-          ok: false,
-          confirmed: false,
-          executionId: execution.executionId,
-          executionOutcomeUnknown: true,
-          reason: 'execution-outcome-unknown',
-          error: registration.conflict
-            ? 'executionId local divergiu do servidor; reexecucao bloqueada por seguranca.'
-            : 'O app reiniciou durante a execucao; reexecucao automatica bloqueada por seguranca.',
-          door: Number.parseInt(command.door, 10),
-          at: new Date().toISOString(),
-        };
-        execution = setRemoteCommandExecution(command.id, {
-          status: 'completed',
-          result: unknownResult,
-          completedAt: unknownResult.at,
-        });
-        await submitRemoteCommandCompletion(command.id, execution?.result ?? unknownResult);
-        continue;
-      }
-
-      const door = Number.parseInt(command.door, 10);
-      const acknowledged = await acknowledgeRemoteCommand(
-        command.id,
-        command.leaseId,
-        execution.executionId
+  async function executeRemoteDoor({ door }) {
+    const opened = await actuateDoor(
+      door,
+      `Porta ${door} acionada por comando remoto do sindico.`,
+      'remote-admin',
+    );
+    const occupiedDelivery = lockerStateRef.current.deliveries.find(
+      (delivery) =>
+        delivery.door === door &&
+        ['door_opened_for_dropoff', 'stored', 'pickup_opened'].includes(delivery.status),
+    );
+    const pickupPendingClose = Boolean(
+      opened.ok && occupiedDelivery && ['stored', 'pickup_opened'].includes(occupiedDelivery.status),
+    );
+    if (pickupPendingClose) {
+      commitState((current) =>
+        markPickupDoorOpened(current, occupiedDelivery.id, opened.cycle, {
+          source: 'remote-admin',
+        }),
       );
-      if (!acknowledged) continue;
-
-      if (acknowledged.terminal) {
-        if (acknowledged.command?.result) {
-          setRemoteCommandExecution(command.id, {
-            status: 'completed',
-            result: acknowledged.command.result,
-            completedAt: acknowledged.command.completedAt || new Date().toISOString(),
-          });
-        }
-        continue;
-      }
-
-      if (!Number.isInteger(door) || door < 1 || door > lockerState.deviceConfig.doorCount) {
-        const invalidDoorResult = {
-          ok: false,
-          executionId: execution.executionId,
-          error: 'Porta invalida para este armario.',
-          door: command.door,
-          at: new Date().toISOString(),
-        };
-        setRemoteCommandExecution(command.id, {
-          status: 'completed',
-          result: invalidDoorResult,
-          completedAt: invalidDoorResult.at,
-        });
-        await submitRemoteCommandCompletion(command.id, invalidDoorResult);
-        continue;
-      }
-
-      const executingAt = new Date().toISOString();
-      execution = setRemoteCommandExecution(command.id, {
-        status: 'executing',
-        executingAt,
-      });
-      if (!execution) continue;
-
-      const opened = await actuateDoor(
-        door,
-        `Porta ${door} acionada por comando remoto do sindico.`,
-        'remote-admin'
-      );
-      const occupiedDelivery = lockerStateRef.current.deliveries.find(
-        (delivery) =>
-          delivery.door === door &&
-          ['door_opened_for_dropoff', 'stored', 'pickup_opened'].includes(delivery.status)
-      );
-      const pickupPendingClose = Boolean(
-        opened.ok && occupiedDelivery && ['stored', 'pickup_opened'].includes(occupiedDelivery.status)
-      );
-      if (pickupPendingClose) {
-        commitState((current) =>
-          markPickupDoorOpened(current, occupiedDelivery.id, opened.cycle, {
-            source: 'remote-admin',
-          })
-        );
-      }
-      const completion = {
-        ok: opened.ok,
-        confirmed: opened.confirmed,
-        reason: opened.reason,
-        executionId: execution.executionId,
-        door,
-        releasedDoor: false,
-        releasedDeliveryId: '',
-        pendingPhysicalClose: pickupPendingClose,
-        physicalOpenCycle: opened.cycle ?? null,
-        at: new Date().toISOString(),
-      };
-      setRemoteCommandExecution(command.id, {
-        status: 'completed',
-        result: completion,
-        completedAt: completion.at,
-      });
-      await submitRemoteCommandCompletion(command.id, completion);
     }
+
+    return {
+      ok: opened.ok,
+      confirmed: opened.confirmed,
+      reason: opened.reason,
+      error: opened.error,
+      releasedDoor: false,
+      releasedDeliveryId: '',
+      pendingPhysicalClose: pickupPendingClose,
+      physicalOpenCycle: opened.cycle ?? null,
+    };
+  }
+
+  async function processRemoteBridge() {
+    return edgeAgent.runRemoteCycle({
+      doorCount: lockerState.deviceConfig.doorCount,
+      status: {
+        device: {
+          serialOpen: hardwareInfo.serialOpen,
+          serialPath: hardwareInfo.serialPath,
+          bridgeVersion: hardwareInfo.bridgeVersion,
+          edgeAppVersion: APP_VERSION,
+          board: lockerState.deviceConfig.board,
+          doorCount: lockerState.deviceConfig.doorCount,
+          sensorPolarity: lockerState.deviceConfig.sensorPolarity,
+          unlockTimeoutSeconds: lockerState.deviceConfig.unlockTimeoutSeconds,
+          doorSizes: lockerState.deviceConfig.doorSizes,
+          commissioningStatus: lockerState.deviceConfig.commissioning?.status || 'pending',
+          commissionedAt: lockerState.deviceConfig.commissioning?.completedAt || '',
+          residentCount: lockerState.recipients.length,
+          residentsSyncedAt: lockerState.residentsSyncedAt || '',
+          remoteResidentsRevision: lockerState.remoteResidentsRevision || '',
+        },
+        doors: buildRemoteDoorStatus(),
+        deliveries: buildRemoteDeliveryStatus(),
+      },
+      onResidents: syncRemoteResidents,
+      onNotifications: applyRemoteEventNotifications,
+      onOpenDoor: executeRemoteDoor,
+    });
   }
 
   async function reconcileRemotePickupClosures() {
@@ -2269,43 +1999,11 @@ export default function App() {
     }
   }
 
-  function queueRemoteCompletion(commandId, result) {
-    pendingRemoteCompletionsRef.current = [
-      ...pendingRemoteCompletionsRef.current.filter((item) => item.commandId !== commandId),
-      { commandId, result, attempts: 0, queuedAt: new Date().toISOString(), lastAttemptAt: '' },
-    ].slice(-MAX_PENDING_REMOTE_COMPLETIONS);
-    savePendingRemoteCompletions(pendingRemoteCompletionsRef.current);
-  }
-
-  async function flushPendingRemoteCompletions() {
-    const pending = pendingRemoteCompletionsRef.current;
-    if (pending.length === 0) return;
-
-    const stillPending = [];
-    for (const item of pending) {
-      const attemptedAt = new Date().toISOString();
-      const ok = await completeRemoteCommand(item.commandId, {
-        ...item.result,
-        retriedAt: attemptedAt,
-      });
-      if (!ok && item.attempts < 20) {
-        stillPending.push({ ...item, attempts: item.attempts + 1, lastAttemptAt: attemptedAt });
-      }
-    }
-    pendingRemoteCompletionsRef.current = stillPending;
-    savePendingRemoteCompletions(stillPending);
-  }
-
   useEffect(() => {
     const run = async () => {
-      if (isBusy || remoteInFlightRef.current) return;
-      remoteInFlightRef.current = true;
-      try {
-        await reconcileRemotePickupClosures();
-        await processRemoteBridge();
-      } finally {
-        remoteInFlightRef.current = false;
-      }
+      if (isBusy) return;
+      await reconcileRemotePickupClosures();
+      await processRemoteBridge();
     };
 
     const timer = setInterval(run, 6000);
@@ -2371,7 +2069,7 @@ export default function App() {
               </button>
             ) : (
               <div className="pill-row">
-                <Pill>{Serial.isNative() ? 'Modo nativo no locker' : 'Modo simulacao web'}</Pill>
+                <Pill>{edgeAgent.isNative() ? 'Modo nativo no locker' : 'Modo simulacao web'}</Pill>
                 <Pill tone={hardwareInfo.serialOpen ? '' : 'danger'}>
                   {hardwareInfo.serialOpen ? `Serial ${hardwareInfo.serialPath}` : 'Serial indisponivel'}
                 </Pill>

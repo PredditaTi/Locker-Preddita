@@ -174,7 +174,7 @@ cd web
 $env:VITE_PREDDITA_REMOTE_URL="https://locker.example.com"
 $env:VITE_PREDDITA_LOCKER_ID="ks1062-aurora"
 $env:VITE_PREDDITA_DEVICE_AUTH_MODE="hmac"
-$env:VITE_PREDDITA_EDGE_APP_VERSION="2.0.20-lab"
+$env:VITE_PREDDITA_EDGE_APP_VERSION="2.0.21-lab"
 npm run build
 Remove-Item Env:VITE_PREDDITA_REMOTE_URL
 Remove-Item Env:VITE_PREDDITA_LOCKER_ID

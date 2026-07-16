@@ -81,6 +81,7 @@ jobs:
           node scripts/v2-workflow-test.mjs
           node scripts/v2-device-event-journal-test.mjs
           node scripts/v2-remote-command-journal-test.mjs
+          node scripts/v2-edge-agent-contract-test.mjs
           node scripts/v2-qr-scanner-test.mjs
           node scripts/v2-serial-protocol-test.mjs
           node scripts/v2-door-safety-test.mjs

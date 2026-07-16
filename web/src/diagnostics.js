@@ -12,12 +12,12 @@
  * via reserveDelivery/confirmDeposit puros. Sensor e firmware sao reais.
  */
 
-import Serial, {
+import edgeAgent, {
   normalizeSensorPolarity,
   parseHexFrame,
   parseResponse,
   validateFrame,
-} from './serial.js';
+} from './edgeAgent.js';
 import {
   cancelDelivery,
   confirmDeposit,
@@ -29,10 +29,6 @@ import {
   reserveDelivery,
   resolvePickupRequest,
 } from './lockerWorkflow.js';
-import {
-  fetchRemoteSnapshot,
-  publishRemoteStatus,
-} from './remoteBridge.js';
 
 const PROFILE = 'manual2025';
 const HARDWARE_PROBE_LIMIT = 3; // numero de portas individuais a sondar
@@ -146,16 +142,16 @@ async function suiteHardware(runner, options) {
   runner.suite('1. Hardware (leitura real)');
 
   await runner.test('Serial bridge esta ativa', async () => {
-    if (!Serial.isNative()) {
+    if (!edgeAgent.isNative()) {
       throw new Error('rodando em modo simulacao web — abra dentro do app no armario');
     }
-    const info = Serial.getHardwareInfo();
+    const info = edgeAgent.getHardwareInfo();
     if (!info.serialOpen) throw new Error(`serial fechada: ${info.lastSerialError || 'sem motivo'}`);
     return `path=${info.serialPath} bridge=${info.bridgeVersion}`;
   });
 
   await runner.test('queryFirmware da placa responde com BCC valido', async () => {
-    const r = await Serial.queryFirmware(options.board, PROFILE);
+    const r = await edgeAgent.queryFirmware(options.board, PROFILE);
     if (!r.ok) throw new Error(`falhou: ${r.error}`);
     const bytes = parseHexFrame(r.hex);
     if (bytes.length < 5) throw new Error(`frame curto: ${r.hex}`);
@@ -164,7 +160,7 @@ async function suiteHardware(runner, options) {
   });
 
   await runner.test('readAll devolve packed states de todas as portas', async () => {
-    const r = await Serial.readAll(options.board, PROFILE);
+    const r = await edgeAgent.readAll(options.board, PROFILE);
     if (!r.ok) throw new Error(`falhou: ${r.error}`);
     const parsed = parseResponse(r.hex, { sensorPolarity: options.sensorPolarity });
     if (!parsed) throw new Error('resposta nao parseada');
@@ -180,7 +176,7 @@ async function suiteHardware(runner, options) {
     const limit = Math.min(HARDWARE_PROBE_LIMIT, options.doorCount || HARDWARE_PROBE_LIMIT);
     const responses = [];
     for (let ch = 1; ch <= limit; ch += 1) {
-      const r = await Serial.readStatus(options.board, ch, PROFILE);
+      const r = await edgeAgent.readStatus(options.board, ch, PROFILE);
       if (r.ok) {
         const parsed = parseResponse(r.hex, { sensorPolarity: options.sensorPolarity });
         responses.push(`ch${ch}=${parsed?.state ?? parsed?.type ?? '??'}`);
@@ -195,7 +191,7 @@ async function suiteHardware(runner, options) {
   });
 
   await runner.test('Numero de portas reportado bate com config', async () => {
-    const r = await Serial.readAll(options.board, PROFILE);
+    const r = await edgeAgent.readAll(options.board, PROFILE);
     const parsed = r.ok
       ? parseResponse(r.hex, { sensorPolarity: options.sensorPolarity })
       : null;
@@ -397,7 +393,7 @@ async function suiteRemote(runner, options) {
 
   let snapshot = null;
   await runner.test('fetchRemoteSnapshot conecta no admin', async () => {
-    snapshot = await fetchRemoteSnapshot();
+    snapshot = await edgeAgent.fetchRemoteSnapshot();
     if (!snapshot) {
       throw new Error('admin nao respondeu (verifique device-key, base URL e rede)');
     }
@@ -420,9 +416,9 @@ async function suiteRemote(runner, options) {
   });
 
   await runner.test('publishRemoteStatus envia status do device', async () => {
-    const info = Serial.getHardwareInfo();
+    const info = edgeAgent.getHardwareInfo();
     const ok = await Promise.race([
-      publishRemoteStatus({
+      edgeAgent.publishRemoteStatus({
         device: {
           online: true,
           serialOpen: info.serialOpen,

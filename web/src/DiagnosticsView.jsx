@@ -1,10 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import CommissioningPanel from './CommissioningPanel.jsx';
 import { runDiagnostics, summarize } from './diagnostics.js';
-import {
-  getNativeDeviceAuthStatus,
-  openNativeDeviceProvisioning,
-} from './remoteBridge.js';
+import edgeAgent from './edgeAgent.js';
 
 /**
  * Tela de diagnostico embutida.
@@ -18,7 +15,7 @@ export default function DiagnosticsView({ lockerState, onClose, onCommissioningC
   const [suites, setSuites] = useState([]);
   const [startedAt, setStartedAt] = useState(null);
   const [finishedAt, setFinishedAt] = useState(null);
-  const [deviceAuth, setDeviceAuth] = useState(() => getNativeDeviceAuthStatus());
+  const [deviceAuth, setDeviceAuth] = useState(() => edgeAgent.getNativeDeviceAuthStatus());
   const reportRef = useRef(null);
 
   const summary = useMemo(() => summarize(suites), [suites]);
@@ -27,7 +24,7 @@ export default function DiagnosticsView({ lockerState, onClose, onCommissioningC
     : (running ? 'running' : 'idle');
 
   useEffect(() => {
-    const refresh = () => setDeviceAuth(getNativeDeviceAuthStatus());
+    const refresh = () => setDeviceAuth(edgeAgent.getNativeDeviceAuthStatus());
     window.addEventListener('preddita-device-auth-changed', refresh);
     window.addEventListener('focus', refresh);
     return () => {
@@ -163,7 +160,7 @@ export default function DiagnosticsView({ lockerState, onClose, onCommissioningC
           className="diagnostic-provision"
           type="button"
           disabled={!deviceAuth.available}
-          onClick={openNativeDeviceProvisioning}
+          onClick={() => edgeAgent.openNativeDeviceProvisioning()}
         >
           {deviceAuth.provisioned ? 'Rotacionar credencial' : 'Provisionar conexao'}
         </button>
