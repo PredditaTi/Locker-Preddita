@@ -42,7 +42,7 @@ Saída esperada (exemplo abreviado):
 Base:      https://locker.example.com
 ...
 -- 1. Health & contrato (read-only)
-  PASS GET /api/healthz responde 200 — appVersion=2.0.19-lab schemaVersion=9
+  PASS GET /api/healthz responde 200 — appVersion=2.0.20-lab schemaVersion=10
   PASS GET admin/state com sessao de sindico devolve estado completo — 24 portas, 3 apartamentos, 0 entregas
   ...
 -- 4. Seguranca / autorizacao (gera 401/429)

@@ -132,6 +132,37 @@ create table if not exists preddita_audit_events (
 create index if not exists idx_preddita_audit_events_locker_time
   on preddita_audit_events (tenant_id, locker_id, occurred_at desc);
 
+create table if not exists preddita_operational_logs (
+  log_id text primary key,
+  occurred_at timestamptz not null,
+  level text not null,
+  event text not null,
+  message text not null default '',
+  tenant_id text not null default '',
+  locker_id text not null default '',
+  request_id text not null default '',
+  actor text not null default '',
+  source text not null default 'server',
+  http_method text not null default '',
+  http_path text not null default '',
+  status_code integer,
+  duration_ms integer,
+  context jsonb not null default '{}'::jsonb
+);
+
+create index if not exists idx_preddita_operational_logs_scope_time
+  on preddita_operational_logs (tenant_id, locker_id, occurred_at desc, log_id desc);
+
+create index if not exists idx_preddita_operational_logs_event_time
+  on preddita_operational_logs (event, occurred_at desc);
+
+create index if not exists idx_preddita_operational_logs_level_time
+  on preddita_operational_logs (level, occurred_at desc);
+
+create index if not exists idx_preddita_operational_logs_request
+  on preddita_operational_logs (request_id)
+  where request_id <> '';
+
 create table if not exists preddita_admin_users (
   username text primary key,
   user_id text not null,

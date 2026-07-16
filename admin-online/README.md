@@ -59,6 +59,11 @@ O servidor agora tem dois modos:
 - `PREDDITA_STORAGE=postgres`: modo recomendado para producao, usa a tabela
   `preddita_locker_states` com chave primaria `tenant_id + locker_id`.
 
+Logs tecnicos ficam em `operational-logs.jsonl` no modo JSON e na tabela
+`preddita_operational_logs` no modo Postgres. A retencao e configurada por
+`PREDDITA_OPERATIONAL_LOG_RETENTION_DAYS` (30 dias por padrao); somente suporte
+e Admin Geral podem consultar ou exportar esses registros sanitizados.
+
 Exemplo Postgres:
 
 ```powershell

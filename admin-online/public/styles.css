@@ -39,7 +39,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -445,6 +446,7 @@ input:focus {
 }
 
 .view-root {
+  min-width: 0;
   min-height: 0;
   overflow: auto;
   padding-right: 4px;
@@ -819,6 +821,157 @@ input:focus {
   margin-top: 12px;
 }
 
+.operational-log-view {
+  min-width: 0;
+  display: grid;
+  gap: 14px;
+}
+
+.operational-log-filters {
+  display: grid;
+  gap: 12px;
+}
+
+.log-filter-grid {
+  display: grid;
+  grid-template-columns: 0.75fr 0.85fr 1fr 1.5fr;
+  gap: 10px;
+}
+
+.log-filter-actions,
+.log-pagination {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.log-filter-actions .small {
+  margin-left: auto;
+}
+
+.operational-log-list {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-strong);
+}
+
+.operational-log-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 190px) minmax(0, 1fr);
+  min-height: 108px;
+  border-left: 4px solid #5d7892;
+  border-bottom: 1px solid var(--line);
+}
+
+.operational-log-row:last-child {
+  border-bottom: 0;
+}
+
+.operational-log-row.is-info {
+  border-left-color: var(--accent);
+}
+
+.operational-log-row.is-warn {
+  border-left-color: #d18712;
+}
+
+.operational-log-row.is-error {
+  border-left-color: var(--danger);
+  background: #fffafa;
+}
+
+.operational-log-time,
+.operational-log-main {
+  padding: 14px;
+}
+
+.operational-log-time {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  border-right: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.log-level {
+  width: fit-content;
+  padding: 3px 7px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--ink);
+  background: #ffffff;
+  font-weight: 900;
+}
+
+.operational-log-main {
+  min-width: 0;
+}
+
+.operational-log-main p {
+  margin: 8px 0;
+}
+
+.operational-log-heading,
+.operational-log-meta {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px 12px;
+  flex-wrap: wrap;
+}
+
+.operational-log-heading {
+  justify-content: space-between;
+}
+
+.operational-log-heading strong,
+.operational-log-meta code,
+.operational-log-meta span {
+  overflow-wrap: anywhere;
+}
+
+.operational-log-meta {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.operational-log-meta code {
+  color: var(--ink);
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+}
+
+.operational-log-context {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.operational-log-context summary {
+  cursor: pointer;
+  font-weight: 850;
+}
+
+.operational-log-context pre {
+  max-width: 100%;
+  overflow: auto;
+  margin: 8px 0 0;
+  padding: 10px;
+  border-radius: 6px;
+  background: #f3f7fb;
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.log-pagination {
+  justify-content: center;
+}
+
 .empty {
   padding: 28px;
   border-radius: 24px;
@@ -837,6 +990,10 @@ input:focus {
   .content-shell {
     min-width: 0;
     width: 100%;
+  }
+
+  .content-shell {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .sidebar {
@@ -875,9 +1032,68 @@ input:focus {
   .delivery-meta-grid {
     grid-template-columns: 1fr;
   }
+
+  .log-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 560px) {
+  .admin-app {
+    padding: 10px;
+    gap: 12px;
+  }
+
+  .sidebar,
+  .content-shell {
+    border-radius: 20px;
+  }
+
+  .sidebar {
+    padding: 16px;
+  }
+
+  .content-shell {
+    padding: 14px;
+  }
+
+  .nav-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .nav-button {
+    min-width: 0;
+    padding: 8px 10px;
+    overflow-wrap: anywhere;
+  }
+
+  .topbar {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .topbar > div {
+    min-width: 0;
+  }
+
+  #view-title {
+    font-size: 1.55rem;
+    line-height: 1.08;
+  }
+
+  .top-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  #device-status {
+    max-width: calc(100% - 104px);
+    height: auto;
+    padding: 7px 10px;
+    text-align: left;
+    white-space: normal;
+  }
+
   .auth-shell {
     align-items: start;
     padding: 12px;
@@ -896,5 +1112,20 @@ input:focus {
   .recovery-codes ul,
   .recovery-actions {
     grid-template-columns: 1fr;
+  }
+
+  .log-filter-grid,
+  .operational-log-row {
+    grid-template-columns: 1fr;
+  }
+
+  .operational-log-time {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .log-filter-actions .small {
+    width: 100%;
+    margin-left: 0;
   }
 }

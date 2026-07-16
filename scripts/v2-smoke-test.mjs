@@ -13,7 +13,7 @@ const SINDICO_PASSWORD = 'v2-sindico-password';
 const OPERATOR_PASSWORD = 'v2-operator-password';
 const SUPER_ADMIN_PASSWORD = 'v2-super-admin-password';
 const DEVICE_KEY = 'v2-device-test-key';
-const EXPECTED_ADMIN_VERSION = '2.0.19-lab';
+const EXPECTED_ADMIN_VERSION = '2.0.20-lab';
 const PORT = 9897;
 const DATA_DIR = mkdtempSync(join(tmpdir(), 'preddita-v2-smoke-'));
 const ADMIN_USERS = JSON.stringify([
@@ -261,6 +261,9 @@ try {
   if (unauthorized.response.status !== 401) {
     throw new Error('Admin sem sessao deveria receber 401.');
   }
+  if (!unauthorized.response.headers.get('x-request-id')) {
+    throw new Error('Respostas da API deveriam expor um identificador de requisicao.');
+  }
 
   const legacyAdminToken = await request('/api/admin/state', {
     headers: { 'x-admin-token': 'v2-admin-test-token' },
@@ -289,6 +292,47 @@ try {
   const superState = await requestOk('/api/admin/state', { headers: superAdminHeaders });
   if (superState.state.session?.role !== 'super_admin' || !superState.state.platform?.lockers?.length) {
     throw new Error('Sessao PREDDITA deveria abrir o Admin Geral com resumo de armarios.');
+  }
+  if (
+    superState.state.runtime?.operationalLogStorage !== 'jsonl'
+    || superState.state.runtime?.operationalLogSchemaVersion !== 1
+  ) {
+    throw new Error('Runtime JSON deveria informar o armazenamento dos logs operacionais.');
+  }
+
+  const restrictedLogs = await request('/api/admin/logs', { headers: adminHeaders });
+  if (restrictedLogs.response.status !== 403) {
+    throw new Error('Sindico nao deveria consultar logs operacionais.');
+  }
+  const loginLogs = await requestOk('/api/admin/logs?event=admin-login&limit=2', {
+    headers: superAdminHeaders,
+  });
+  if (!loginLogs.logs.length || loginLogs.logs.some((log) => !log.event.includes('admin-login'))) {
+    throw new Error('Admin Geral deveria filtrar logs estruturados por evento.');
+  }
+  const warningLogs = await requestOk('/api/admin/logs?level=warn&event=admin-login-rejected', {
+    headers: superAdminHeaders,
+  });
+  if (warningLogs.logs[0]?.event !== 'admin-login-rejected') {
+    throw new Error('Tentativa de login recusada deveria gerar log de alerta.');
+  }
+  const allOperationalLogs = await requestOk('/api/admin/logs?limit=200', {
+    headers: superAdminHeaders,
+  });
+  const serializedOperationalLogs = JSON.stringify(allOperationalLogs.logs);
+  if (
+    serializedOperationalLogs.includes('senha-invalida')
+    || serializedOperationalLogs.includes(SUPER_ADMIN_PASSWORD)
+    || serializedOperationalLogs.includes(DEVICE_KEY)
+  ) {
+    throw new Error('Logs operacionais nao podem expor credenciais.');
+  }
+  const operationalLogsCsv = await fetch(
+    `http://127.0.0.1:${PORT}/api/admin/export/logs.csv?event=admin-login`,
+    { headers: superAdminHeaders }
+  ).then((response) => response.text());
+  if (!operationalLogsCsv.includes('occurredAt;level;event') || !operationalLogsCsv.includes('admin-login')) {
+    throw new Error('Exportacao CSV deveria respeitar os filtros de logs operacionais.');
   }
 
   const adminWithoutCsrf = await request('/api/admin/residents', {

@@ -86,15 +86,16 @@ Solucoes maduras de smart lockers se posicionam como plataformas completas, nao 
   com indices, escrita atomica e backfill automatico dos snapshots anteriores.
 - Comandos transacionais por linha no Postgres, com bloqueio, revisao, unicidade
   por porta ativa e `executionId`, retry e smoke concorrente entre duas replicas.
+- Logs tecnicos estruturados em JSONL/Postgres, com `requestId`, filtros,
+  paginacao, exportacao CSV, retencao e sanitizacao de segredos e dados pessoais.
 
 ## Proximas melhorias recomendadas
 
-1. Implementar logs estruturados e exportaveis.
-2. Separar `Edge Agent` e `Kiosk UI`.
-3. Criar fluxo de atualizacao remota do APK.
-4. Trocar polling por AWS IoT Core/MQTT.
-5. Adicionar testes de contrato da API e testes de fluxo do kiosk.
-6. Criar LGPD/data-retention: CPF, telefone, e-mail, auditoria e expiracao de entregas.
+1. Separar `Edge Agent` e `Kiosk UI`.
+2. Criar fluxo de atualizacao remota do APK.
+3. Trocar polling por AWS IoT Core/MQTT.
+4. Adicionar testes de contrato da API e testes de fluxo do kiosk.
+5. Criar LGPD/data-retention: CPF, telefone, e-mail, auditoria e expiracao de entregas.
 
 ## Criterio de produto para ficar competitivo
 

@@ -15,6 +15,14 @@ const state = {
   trackingCommand: null,
   mfa: null,
   recoveryCodes: [],
+  operationalLogs: {
+    items: [],
+    nextCursor: '',
+    loading: false,
+    loaded: false,
+    retentionDays: 30,
+    filters: { level: '', source: '', event: '', query: '' },
+  },
 };
 
 const root = document.querySelector('#view-root');
@@ -72,6 +80,7 @@ const NAV_BY_ROLE = {
     ['doors', 'Portas'],
     ['deliveries', 'Entregas'],
     ['audit', 'Auditoria'],
+    ['logs', 'Logs'],
     ['system', 'Sistema'],
   ],
   super_admin: [
@@ -81,6 +90,7 @@ const NAV_BY_ROLE = {
     ['residents', 'Apartamentos'],
     ['deliveries', 'Entregas'],
     ['audit', 'Auditoria'],
+    ['logs', 'Logs'],
     ['system', 'Sistema'],
   ],
 };
@@ -506,6 +516,42 @@ function setView(view) {
   if (!roleNavItems().some(([allowedView]) => allowedView === view)) return;
   state.view = view;
   render();
+  if (view === 'logs' && !state.operationalLogs.loaded) {
+    void loadOperationalLogs().catch((error) => showMessage(error.message, true));
+  }
+}
+
+function operationalLogQuery(options = {}) {
+  const filters = state.operationalLogs.filters;
+  const params = new URLSearchParams();
+  const lockerId = state.data?.tenant?.lockerId;
+  if (lockerId) params.set('lockerId', lockerId);
+  if (filters.level) params.set('level', filters.level);
+  if (filters.source) params.set('source', filters.source);
+  if (filters.event) params.set('event', filters.event);
+  if (filters.query) params.set('q', filters.query);
+  if (options.cursor) params.set('cursor', options.cursor);
+  if (options.limit) params.set('limit', options.limit);
+  return params.toString();
+}
+
+async function loadOperationalLogs(options = {}) {
+  if (!session().canViewOperationalLogs || state.operationalLogs.loading) return;
+  state.operationalLogs.loading = true;
+  if (state.view === 'logs') renderLogs();
+  try {
+    const cursor = options.append ? state.operationalLogs.nextCursor : '';
+    const payload = await api(`/api/admin/logs?${operationalLogQuery({ cursor, limit: 50 })}`);
+    state.operationalLogs.items = options.append
+      ? [...state.operationalLogs.items, ...(payload.logs || [])]
+      : payload.logs || [];
+    state.operationalLogs.nextCursor = payload.nextCursor || '';
+    state.operationalLogs.retentionDays = payload.retentionDays || 30;
+    state.operationalLogs.loaded = true;
+  } finally {
+    state.operationalLogs.loading = false;
+    if (state.view === 'logs') renderLogs();
+  }
 }
 
 function getResidentFormValues(form) {
@@ -899,6 +945,115 @@ function renderAudit() {
   `;
 }
 
+function operationalLogLevelLabel(level) {
+  return {
+    debug: 'Debug',
+    info: 'Info',
+    warn: 'Alerta',
+    error: 'Erro',
+  }[level] || level || 'Info';
+}
+
+function operationalLogDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value || '--' : date.toLocaleString('pt-BR');
+}
+
+function renderLogs() {
+  title.textContent = 'Logs operacionais';
+  if (!session().canViewOperationalLogs) {
+    root.innerHTML = '<section class="panel"><h3>Acesso restrito</h3><p class="muted">Esta area e reservada ao suporte PREDDITA.</p></section>';
+    return;
+  }
+  const logState = state.operationalLogs;
+  const filters = logState.filters;
+  root.innerHTML = `
+    <div class="operational-log-view">
+      <form class="panel operational-log-filters" id="operational-log-filters">
+        <div class="log-filter-grid">
+          <label class="field">
+            <span class="field-label">Severidade</span>
+            <select class="text-input" name="level">
+              <option value="">Todas</option>
+              ${['debug', 'info', 'warn', 'error'].map((level) => `
+                <option value="${level}" ${filters.level === level ? 'selected' : ''}>${operationalLogLevelLabel(level)}</option>
+              `).join('')}
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">Origem</span>
+            <select class="text-input" name="source">
+              <option value="">Todas</option>
+              ${[
+                ['server', 'Servidor'],
+                ['admin', 'Painel'],
+                ['device', 'Armario'],
+                ['worker', 'Processos'],
+              ].map(([value, label]) => `
+                <option value="${value}" ${filters.source === value ? 'selected' : ''}>${label}</option>
+              `).join('')}
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">Evento</span>
+            <input class="text-input" name="event" value="${escapeHtml(filters.event)}" placeholder="admin-login" />
+          </label>
+          <label class="field">
+            <span class="field-label">Busca</span>
+            <input class="text-input" name="query" value="${escapeHtml(filters.query)}" placeholder="Rota, mensagem ou requisicao" />
+          </label>
+        </div>
+        <div class="log-filter-actions">
+          <button class="primary-button" type="submit" ${logState.loading ? 'disabled' : ''}>Aplicar</button>
+          <button class="ghost-button" type="button" data-clear-log-filters>Limpar</button>
+          <button class="ghost-button" type="button" data-export="logs">Exportar CSV</button>
+          <span class="small">Retencao: ${escapeHtml(logState.retentionDays)} dias</span>
+        </div>
+      </form>
+
+      <section class="operational-log-list" aria-live="polite">
+        ${logState.items.map((log) => `
+          <article class="operational-log-row is-${escapeHtml(log.level)}">
+            <div class="operational-log-time">
+              <strong>${escapeHtml(operationalLogDate(log.occurredAt))}</strong>
+              <span class="log-level">${escapeHtml(operationalLogLevelLabel(log.level))}</span>
+            </div>
+            <div class="operational-log-main">
+              <div class="operational-log-heading">
+                <strong>${escapeHtml(log.event)}</strong>
+                <span class="small">${escapeHtml(log.source)}${log.actor ? ` · ${escapeHtml(log.actor)}` : ''}</span>
+              </div>
+              <p>${escapeHtml(log.message || '--')}</p>
+              <div class="operational-log-meta">
+                ${log.httpPath ? `<code>${escapeHtml(`${log.httpMethod || ''} ${log.httpPath}`.trim())}</code>` : ''}
+                ${log.statusCode ? `<span>HTTP ${escapeHtml(log.statusCode)}</span>` : ''}
+                ${Number.isFinite(log.durationMs) ? `<span>${escapeHtml(log.durationMs)} ms</span>` : ''}
+                ${log.requestId ? `<span>${escapeHtml(log.requestId)}</span>` : ''}
+              </div>
+              ${Object.keys(log.context || {}).length ? `
+                <details class="operational-log-context">
+                  <summary>Contexto</summary>
+                  <pre>${escapeHtml(JSON.stringify(log.context, null, 2))}</pre>
+                </details>
+              ` : ''}
+            </div>
+          </article>
+        `).join('') || (logState.loading
+          ? '<div class="empty">Carregando registros...</div>'
+          : '<div class="empty">Nenhum registro encontrado.</div>')}
+      </section>
+
+      ${logState.nextCursor ? `
+        <div class="log-pagination">
+          <button class="ghost-button" data-load-more-logs ${logState.loading ? 'disabled' : ''}>
+            ${logState.loading ? 'Carregando...' : 'Carregar mais antigos'}
+          </button>
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
 function renderSystem() {
   title.textContent = 'Sistema';
   if (!session().canViewSecurity) {
@@ -940,6 +1095,7 @@ function render() {
   if (state.view === 'residents') renderResidents();
   if (state.view === 'deliveries') renderDeliveries();
   if (state.view === 'audit') renderAudit();
+  if (state.view === 'logs') renderLogs();
   if (state.view === 'system') renderSystem();
 }
 
@@ -992,10 +1148,23 @@ document.addEventListener('click', async (event) => {
       residents: ['/api/admin/export/residents.csv', 'preddita-apartamentos.csv'],
       deliveries: ['/api/admin/export/deliveries.csv', 'preddita-entregas.csv'],
       audit: ['/api/admin/export/audit.csv', 'preddita-auditoria.csv'],
+      logs: [`/api/admin/export/logs.csv?${operationalLogQuery()}`, 'preddita-logs-operacionais.csv'],
     };
     const target = map[kind];
     if (!target) return;
     await downloadAdminFile(target[0], target[1]).catch((error) => showMessage(error.message, true));
+    return;
+  }
+
+  if (event.target.closest('[data-clear-log-filters]')) {
+    state.operationalLogs.filters = { level: '', source: '', event: '', query: '' };
+    state.operationalLogs.loaded = false;
+    await loadOperationalLogs().catch((error) => showMessage(error.message, true));
+    return;
+  }
+
+  if (event.target.closest('[data-load-more-logs]')) {
+    await loadOperationalLogs({ append: true }).catch((error) => showMessage(error.message, true));
     return;
   }
 
@@ -1135,6 +1304,19 @@ document.addEventListener('submit', async (event) => {
     }
     showAdmin();
     await loadState().catch((error) => showMessage(error.message, true));
+    return;
+  }
+  if (event.target.id === 'operational-log-filters') {
+    event.preventDefault();
+    const values = Object.fromEntries(new FormData(event.target).entries());
+    state.operationalLogs.filters = {
+      level: String(values.level || ''),
+      source: String(values.source || ''),
+      event: String(values.event || '').trim(),
+      query: String(values.query || '').trim(),
+    };
+    state.operationalLogs.loaded = false;
+    await loadOperationalLogs().catch((error) => showMessage(error.message, true));
     return;
   }
   if (!event.target.matches('.resident-form')) return;
