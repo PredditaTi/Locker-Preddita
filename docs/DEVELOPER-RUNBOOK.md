@@ -64,7 +64,20 @@ node scripts\v2-door-safety-test.mjs
 node scripts\v2-commissioning-test.mjs
 node scripts\CommandWakeupTest.mjs
 node scripts\IotCommandBusTest.mjs
+node scripts\v2-api-contract-test.mjs
 ```
+
+Fluxo completo de deposito e retirada no navegador:
+
+```powershell
+cd web
+npx playwright install chromium
+npm run build
+npm run test:e2e
+```
+
+O teste E2E serve o mesmo bundle copiado para os assets Android. Consulte
+`docs/API-CONTRACTS-E2E.md` para o contrato coberto e os artefatos de falha.
 
 O teste nativo `scripts\Rs485FrameParserTest.java` tambem roda dentro de
 `scripts\v2-verify.ps1` usando o JDK 17.
@@ -119,7 +132,7 @@ Bateria completa:
 powershell -ExecutionPolicy Bypass -File .\scripts\v2-verify.ps1
 ```
 
-Se quiser pular o build web na verificacao completa:
+Se quiser pular o build web e o E2E Playwright na verificacao completa:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\v2-verify.ps1 -SkipBuild
@@ -176,7 +189,7 @@ cd web
 $env:VITE_PREDDITA_REMOTE_URL="https://locker.example.com"
 $env:VITE_PREDDITA_LOCKER_ID="ks1062-aurora"
 $env:VITE_PREDDITA_DEVICE_AUTH_MODE="hmac"
-$env:VITE_PREDDITA_EDGE_APP_VERSION="2.0.23-lab"
+$env:VITE_PREDDITA_EDGE_APP_VERSION="2.0.24-lab"
 npm run build
 Remove-Item Env:VITE_PREDDITA_REMOTE_URL
 Remove-Item Env:VITE_PREDDITA_LOCKER_ID
@@ -215,7 +228,7 @@ Ver versao instalada:
 
 `2.0.22-lab` introduz o bridge nativo do atualizador. Instale essa versao uma
 vez por ADB em cada equipamento existente; o rollout remoto passa a valer para
-`versionCode 23` e superiores.
+`versionCode 24` e superiores.
 
 1. Incremente `versionCode` e `versionName` em `android/app/build.gradle`.
 2. Mescle a versao validada na `main` e execute `Release APK` com o canal

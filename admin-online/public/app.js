@@ -1182,13 +1182,13 @@ function renderUpdates() {
             <input name="rolloutPercentage" type="number" min="0" max="100" step="1" value="${escapeHtml(policy.rolloutPercentage ?? 0)}" required>
           </label>
           <label>Release
-            <input name="releaseId" maxlength="120" value="${escapeHtml(policy.releaseId || '')}" placeholder="v2.0.23-lab">
+            <input name="releaseId" maxlength="120" value="${escapeHtml(policy.releaseId || '')}" placeholder="v2.0.24-lab">
           </label>
           <label>Version code
-            <input name="versionCode" type="number" min="1" max="2147483647" step="1" value="${escapeHtml(policy.versionCode || '')}" placeholder="23">
+            <input name="versionCode" type="number" min="1" max="2147483647" step="1" value="${escapeHtml(policy.versionCode || '')}" placeholder="24">
           </label>
           <label>Version name
-            <input name="versionName" maxlength="80" value="${escapeHtml(policy.versionName || '')}" placeholder="2.0.23-lab">
+            <input name="versionName" maxlength="80" value="${escapeHtml(policy.versionName || '')}" placeholder="2.0.24-lab">
           </label>
           <label class="update-field-wide">URL HTTPS do APK
             <input name="apkUrl" type="url" maxlength="2048" value="${escapeHtml(policy.apkUrl || '')}" placeholder="https://github.com/.../PREDDITA-Locker.apk">

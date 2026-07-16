@@ -8,9 +8,10 @@ O repositorio possui dois workflows:
 - `Release APK`: gera manualmente um APK release assinado e seu SHA-256 e os
   publica em um GitHub Release imutavel.
 
-O CI usa Node.js 20, Java 17, Android SDK 34 e Postgres 16. Ele executa os
-testes JavaScript, o smoke Postgres, o parser Java RS-485, auditorias de
-dependencias, o build Vite e `assembleDebug`.
+O CI usa Node.js 20.19, Java 17, Android SDK 34 e Postgres 16. Ele executa os
+testes JavaScript, contrato consumidor-servidor, smoke Postgres, fluxo E2E em
+Chromium, parser Java RS-485, auditorias de dependencias, build Vite e
+`assembleDebug`.
 
 ## Secrets obrigatorios para release
 
