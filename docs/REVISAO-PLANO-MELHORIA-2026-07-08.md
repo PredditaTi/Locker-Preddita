@@ -179,6 +179,20 @@ Validacao do segundo lote:
 - MFA permanece como proxima camada para `super_admin` e `suporte`.
 - Versao atualizada para `2.0.16-lab` e `versionCode 16`.
 
+### MFA de contas privilegiadas em 2026-07-15
+
+- `super_admin` e `suporte` passaram a exigir TOTP antes da criacao da sessao.
+- O primeiro login apresenta QR e chave manual; a confirmacao entrega dez
+  codigos de recuperacao de uso unico.
+- Segredos TOTP ficam cifrados com AES-256-GCM e chave externa de 32 bytes;
+  desafios ficam somente como SHA-256 no Postgres, expiram em cinco minutos e
+  aceitam no maximo cinco tentativas.
+- A verificacao transacional persiste o ultimo passo TOTP aceito para impedir
+  replay entre processos e remove atomicamente cada codigo de recuperacao usado.
+- O smoke Postgres cobre cadastro, reinicio, TOTP, replay, recuperacao, reuso e
+  rotacao de senha; a interface foi validada em desktop e 390 px.
+- Versao atualizada para `2.0.17-lab` e `versionCode 17`.
+
 Primeiro pacote de Fase 0 aplicado apos esta revisao:
 
 - `admin-online`: `nodemailer` atualizado para versao sem vulnerabilidades no

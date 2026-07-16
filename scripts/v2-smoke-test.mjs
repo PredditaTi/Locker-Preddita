@@ -13,7 +13,7 @@ const SINDICO_PASSWORD = 'v2-sindico-password';
 const OPERATOR_PASSWORD = 'v2-operator-password';
 const SUPER_ADMIN_PASSWORD = 'v2-super-admin-password';
 const DEVICE_KEY = 'v2-device-test-key';
-const EXPECTED_ADMIN_VERSION = '2.0.16-lab';
+const EXPECTED_ADMIN_VERSION = '2.0.17-lab';
 const PORT = 9897;
 const DATA_DIR = mkdtempSync(join(tmpdir(), 'preddita-v2-smoke-'));
 const ADMIN_USERS = JSON.stringify([
@@ -180,6 +180,45 @@ async function assertProductionRejectsMissingAdminUsers() {
   }
 }
 
+async function assertProductionRejectsMissingMfaKey() {
+  const child = spawn(process.execPath, [SERVER_PATH], {
+    cwd: ADMIN_DIR,
+    env: {
+      ...process.env,
+      NODE_ENV: 'production',
+      PORT: String(PORT + 3),
+      PREDDITA_DATA_DIR: DATA_DIR,
+      PREDDITA_STORAGE: 'postgres',
+      PREDDITA_DATABASE_URL: 'postgresql://localhost/preddita-startup-check',
+      PREDDITA_ALLOWED_ORIGINS: 'https://locker.example.com',
+      PREDDITA_ADMIN_USERS: ADMIN_USERS,
+      PREDDITA_MFA_ENCRYPTION_KEY: '',
+      PREDDITA_DEVICE_KEY: DEVICE_KEY,
+      PREDDITA_DEVICE_KEYS: JSON.stringify({ 'ks1062-aurora': DEVICE_KEY }),
+      PREDDITA_DEVICE_AUTH_MODE: 'hmac',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let output = '';
+  child.stdout.on('data', (chunk) => { output += chunk.toString(); });
+  child.stderr.on('data', (chunk) => { output += chunk.toString(); });
+
+  const exitCode = await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error('Servidor sem chave MFA nao encerrou no startup.'));
+    }, 3000);
+    child.once('exit', (code) => {
+      clearTimeout(timer);
+      resolve(code);
+    });
+  });
+
+  if (exitCode === 0 || !output.includes('PREDDITA_MFA_ENCRYPTION_KEY deve ser definido em producao')) {
+    throw new Error('Producao deveria falhar no startup sem a chave de criptografia MFA.');
+  }
+}
+
 const server = spawn(process.execPath, [SERVER_PATH], {
   cwd: ADMIN_DIR,
   env: {
@@ -210,6 +249,7 @@ server.stderr.on('data', (chunk) => {
 try {
   await assertProductionRejectsLegacyAuth();
   await assertProductionRejectsMissingAdminUsers();
+  await assertProductionRejectsMissingMfaKey();
   await waitForServer();
 
   const health = await requestOk('/api/healthz');

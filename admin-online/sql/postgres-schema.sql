@@ -52,3 +52,27 @@ create table if not exists preddita_admin_sessions (
 create index if not exists idx_preddita_admin_sessions_active
   on preddita_admin_sessions (username, expires_at desc)
   where revoked_at is null;
+
+create table if not exists preddita_admin_mfa (
+  username text primary key references preddita_admin_users(username),
+  secret_ciphertext text not null,
+  last_used_step bigint not null default -1,
+  recovery_codes jsonb not null default '[]'::jsonb,
+  enabled_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists preddita_admin_mfa_challenges (
+  token_hash char(64) primary key,
+  username text not null references preddita_admin_users(username),
+  kind text not null check (kind in ('enroll', 'verify')),
+  pending_secret_ciphertext text,
+  attempts integer not null default 0 check (attempts >= 0),
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  consumed_at timestamptz
+);
+
+create index if not exists idx_preddita_admin_mfa_challenges_active
+  on preddita_admin_mfa_challenges (username, expires_at desc)
+  where consumed_at is null;

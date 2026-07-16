@@ -13,6 +13,8 @@ const state = {
   lastRole: '',
   trackingCommandId: '',
   trackingCommand: null,
+  mfa: null,
+  recoveryCodes: [],
 };
 
 const root = document.querySelector('#view-root');
@@ -23,6 +25,23 @@ const loginUsername = document.querySelector('#login-username');
 const loginPassword = document.querySelector('#login-password');
 const loginButton = document.querySelector('#login-button');
 const loginMessage = document.querySelector('#login-message');
+const mfaForm = document.querySelector('#mfa-form');
+const mfaTitle = document.querySelector('#mfa-title');
+const mfaDescription = document.querySelector('#mfa-description');
+const mfaEnrollment = document.querySelector('#mfa-enrollment');
+const mfaQr = document.querySelector('#mfa-qr');
+const mfaSecret = document.querySelector('#mfa-secret');
+const mfaCodeLabel = document.querySelector('#mfa-code-label');
+const mfaCode = document.querySelector('#mfa-code');
+const mfaRecoveryLabel = document.querySelector('#mfa-recovery-label');
+const mfaRecoveryCode = document.querySelector('#mfa-recovery-code');
+const mfaButton = document.querySelector('#mfa-button');
+const mfaRecoveryToggle = document.querySelector('#mfa-recovery-toggle');
+const mfaBackButton = document.querySelector('#mfa-back-button');
+const mfaMessage = document.querySelector('#mfa-message');
+const mfaRecoveryCodes = document.querySelector('#mfa-recovery-codes');
+const recoveryCodeList = document.querySelector('#recovery-code-list');
+const recoveryMessage = document.querySelector('#recovery-message');
 const title = document.querySelector('#view-title');
 const siteName = document.querySelector('#site-name');
 const message = document.querySelector('#message');
@@ -289,12 +308,76 @@ function showLogin(error = '') {
   state.session = null;
   state.csrfToken = '';
   state.data = null;
+  state.mfa = null;
+  state.recoveryCodes = [];
   adminApp.hidden = true;
   loginScreen.hidden = false;
+  loginForm.hidden = false;
+  mfaForm.hidden = true;
+  mfaRecoveryCodes.hidden = true;
   loginMessage.textContent = error;
   loginMessage.hidden = !error;
   loginPassword.value = '';
   window.setTimeout(() => loginUsername.focus(), 0);
+}
+
+function setMfaRecoveryMode(enabled) {
+  if (!state.mfa) return;
+  const recoveryEnabled = Boolean(enabled && !state.mfa.enrollment);
+  state.mfa.recoveryMode = recoveryEnabled;
+  mfaCodeLabel.hidden = recoveryEnabled;
+  mfaCode.hidden = recoveryEnabled;
+  mfaCode.required = !recoveryEnabled;
+  mfaRecoveryLabel.hidden = !recoveryEnabled;
+  mfaRecoveryCode.hidden = !recoveryEnabled;
+  mfaRecoveryCode.required = recoveryEnabled;
+  mfaRecoveryToggle.textContent = recoveryEnabled
+    ? 'Usar codigo do autenticador'
+    : 'Usar codigo de recuperacao';
+  mfaMessage.hidden = true;
+  window.setTimeout(() => (recoveryEnabled ? mfaRecoveryCode : mfaCode).focus(), 0);
+}
+
+function showMfa(mfa) {
+  state.mfa = { ...mfa, recoveryMode: false };
+  state.recoveryCodes = [];
+  loginForm.hidden = true;
+  mfaRecoveryCodes.hidden = true;
+  mfaForm.hidden = false;
+  mfaEnrollment.hidden = !mfa.enrollment;
+  mfaTitle.textContent = mfa.enrollment ? 'Proteja sua conta' : 'Confirme seu acesso';
+  mfaDescription.textContent = mfa.enrollment
+    ? 'Escaneie o QR code e confirme com o primeiro codigo gerado.'
+    : 'Digite o codigo atual do seu aplicativo autenticador.';
+  mfaQr.hidden = !mfa.qrDataUrl;
+  mfaQr.src = mfa.qrDataUrl || '';
+  mfaSecret.textContent = mfa.secret || '';
+  mfaCode.value = '';
+  mfaRecoveryCode.value = '';
+  mfaRecoveryToggle.hidden = Boolean(mfa.enrollment);
+  mfaMessage.hidden = true;
+  setMfaRecoveryMode(false);
+  window.setTimeout(() => mfaCode.focus(), 0);
+}
+
+function acceptAuthenticatedSession(payload) {
+  state.session = payload.session;
+  state.csrfToken = payload.session.csrfToken;
+  state.lastRole = '';
+  state.mfa = null;
+}
+
+function showRecoveryCodes(codes) {
+  state.recoveryCodes = [...codes];
+  loginForm.hidden = true;
+  mfaForm.hidden = true;
+  mfaRecoveryCodes.hidden = false;
+  recoveryCodeList.replaceChildren(...codes.map((code) => {
+    const item = document.createElement('li');
+    item.textContent = code;
+    return item;
+  }));
+  recoveryMessage.textContent = '';
 }
 
 function showAdmin() {
@@ -1004,23 +1087,79 @@ document.addEventListener('submit', async (event) => {
       }),
     }).catch(() => ({ response: null, payload: {} }));
     loginButton.disabled = false;
-    if (!response?.ok || !payload.session?.csrfToken) {
+    if (!response?.ok) {
       showLogin(payload.error || 'Nao foi possivel entrar.');
       return;
     }
-    state.session = payload.session;
-    state.csrfToken = payload.session.csrfToken;
-    state.lastRole = '';
     loginPassword.value = '';
+    if (payload.mfa?.required && payload.mfa.challengeToken) {
+      showMfa(payload.mfa);
+      return;
+    }
+    if (!payload.session?.csrfToken) {
+      showLogin('A resposta de autenticacao esta incompleta.');
+      return;
+    }
+    acceptAuthenticatedSession(payload);
     showAdmin();
     await loadState().catch((error) => {
       showMessage(error.message, true);
     });
     return;
   }
+  if (event.target === mfaForm) {
+    event.preventDefault();
+    const recoveryMode = Boolean(state.mfa?.recoveryMode);
+    mfaButton.disabled = true;
+    mfaMessage.hidden = true;
+    const { response, payload } = await authRequest('/api/auth/mfa/verify', {
+      method: 'POST',
+      body: JSON.stringify({
+        challengeToken: state.mfa?.challengeToken,
+        ...(recoveryMode
+          ? { recoveryCode: mfaRecoveryCode.value.trim() }
+          : { code: mfaCode.value.trim() }),
+      }),
+    }).catch(() => ({ response: null, payload: {} }));
+    mfaButton.disabled = false;
+    if (!response?.ok || !payload.session?.csrfToken) {
+      mfaMessage.textContent = payload.error || 'Nao foi possivel confirmar o codigo.';
+      mfaMessage.hidden = false;
+      return;
+    }
+    acceptAuthenticatedSession(payload);
+    const recoveryCodes = payload.mfa?.recoveryCodes || [];
+    if (recoveryCodes.length > 0) {
+      showRecoveryCodes(recoveryCodes);
+      return;
+    }
+    showAdmin();
+    await loadState().catch((error) => showMessage(error.message, true));
+    return;
+  }
   if (!event.target.matches('.resident-form')) return;
   event.preventDefault();
   await saveResident(event.target).catch((error) => showMessage(error.message, true));
+});
+
+mfaRecoveryToggle.addEventListener('click', () => {
+  setMfaRecoveryMode(!state.mfa?.recoveryMode);
+});
+
+mfaBackButton.addEventListener('click', () => showLogin());
+
+document.querySelector('#copy-recovery-codes').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(state.recoveryCodes.join('\n'));
+    recoveryMessage.textContent = 'Codigos copiados.';
+  } catch (_error) {
+    recoveryMessage.textContent = 'Nao foi possivel copiar automaticamente.';
+  }
+});
+
+document.querySelector('#continue-after-recovery').addEventListener('click', async () => {
+  showAdmin();
+  await loadState().catch((error) => showMessage(error.message, true));
 });
 
 async function bootstrap() {
