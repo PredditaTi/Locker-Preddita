@@ -59,6 +59,59 @@ para a mais antiga:
 
 ## Registro
 
+### 2026-07-20 - Analise comparativa de app de locker recuperado
+
+**Base:** produto `2.0.25-lab`, `versionCode 25`, `schemaVersion 12`, branch
+`codex/documentation-hub`
+
+**O que mudou**
+
+- Criado um relatorio tecnico sanitizado do material local identificado como
+  VExpress.
+- Documentadas arquitetura Linux ARM64, interfaces React, Node-RED, banco,
+  servicos de camera e voz, operacao remota, fluxos, dados e protocolo serial.
+- Classificados riscos de seguranca, privacidade, atualizacao e manutencao sem
+  registrar credenciais, enderecos ou dados pessoais encontrados.
+- Comparadas as capacidades observadas com a arquitetura atual da PREDDITA.
+- Priorizadas ideias de voz, diagnostico, resiliencia serial e health checks de
+  update, com criterios para reimplementacao independente.
+- A central da documentacao passou a apontar para o novo relatorio.
+
+**Por que**
+
+- O material de um produto semelhante permite aprender com recursos e falhas
+  reais sem incorporar codigo de terceiros.
+- As conclusoes precisavam ficar separadas dos arquivos brutos e disponiveis
+  para orientar os proximos ciclos do produto.
+
+**Impacto**
+
+- Produto e engenharia passam a ter uma referencia comparativa baseada em
+  evidencia estatica local.
+- O backlog distingue conceitos aproveitaveis de implementacoes que nao devem
+  ser reproduzidas.
+- Nenhum codigo funcional, contrato, schema, versao ou dado de producao foi
+  alterado.
+
+**Arquivos**
+
+- `docs/ANALISE-COMPARATIVA-VEXPRESS-PENDRIVE.md`
+- `docs/README.md`
+- `docs/UPDATES.md`
+
+**Validacao**
+
+- Inventario, codigo, configuracoes, servicos, rotas e fluxos Node-RED foram
+  conferidos estaticamente sem iniciar o software analisado.
+- Evidencia de autorizacao foi rastreada em 76 entradas HTTP do Node-RED.
+- Buscas de ciclo de vida confirmaram somente exclusoes manuais pontuais, sem
+  politica automatica de retencao observavel.
+- O material bruto permaneceu fora do repositorio e o relatorio foi revisado
+  para nao conter segredos, dados pessoais ou codigo proprietario.
+
+**Referencia:** material local analisado em 20 de julho de 2026; sem publicacao
+do conteudo original.
+
 ### 2026-07-16 - Central e historico completo do projeto
 
 **Base:** produto `2.0.25-lab`, `versionCode 25`, `schemaVersion 12`, commit de
