@@ -258,20 +258,20 @@ sem tocar na regra de entrega ou retirada.
 
 Tarefas:
 
-- [ ] Criar `kioskTheme.css` com tokens de cor, espacamento, dimensoes, foco e
+- [x] Criar `kioskTheme.css` com tokens de cor, espacamento, dimensoes, foco e
   movimento reduzido.
-- [ ] Remover gradientes, vidro, grade decorativa e moldura arredondada apenas
+- [x] Remover gradientes, vidro, grade decorativa e moldura arredondada apenas
   do fluxo publico.
-- [ ] Adicionar `lucide-react`, conferir licenca e auditoria, e substituir os
+- [x] Adicionar `lucide-react`, conferir licenca e auditoria, e substituir os
   SVGs manuais da home.
-- [ ] Implementar barra superior com marca, audio e ajuda.
-- [ ] Implementar duas areas principais de acao com altura e largura estaveis.
-- [ ] Montar prototipos navegaveis com dados ficticios para inicio, apartamento,
+- [x] Implementar barra superior com marca, audio e ajuda.
+- [x] Implementar duas areas principais de acao com altura e largura estaveis.
+- [x] Montar prototipos navegaveis com dados ficticios para inicio, apartamento,
   porta aberta, PIN e sucesso antes de substituir o fluxo de producao.
-- [ ] Criar estados `pressed`, `focus-visible`, `disabled`, `loading` e
+- [x] Criar estados `pressed`, `focus-visible`, `disabled`, `loading` e
   `unavailable`.
-- [ ] Garantir que o logo e a fonte funcionem totalmente offline.
-- [ ] Criar screenshots de referencia da home nos quatro viewports.
+- [x] Garantir que o logo e a fonte funcionem totalmente offline.
+- [x] Criar screenshots de referencia da home nos quatro viewports.
 
 Criterios de aceite:
 
@@ -285,6 +285,12 @@ Criterios de aceite:
   antes do inicio da Parte 3.
 
 **Esforco relativo:** medio.
+
+**Status em 20/07/2026:** implementacao tecnica concluida. A home V4 esta no
+fluxo real; as demais telas permanecem como prototipos locais sem side effects.
+Referencias, metricas, licencas e reproducao estao em
+[KIOSK-V4-FUNDACAO-VISUAL.md](KIOSK-V4-FUNDACAO-VISUAL.md). O inicio da Parte 3
+depende da aprovacao visual das cinco referencias pelo responsavel do produto.
 
 ## Parte 3 - Redesign completo das jornadas publicas
 

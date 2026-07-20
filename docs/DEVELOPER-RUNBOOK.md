@@ -92,6 +92,17 @@ Esse comando substitui `docs/assets/kiosk-v3-baseline`; publique a mudanca
 somente quando a nova referencia for intencional e estiver registrada em
 `docs/UPDATES.md`.
 
+Para gerar a home responsiva e as cinco referencias da fundacao V4:
+
+```powershell
+npm run capture:v4-foundation
+```
+
+O comando substitui `docs/assets/kiosk-v4-foundation`, inclui metricas do
+bundle e deve registrar zero erro de console. Os prototipos usam dados
+ficticios e nao inicializam o Edge Agent nem a ponte de hardware. Consulte
+`docs/KIOSK-V4-FUNDACAO-VISUAL.md` antes de aprovar ou substituir as imagens.
+
 O teste nativo `scripts\Rs485FrameParserTest.java` tambem roda dentro de
 `scripts\v2-verify.ps1` usando o JDK 17.
 

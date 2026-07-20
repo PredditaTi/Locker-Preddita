@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { formatRecipientApartment } from './lockerWorkflow.js';
 import { joinClasses } from './appUi.jsx';
+import { KioskIcon, KioskIcons } from './kioskIcons.jsx';
 import { COURIER_COPY, PICKUP_COPY, PUBLIC_HOME_COPY } from './publicKioskCopy.js';
 
 const NUMBER_PAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'backspace'];
@@ -26,42 +27,168 @@ function NumberPad({ onKey, onBackspace, onClear, className = '' }) {
   );
 }
 
-function PublicHomeIcon({ type }) {
-  if (type === 'courier') {
-    return (
-      <svg viewBox="0 0 64 64" role="img" aria-label="">
-        <path d="M12 22 32 12l20 10-20 10L12 22Z" fill="none" stroke="currentColor" strokeLinejoin="round" strokeWidth="5" />
-        <path d="M12 22v22l20 10 20-10V22" fill="none" stroke="currentColor" strokeLinejoin="round" strokeWidth="5" />
-        <path d="M32 32v22" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="5" />
-      </svg>
-    );
-  }
-
+export function KioskBrand({ siteName }) {
   return (
-    <svg viewBox="0 0 64 64" role="img" aria-label="">
-      <circle cx="32" cy="22" r="10" fill="none" stroke="currentColor" strokeWidth="5" />
-      <path d="M14 52c3-12 11-18 18-18s15 6 18 18" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="5" />
-    </svg>
+    <div className="kiosk-v4-brand" aria-label={`PREDDITA Locker - ${siteName}`}>
+      <span className="kiosk-v4-brand-mark" aria-hidden="true">P</span>
+      <strong className="kiosk-v4-brand-name">PREDDITA</strong>
+      <span className="kiosk-v4-brand-site">Locker · {siteName}</span>
+    </div>
   );
 }
 
-export function PublicHome({ onCourier, onResident }) {
+export function KioskAction({
+  icon,
+  title,
+  meta,
+  tone = '',
+  state = 'ready',
+  onClick,
+}) {
+  const isLoading = state === 'loading';
+  const isUnavailable = state === 'unavailable';
+  const actionIcon = isLoading ? KioskIcons.loading : icon;
+
   return (
-    <section className="public-kiosk-home" aria-label="Menu principal">
-      <button type="button" className="public-home-action is-courier" onClick={onCourier}>
-        <span className="public-home-icon" aria-hidden="true">
-          <PublicHomeIcon type="courier" />
-        </span>
-        <strong>{PUBLIC_HOME_COPY.courierTitle}</strong>
-        <span>{PUBLIC_HOME_COPY.courierText}</span>
-      </button>
-      <button type="button" className="public-home-action is-resident" onClick={onResident}>
-        <span className="public-home-icon" aria-hidden="true">
-          <PublicHomeIcon type="resident" />
-        </span>
-        <strong>{PUBLIC_HOME_COPY.residentTitle}</strong>
-        <span>{PUBLIC_HOME_COPY.residentText}</span>
-      </button>
+    <button
+      type="button"
+      className={joinClasses(
+        'kiosk-v4-action',
+        tone ? `kiosk-v4-action--${tone}` : '',
+        isLoading ? 'is-loading' : '',
+        isUnavailable ? 'is-unavailable' : ''
+      )}
+      onClick={onClick}
+      disabled={isLoading || isUnavailable}
+      aria-busy={isLoading ? 'true' : undefined}
+    >
+      <span className="kiosk-v4-action-icon" aria-hidden="true">
+        <KioskIcon icon={actionIcon} />
+      </span>
+      <span className="kiosk-v4-action-copy">
+        <strong className="kiosk-v4-action-title">{title}</strong>
+        <span className="kiosk-v4-action-meta">{meta}</span>
+      </span>
+      <KioskIcon icon={KioskIcons.arrowRight} className="kiosk-v4-action-arrow" />
+    </button>
+  );
+}
+
+export function KioskTopBar({ siteName, stepLabel = 'Inicio', onHelp }) {
+  return (
+    <header className="kiosk-v4-topbar">
+      <KioskBrand siteName={siteName} />
+      <span className="kiosk-v4-step-label">{stepLabel}</span>
+      <div className="kiosk-v4-topbar-actions">
+        <button
+          type="button"
+          className="kiosk-v4-icon-button is-unavailable"
+          aria-label="Audio indisponivel nesta versao"
+          title="Audio disponivel em uma proxima etapa"
+          disabled
+        >
+          <KioskIcon icon={KioskIcons.volume} />
+        </button>
+        <button
+          type="button"
+          className="kiosk-v4-icon-button"
+          aria-label="Ajuda"
+          title="Ajuda"
+          onClick={onHelp}
+        >
+          <KioskIcon icon={KioskIcons.help} />
+        </button>
+      </div>
+    </header>
+  );
+}
+
+export function KioskHelpDialog({ onClose }) {
+  const dialogRef = useRef(null);
+
+  useEffect(() => {
+    const previousFocus = document.activeElement;
+    const focusable = [...dialogRef.current.querySelectorAll('button:not(:disabled)')];
+    focusable[0]?.focus();
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== 'Tab' || focusable.length === 0) return;
+
+      const activeIndex = focusable.indexOf(document.activeElement);
+      const nextIndex = event.shiftKey
+        ? (activeIndex <= 0 ? focusable.length - 1 : activeIndex - 1)
+        : (activeIndex + 1) % focusable.length;
+      event.preventDefault();
+      focusable[nextIndex].focus();
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      previousFocus?.focus();
+    };
+  }, [onClose]);
+
+  return (
+    <div className="kiosk-v4-help-backdrop" role="presentation">
+      <section
+        ref={dialogRef}
+        className="kiosk-v4-help-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="kiosk-v4-help-title"
+      >
+        <div>
+          <h2 id="kiosk-v4-help-title" className="kiosk-v4-help-title">Precisa de ajuda?</h2>
+          <p className="kiosk-v4-help-copy">Procure a portaria ou a administracao do condominio.</p>
+        </div>
+        <button type="button" className="kiosk-v4-help-close" onClick={onClose} aria-label="Fechar ajuda" title="Fechar ajuda">
+          <KioskIcon icon={KioskIcons.close} />
+        </button>
+        <button type="button" className="kiosk-v4-help-confirm" onClick={onClose}>Entendi</button>
+      </section>
+    </div>
+  );
+}
+
+export function PublicHome({ siteName, onCourier, onResident }) {
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
+
+  return (
+    <section className="kiosk-v4-home" aria-label="Menu principal">
+      <KioskTopBar siteName={siteName} onHelp={() => setIsHelpOpen(true)} />
+
+      <main className="kiosk-v4-home-main">
+        <header className="kiosk-v4-home-heading">
+          <div>
+            <p className="kiosk-v4-home-kicker">Bem-vindo</p>
+            <h1 className="kiosk-v4-home-title">O que voce precisa fazer?</h1>
+          </div>
+        </header>
+        <div className="kiosk-v4-home-actions">
+          <KioskAction
+            icon={KioskIcons.courier}
+            title={PUBLIC_HOME_COPY.courierTitle}
+            meta={PUBLIC_HOME_COPY.courierText}
+            onClick={onCourier}
+          />
+          <KioskAction
+            icon={KioskIcons.resident}
+            title={PUBLIC_HOME_COPY.residentTitle}
+            meta={PUBLIC_HOME_COPY.residentText}
+            tone="resident"
+            onClick={onResident}
+          />
+        </div>
+      </main>
+
+      <p className="kiosk-v4-home-status">Locker pronto para uso</p>
+      {isHelpOpen ? <KioskHelpDialog onClose={() => setIsHelpOpen(false)} /> : null}
     </section>
   );
 }
