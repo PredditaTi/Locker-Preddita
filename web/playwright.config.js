@@ -12,9 +12,14 @@ export default defineConfig({
   reporter: process.env.CI
     ? [['line'], ['html', { open: 'never', outputFolder: 'playwright-report' }]]
     : 'line',
+  projects: [
+    { name: 'kiosk-1024x600', use: { viewport: { width: 1024, height: 600 } } },
+    { name: 'desktop-1280x800', use: { viewport: { width: 1280, height: 800 } } },
+    { name: 'compact-800x480', use: { viewport: { width: 800, height: 480 } } },
+    { name: 'portrait-390x844', use: { viewport: { width: 390, height: 844 } } },
+  ],
   use: {
     baseURL: 'http://127.0.0.1:4173',
-    viewport: { width: 1280, height: 800 },
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
