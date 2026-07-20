@@ -55,6 +55,9 @@ A protecao de regressao tambem inclui:
 
 - `kiosk-layout.spec.js`: geometria, foco, nomes acessiveis e erros do console;
 - `kiosk-interactions.spec.js`: teclado, retorno, cancelamento e timeout;
+- `kiosk-v4-home.spec.js`: marca, ajuda, alvo de toque e contraste WCAG AA;
+- `kiosk-v4-prototype.spec.js`: navegacao local pelas cinco referencias V4,
+  alvo minimo e ausencia de scroll;
 - projetos `1024x600`, `1280x800`, `800x480` e `390x844`;
 - falha controlada que prova a deteccao de um botao fora da tela.
 
@@ -74,6 +77,15 @@ Para regenerar intencionalmente a referencia V3:
 ```powershell
 npm run capture:baseline
 ```
+
+Para regenerar a home responsiva e os prototipos da fundacao V4:
+
+```powershell
+npm run capture:v4-foundation
+```
+
+As referencias e os limites do modo isolado estao em
+`docs/KIOSK-V4-FUNDACAO-VISUAL.md`.
 
 Em falhas, screenshot, video, trace e arvore acessivel ficam em
 `web/test-results`. O CI envia esses arquivos como artifact por sete dias.

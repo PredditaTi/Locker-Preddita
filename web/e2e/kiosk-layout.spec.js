@@ -101,7 +101,7 @@ async function collectLayoutIssues(page, stage) {
 }
 
 async function expectFocusVisible(page) {
-  const firstButton = page.locator('button:visible').first();
+  const firstButton = page.locator('button:visible:not(:disabled)').first();
   await firstButton.focus();
   const focusStyle = await firstButton.evaluate((element) => {
     const style = window.getComputedStyle(element);
@@ -205,7 +205,7 @@ test('auditoria detecta controle movido para fora da tela', async ({ page }, tes
   );
   await bootKiosk(page);
   await page.addStyleTag({
-    content: '.public-home-action:first-child { transform: translateX(-1200px) !important; }',
+    content: '.kiosk-v4-action:first-child { transform: translateX(-1200px) !important; }',
   });
 
   const result = await collectLayoutIssues(page, 'falha-controlada');

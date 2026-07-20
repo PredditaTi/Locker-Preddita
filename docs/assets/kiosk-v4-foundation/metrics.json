@@ -1,0 +1,67 @@
+{
+  "capturedAt": "2026-07-20T23:34:21.169Z",
+  "homeViewports": [
+    {
+      "name": "home-1024x600",
+      "width": 1024,
+      "height": 600
+    },
+    {
+      "name": "home-1280x800",
+      "width": 1280,
+      "height": 800
+    },
+    {
+      "name": "home-800x480",
+      "width": 800,
+      "height": 480
+    },
+    {
+      "name": "home-390x844",
+      "width": 390,
+      "height": 844
+    }
+  ],
+  "prototypeViewport": {
+    "width": 1024,
+    "height": 600,
+    "deviceScaleFactor": 1
+  },
+  "bundle": {
+    "totalBytes": 956698,
+    "totalGzipBytes": 320235,
+    "files": [
+      {
+        "path": "assets/atkinson-hyperlegible-next-latin-ext-wght-normal-C6vrW8VD.woff2",
+        "bytes": 19092,
+        "gzipBytes": 19120
+      },
+      {
+        "path": "assets/atkinson-hyperlegible-next-latin-wght-normal-BcXVPD7q.woff2",
+        "bytes": 33996,
+        "gzipBytes": 34029
+      },
+      {
+        "path": "assets/index-BsZBBKrx.js",
+        "bytes": 474739,
+        "gzipBytes": 149374
+      },
+      {
+        "path": "assets/index-Crk2I8qC.css",
+        "bytes": 70026,
+        "gzipBytes": 13505
+      },
+      {
+        "path": "assets/mqtt.esm-BJFWlyHA.js",
+        "bytes": 357726,
+        "gzipBytes": 103583
+      },
+      {
+        "path": "index.html",
+        "bytes": 1119,
+        "gzipBytes": 624
+      }
+    ]
+  },
+  "consoleErrors": []
+}

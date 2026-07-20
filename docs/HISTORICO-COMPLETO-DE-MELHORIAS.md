@@ -34,6 +34,7 @@ commit `014709d`, publicado em 16 de julho de 2026.
 | Persistencia cloud | `state.json` monolitico | Postgres normalizado, transacoes e migracao automatica | Concorrencia, consulta e recuperacao confiaveis |
 | Observabilidade | Logs informais | Logs estruturados, correlacao, filtros, CSV e retencao | Diagnostico remoto e auditoria operacional |
 | Arquitetura do kiosk | UI ligada diretamente a serial e rede | Kiosk UI separada do contrato Edge Agent | Testabilidade e evolucao do edge |
+| Experiencia publica | Composicao V3 baseada em shell e cards | Home V4 full-screen e cinco prototipos de alto contraste | Leitura a distancia e operacao por toque |
 | Atualizacao | ADB/manual | Manifesto remoto, rollout e validacao criptografica | Atualizar frota com controle e rastreabilidade |
 | Entrega de comandos | Polling frequente | Wake-up MQTT QoS 1 com fallback HTTP | Menor latencia sem perder a fonte de verdade |
 | Qualidade | Testes pontuais | Contratos reais, E2E Playwright, smokes e CI | Detectar regressao entre UI, API e Android |
@@ -599,6 +600,11 @@ processo de acesso e eliminacao do titular.
   continuam apagadas depois do reload.
 - Notas de hardware e comandos locais do Admin Online foram alinhados com a
   serial validada e com a estrutura atual do repositorio.
+- O baseline V3 preservou nove estados, metricas e regressao Playwright nos
+  viewports `1024x600`, `1280x800`, `800x480` e `390x844`.
+- A Parte 2 do Kiosk V4 substituiu a home por uma composicao full-screen de
+  alto contraste, adicionou fonte e icones offline e criou cinco prototipos
+  sem side effects para aprovacao antes da integracao das jornadas reais.
 - Esta consolidacao nao altera contrato de API, schema ou versao do produto.
 
 ## Evolucao de dados e compatibilidade
@@ -737,6 +743,8 @@ comparado com o artefato da release.
 - [CI e releases](CI-RELEASE.md)
 - [Autenticacao do dispositivo](DEVICE-AUTH.md)
 - [Contratos de API e E2E](API-CONTRACTS-E2E.md)
+- [Baseline visual do Kiosk V3](KIOSK-V3-BASELINE.md)
+- [Fundacao visual do Kiosk V4](KIOSK-V4-FUNDACAO-VISUAL.md)
 - [Privacidade e ciclo de vida](PRIVACY-DATA-LIFECYCLE.md)
 - [Revisao e plano executado](REVISAO-PLANO-MELHORIA-2026-07-08.md)
 - [Direcao tecnica v2](V2-ROADMAP.md)

@@ -98,6 +98,7 @@ flowchart LR
 | [Analise do app recuperado](ANALISE-COMPARATIVA-VEXPRESS-PENDRIVE.md) | Arquitetura, riscos e ideias do material local de referencia | Nova evidencia estatica for confirmada ou uma ideia entrar no backlog |
 | [Plano de melhorias e Kiosk V4](PLANO-IMPLEMENTACAO-MELHORIAS-REDESIGN-2026-07-20.md) | Oito partes para redesign, audio, diagnostico, serial, update e piloto | Uma parte iniciar, mudar de escopo ou ser concluida |
 | [Baseline visual e funcional V3](KIOSK-V3-BASELINE.md) | Screenshots, metricas, matriz Playwright e rollback anteriores ao Kiosk V4 | A referencia visual mudar intencionalmente |
+| [Fundacao visual do Kiosk V4](KIOSK-V4-FUNDACAO-VISUAL.md) | Tokens, home responsiva, prototipos, licencas e gate visual da Parte 3 | A linguagem visual ou uma referencia V4 mudar |
 | [Redesign publico](PASSO-A-PASSO-REDESIGN-PUBLICO.md) | Orientacoes da interface do kiosk | Experiencia publica mudar |
 | [Plano original do redesign](superpowers/plans/2026-07-09-public-kiosk-redesign.md) | Plano historico que orientou a implementacao publica | Nao usar como runbook atual; preservar como decisao historica |
 | [Notas do KS1062](../NOTES-KS1062.md) | Pesquisa do hardware e protocolo da placa | Nova evidencia de campo ou manual for validada |

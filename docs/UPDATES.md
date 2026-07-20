@@ -59,6 +59,68 @@ para a mais antiga:
 
 ## Registro
 
+### 2026-07-20 - Parte 2 do Kiosk V4 implementada
+
+**Base:** produto `2.0.25-lab`, `versionCode 25`, `schemaVersion 12`, branch
+`codex/kiosk-v4-foundation`
+
+**O que mudou**
+
+- Criada a fundacao visual de alto contraste e a nova home full-screen.
+- Adicionadas barra superior, ajuda, estados de controle e duas acoes com alvo
+  minimo de 64 px.
+- Empacotadas localmente a fonte Atkinson Hyperlegible Next e os icones Lucide,
+  com suas licencas no repositorio.
+- Criados cinco prototipos navegaveis sem Edge Agent ou hardware para aprovacao
+  de inicio, apartamento, porta, PIN e sucesso.
+- Geradas quatro referencias responsivas da home e cinco referencias de produto
+  em `1024x600`.
+- Adicionados testes de contraste WCAG AA, toque, navegacao, scroll e console.
+
+**Por que**
+
+- A Parte 3 precisa de uma linguagem visual aprovada antes de substituir as
+  jornadas reais e aproximar mudanca de tela de regras fisicas sensiveis.
+- Fonte, marca e icones devem permanecer disponiveis quando o locker estiver
+  sem internet.
+
+**Impacto**
+
+- A home V4 passa a ser a entrada do fluxo publico; as etapas seguintes ainda
+  usam a implementacao funcional V3.
+- Os prototipos ficam disponiveis apenas por query de desenvolvimento e nao
+  executam side effects.
+- O bundle gzip passou de `260.488` para `320.235 bytes`, incluindo `53.088
+  bytes` de fontes WOFF2 locais.
+- Nenhuma versao, schema, protocolo ou regra de porta mudou.
+
+**Arquivos**
+
+- `docs/KIOSK-V4-FUNDACAO-VISUAL.md`
+- `docs/assets/kiosk-v4-foundation/`
+- `docs/HISTORICO-COMPLETO-DE-MELHORIAS.md`
+- `web/src/kioskTheme.css`
+- `web/src/kioskIcons.jsx`
+- `web/src/kioskPrototypeUi.jsx`
+- `web/src/publicKioskUi.jsx`
+- `web/e2e/kiosk-v4-home.spec.js`
+- `web/e2e/kiosk-v4-prototype.spec.js`
+- `web/licenses/`
+- `docs/PLANO-IMPLEMENTACAO-MELHORIAS-REDESIGN-2026-07-20.md`
+
+**Validacao**
+
+- Home aprovada tecnicamente nos viewports `1024x600`, `1280x800`, `800x480`
+  e `390x844`, sem overflow e com zero erro de console.
+- Cinco prototipos navegados automaticamente em `1024x600` com controles de
+  pelo menos 64 px.
+- Contraste dos textos principais validado automaticamente nos quatro projetos
+  Playwright.
+- Nove capturas inspecionadas visualmente; aprovacao de produto ainda e o gate
+  para iniciar a Parte 3.
+
+**Referencia:** documentacao da Parte 2 na branch `codex/kiosk-v4-foundation`.
+
 ### 2026-07-20 - Parte 1 do Kiosk V4 concluida
 
 **Base:** produto `2.0.25-lab`, `versionCode 25`, `schemaVersion 12`, branch

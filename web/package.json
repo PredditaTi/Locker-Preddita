@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "capture:baseline": "vite build && node e2e/capture-kiosk-v3-baseline.mjs",
+    "capture:v4-foundation": "vite build && node e2e/capture-kiosk-v4-foundation.mjs",
     "preview": "vite preview",
     "test:e2e": "playwright test",
     "test:workflow": "node ../scripts/v2-workflow-test.mjs",
@@ -15,7 +16,9 @@
     "test:edge-agent": "node ../scripts/v2-edge-agent-contract-test.mjs"
   },
   "dependencies": {
+    "@fontsource-variable/atkinson-hyperlegible-next": "^5.3.0",
     "jsqr": "^1.4.0",
+    "lucide-react": "^1.25.0",
     "mqtt": "^5.15.2",
     "qrcode": "^1.5.4",
     "react": "^18.2.0",

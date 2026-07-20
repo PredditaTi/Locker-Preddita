@@ -2096,7 +2096,7 @@ export default function App() {
   }, [view, courierStep, courierSuccessDelivery?.id, courierSuccessDelivery?.recipientEmail]);
 
   return (
-    <main className="locker-app">
+    <main className={joinClasses('locker-app', isHomeView || isPublicFlowView ? 'locker-app--public' : '', isHomeView ? 'locker-app--kiosk-v4-home' : '')}>
       <div className={joinClasses('locker-shell', isHomeView ? 'locker-shell--home' : '', isPublicFlowView ? 'locker-shell--flow' : '', showInlineBanner ? 'locker-shell--has-banner' : '', isAdminView ? 'locker-shell--admin' : '')}>
         {!isHomeView && !isPublicFlowView ? (
         <section className="hero-card">
@@ -2156,7 +2156,7 @@ export default function App() {
           {view === 'home' || view === 'courier' || view === 'resident' || view === 'admin' || view === 'adminDeposit' || view === 'adminPickup' ? (
           <div className="main-column">
             {view === 'home' ? (
-              <PublicHome onCourier={openCourierFlow} onResident={openResidentFlow} />
+              <PublicHome siteName={lockerState.tenant.siteName} onCourier={openCourierFlow} onResident={openResidentFlow} />
             ) : null}
 
             {view === 'admin' ? (
