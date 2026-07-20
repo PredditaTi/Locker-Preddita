@@ -47,7 +47,8 @@ A jornada coberta confirma:
 4. PIN e entrega ficam persistidos;
 5. morador informa o PIN e abre a mesma porta;
 6. retirada so conclui depois de nova leitura de fechamento;
-7. estado `collected` sobrevive ao reload do kiosk.
+7. estado `collected` sobrevive ao reload do kiosk;
+8. PIN, token, QR e codigo externo nao reaparecem depois do reload.
 
 Preparar e executar em `web`:
 

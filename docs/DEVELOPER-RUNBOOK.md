@@ -52,7 +52,10 @@ npm run test:recovery
 
 O servidor aceita um BOM UTF-8 valido, mas nunca substitui automaticamente um
 `state.json` que nao possa ser lido. Nessa situacao, preserve o arquivo, confira
-os backups e corrija a recuperacao antes de voltar a operar o locker.
+os backups e corrija a recuperacao antes de voltar a operar o locker. Um estado
+valido recuperado pode ser regravado depois que o ciclo de privacidade remover
+credenciais terminais ou dados vencidos; antes disso, o conteudo original fica
+preservado em backup conforme a politica de retencao.
 
 Testes de idempotencia remota e protocolo serial:
 

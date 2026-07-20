@@ -7,6 +7,12 @@
 
 Para entender a versao atual antes de alterar codigo, leia:
 
+- [`docs/README.md`](docs/README.md): central navegavel com estado atual,
+  catalogo, fontes de verdade e rotas de leitura.
+- [`docs/UPDATES.md`](docs/UPDATES.md): pagina cronologica para registrar toda
+  nova atualizacao da documentacao.
+- `docs/HISTORICO-COMPLETO-DE-MELHORIAS.md`: tudo que foi alterado desde a
+  recuperacao do projeto, com motivacao, impacto, validacao e limites atuais.
 - `docs/ARCHITECTURE.md`: arquitetura do app do armario, Admin Online,
   sincronizacao offline, comandos remotos e modelo de dados.
 - `docs/DEVELOPER-RUNBOOK.md`: setup, testes, build, ADB, checklist e
@@ -14,6 +20,10 @@ Para entender a versao atual antes de alterar codigo, leia:
 - `docs/CI-RELEASE.md`: GitHub Actions, assinatura e geracao dos APKs.
 - `docs/DEVICE-AUTH.md`: assinatura HMAC das chamadas do armario e migracao do
   modo legado.
+- `docs/API-CONTRACTS-E2E.md`: contrato consumidor-servidor e jornada completa
+  do kiosk no Playwright.
+- `docs/PRIVACY-DATA-LIFECYCLE.md`: retencao, anonimização e controles do
+  titular.
 
 ---
 
@@ -21,9 +31,9 @@ Para entender a versao atual antes de alterar codigo, leia:
 
 ```bash
 # Verificar instalações necessárias
-node --version       # >= 18
+node --version       # >= 20.19
 npm --version        # >= 9
-java --version       # >= 11  (para compilar o APK)
+java --version       # >= 17  (para compilar o APK)
 adb --version        # Android SDK Platform Tools
 ```
 
@@ -101,9 +111,10 @@ chmod +x scripts/deploy.sh
 [PREDDITA] CPU: rk3562
 [PREDDITA] Portas seriais:
 crw-rw-rw- root dialout /dev/ttyS0
-crw-rw-rw- root dialout /dev/ttyS1   ← ESTA É A COM1 (RS-485)
+crw-rw-rw- root dialout /dev/ttyS1
 crw-rw-rw- root dialout /dev/ttyS2
 crw-rw-rw- root dialout /dev/ttyS3
+crw-rw-rw- root dialout /dev/ttyS5   ← SERIAL VALIDADA NESTE EQUIPAMENTO
 ```
 
 ---
@@ -117,19 +128,25 @@ crw-rw-rw- root dialout /dev/ttyS3
 ./scripts/deploy.sh test-serial
 ```
 
+O equipamento validado usa `/dev/ttyS5`. Em outra variante, informe a porta:
+
+```bash
+PREDDITA_SERIAL_PORT=/dev/ttyS1 ./scripts/deploy.sh test-serial
+```
+
 **Teste manual via ADB shell:**
 ```bash
 # Abrir shell no dispositivo
 adb shell
 
 # Configurar porta serial
-stty -F /dev/ttyS1 9600 cs8 -cstopb -parenb raw -echo
+stty -F /dev/ttyS5 9600 cs8 -cstopb -parenb raw -echo
 
 # Enviar query de firmware (82 01 00 22 A1)
-printf '\x82\x01\x00\x22\xA1' > /dev/ttyS1
+printf '\x82\x01\x00\x22\xA1' > /dev/ttyS5
 
 # Ler resposta (1 segundo)
-timeout 1 cat /dev/ttyS1 | xxd
+timeout 1 cat /dev/ttyS5 | xxd
 
 # Resultado esperado:
 # 00000000: 8201 00ab ce                     .....
@@ -137,7 +154,7 @@ timeout 1 cat /dev/ttyS1 | xxd
 
 # Testar abertura do canal 1 (8A 01 01 33 B9)
 printf '\x8A\x01\x01\x33\xB9' > /dev/ttyS5
-timeout 1 cat /dev/ttyS1 | xxd
+timeout 1 cat /dev/ttyS5 | xxd
 # Resultado esperado:
 # 00000000: 8a01 0111 9b                     .....
 # O byte aberto/fechado depende do perfil comissionado; valide os dois estados.
@@ -146,8 +163,8 @@ timeout 1 cat /dev/ttyS1 | xxd
 **Se não tiver permissão na serial:**
 ```bash
 # Com root (se disponível)
-su -c "chmod 666 /dev/ttyS1"
-su -c "printf '\x8A\x01\x01\x11\x9B' > /dev/ttyS1"
+su -c "chmod 666 /dev/ttyS5"
+su -c "printf '\x8A\x01\x01\x11\x9B' > /dev/ttyS5"
 ```
 
 ---
@@ -161,7 +178,8 @@ npm run build
 # Saída vai para: android/app/src/main/assets/www/
 ```
 
-Copiar o arquivo `src/App.jsx` (o app consolidado) para `web/src/App.jsx`.
+O build atualiza o bundle que sera empacotado em
+`android/app/src/main/assets/www/`.
 
 ---
 
@@ -180,7 +198,7 @@ Copiar o arquivo `src/App.jsx` (o app consolidado) para `web/src/App.jsx`.
 **Instalar manualmente (APK já compilado):**
 ```bash
 adb install -r android/app/build/outputs/apk/debug/app-debug.apk
-adb shell am start -n com.preddita.locker/.MainActivity
+adb shell am start -n com.preddita.entregaslocker/.MainActivity
 ```
 
 ---
@@ -200,7 +218,7 @@ adb shell settings put system screen_off_timeout 2147483647
 adb shell settings put global policy_control immersive.full=*
 
 # Definir como launcher padrão
-adb shell cmd package set-home-activity com.preddita.locker/.MainActivity
+adb shell cmd package set-home-activity com.preddita.entregaslocker/.MainActivity
 
 # Reduzir animações (resposta mais rápida no touch)
 adb shell settings put global window_animation_scale 0.5
@@ -261,11 +279,11 @@ Qualquer mudanca fisica critica reinicia as provas e exige novo comissionamento.
 adb exec-out screencap -p > screenshot.png
 
 # Reiniciar o app sem reboot
-adb shell am force-stop com.preddita.locker
-adb shell am start -n com.preddita.locker/.MainActivity
+adb shell am force-stop com.preddita.entregaslocker
+adb shell am start -n com.preddita.entregaslocker/.MainActivity
 
 # Verificar uso de memória
-adb shell dumpsys meminfo com.preddita.locker
+adb shell dumpsys meminfo com.preddita.entregaslocker
 
 # Push de arquivo para o dispositivo
 adb push arquivo.txt /sdcard/
@@ -286,7 +304,7 @@ adb shell ls -la /dev/ttyS*
 |---|---|---|
 | `adb: no devices` | ADB não habilitado | Ativar depuração USB nas opções do desenvolvedor |
 | `unauthorized` | Não autorizado | Aceitar prompt no dispositivo |
-| `stty: /dev/ttyS1: Permission denied` | Sem permissão | Tentar com `su` ou solicitar ao fabricante KS |
+| `stty: /dev/ttyS5: Permission denied` | Sem permissão | Tentar com `su` ou solicitar ao fabricante KS |
 | Trava não abre | BCC incorreto | Verificar cálculo XOR no terminal de diagnóstico |
 | Trava não abre | Endereço errado | Checar DIP switches na placa CM06 (endereço = 1) |
 | App não abre na WebView | Build incorreto | Verificar se `dist/` foi copiado para `assets/www/` |
@@ -298,7 +316,7 @@ adb shell ls -la /dev/ttyS*
 ## CONTATO E SUPORTE
 
 **PREDDITA Tecnologia Ltda.**
-Sistema: PSL-2025-001 · Versão: 1.0.0-alpha
+Sistema: PSL-2025-001 · Versão: 2.0.25-lab
 Hardware: KS1062-N-ZY (Kaibei) + CM06-24-396-5557FB V2.0
 Protocolo: Kecheng RS-485 V4.0
 

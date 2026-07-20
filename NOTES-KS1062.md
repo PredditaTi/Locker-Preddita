@@ -7,7 +7,9 @@
 - Memory / storage: `2 GB / 16 GB`
 - Input power: `DC 12V 4A`
 - Android version observed on the device: `Android 11`
-- COM1 used by the current app: `/dev/ttyS1`
+- Serial validated on the current device and first app candidate: `/dev/ttyS5`
+- Hardware variants may expose COM1 as `/dev/ttyS1`; confirm with diagnostics
+  and commissioning instead of assuming a fixed mapping
 
 ## Management panel observed on the device
 
