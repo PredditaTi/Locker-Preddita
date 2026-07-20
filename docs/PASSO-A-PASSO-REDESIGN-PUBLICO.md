@@ -1,5 +1,9 @@
 # Passo a Passo - Redesign Publico do App do Armario
 
+> Este documento registra a implementacao da interface publica V3. O proximo
+> ciclo visual e operacional esta definido no
+> [plano do Kiosk V4 e melhorias](PLANO-IMPLEMENTACAO-MELHORIAS-REDESIGN-2026-07-20.md).
+
 ## Fase 1 - Base Segura
 
 1. Criar testes para as novas regras de experiencia publica.

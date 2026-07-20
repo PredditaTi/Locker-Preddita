@@ -96,6 +96,7 @@ flowchart LR
 | [Direcao tecnica v2](V2-ROADMAP.md) | Visao de produto, mercado e proximos marcos | Prioridade ou direcao de produto mudar |
 | [Comparativo de mercado](MARKET-COMPARISON.md) | Referencias competitivas | Nova pesquisa for realizada |
 | [Analise do app recuperado](ANALISE-COMPARATIVA-VEXPRESS-PENDRIVE.md) | Arquitetura, riscos e ideias do material local de referencia | Nova evidencia estatica for confirmada ou uma ideia entrar no backlog |
+| [Plano de melhorias e Kiosk V4](PLANO-IMPLEMENTACAO-MELHORIAS-REDESIGN-2026-07-20.md) | Oito partes para redesign, audio, diagnostico, serial, update e piloto | Uma parte iniciar, mudar de escopo ou ser concluida |
 | [Redesign publico](PASSO-A-PASSO-REDESIGN-PUBLICO.md) | Orientacoes da interface do kiosk | Experiencia publica mudar |
 | [Plano original do redesign](superpowers/plans/2026-07-09-public-kiosk-redesign.md) | Plano historico que orientou a implementacao publica | Nao usar como runbook atual; preservar como decisao historica |
 | [Notas do KS1062](../NOTES-KS1062.md) | Pesquisa do hardware e protocolo da placa | Nova evidencia de campo ou manual for validada |

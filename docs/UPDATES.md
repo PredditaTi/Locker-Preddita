@@ -59,6 +59,62 @@ para a mais antiga:
 
 ## Registro
 
+### 2026-07-20 - Plano de melhorias e redesign do Kiosk V4
+
+**Base:** produto `2.0.25-lab`, `versionCode 25`, `schemaVersion 12`, branch
+`codex/documentation-hub`
+
+**O que mudou**
+
+- Criado um plano de oito partes para transformar a analise comparativa em
+  implementacao incremental.
+- Definida uma identidade original de alto contraste para o Kiosk V4,
+  inspirada na simplicidade do app analisado sem copiar codigo ou assets.
+- Mapeadas telas de inicio, entrega, retirada, espera, sucesso, erro e
+  cancelamento.
+- Planejadas orientacao sonora, console tecnico autenticado, resiliencia serial
+  e health check seguro de atualizacao.
+- Separados recursos obrigatorios de itens condicionais como blocos, tamanho
+  `GG`, transportadoras, hotspot, video e WhatsApp.
+- Registrados arquivos previstos, criterios de aceite, testes, riscos,
+  sequencia de PRs e releases candidatas.
+- O guia da V3 passou a apontar para o novo ciclo V4.
+
+**Por que**
+
+- As ideias aproveitaveis precisavam de ordem, fronteiras e criterios para nao
+  misturar redesign com alteracoes de hardware de alto risco.
+- O frontend atual usa uma linguagem clara, mas ainda se parece com um painel
+  de cards; o objetivo agora e uma experiencia de autoatendimento full-screen,
+  mais proxima do visual aprovado pelo responsavel do produto.
+
+**Impacto**
+
+- As proximas melhorias podem ser executadas em sete PRs principais, com
+  rollback e validacao por etapa.
+- A Parte 1 cria a protecao de regressao antes de qualquer mudanca visual.
+- Nenhum codigo funcional, versao, contrato ou schema foi alterado nesta
+  atualizacao.
+
+**Arquivos**
+
+- `docs/PLANO-IMPLEMENTACAO-MELHORIAS-REDESIGN-2026-07-20.md`
+- `docs/ANALISE-COMPARATIVA-VEXPRESS-PENDRIVE.md`
+- `docs/PASSO-A-PASSO-REDESIGN-PUBLICO.md`
+- `docs/README.md`
+- `docs/UPDATES.md`
+
+**Validacao**
+
+- Plano conferido contra os componentes React, CSS, Edge Agent, bridge Android,
+  atualizador, diagnostico e testes E2E existentes.
+- Direcao visual confirmada por leitura estatica dos estilos do app analisado.
+- Escopo revisado para preservar HMAC, Keystore, idempotencia, prova fisica,
+  privacidade e verificacao criptografica de updates.
+- Links locais e integridade documental validados pelo verificador do projeto.
+
+**Referencia:** derivado da analise comparativa local de 20 de julho de 2026.
+
 ### 2026-07-20 - Analise comparativa de app de locker recuperado
 
 **Base:** produto `2.0.25-lab`, `versionCode 25`, `schemaVersion 12`, branch

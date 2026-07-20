@@ -434,3 +434,6 @@ incorporar seletivamente quatro ideias: voz acessivel, console tecnico mais
 completo, resiliencia serial observavel e health checks seguros de update. As
 demais devem aguardar evidencia de piloto, especialmente camera, WhatsApp,
 hotspot e autenticacao por transportadora.
+
+O plano de execucao derivado desta analise esta em
+[Plano de implementacao das melhorias e do redesign](PLANO-IMPLEMENTACAO-MELHORIAS-REDESIGN-2026-07-20.md).
