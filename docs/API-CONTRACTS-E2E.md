@@ -32,10 +32,11 @@ node scripts\v2-api-contract-test.mjs
 
 ## Fluxo E2E do kiosk
 
-`web/e2e/kiosk-flow.spec.js` usa Playwright Chromium contra o bundle gerado em
-`android/app/src/main/assets/www`. A ponte `window.Android` existe somente no
-contexto do navegador de teste e simula frames RS-485 com checksum, leitura de
-sensor, abertura e fechamento fisico.
+Os testes em `web/e2e` usam Playwright Chromium contra o bundle gerado em
+`android/app/src/main/assets/www`. A fixture compartilhada
+`support/kioskTestBridge.js` instala `window.Android` somente no contexto do
+navegador de teste e simula frames RS-485 com checksum, leitura de sensor,
+abertura e fechamento fisico.
 
 O ambiente web usa Vite 8 e requer Node.js 20.19 ou superior.
 
@@ -50,12 +51,28 @@ A jornada coberta confirma:
 7. estado `collected` sobrevive ao reload do kiosk;
 8. PIN, token, QR e codigo externo nao reaparecem depois do reload.
 
+A protecao de regressao tambem inclui:
+
+- `kiosk-layout.spec.js`: geometria, foco, nomes acessiveis e erros do console;
+- `kiosk-interactions.spec.js`: teclado, retorno, cancelamento e timeout;
+- projetos `1024x600`, `1280x800`, `800x480` e `390x844`;
+- falha controlada que prova a deteccao de um botao fora da tela.
+
+O baseline visual, as metricas e o rollback correspondente estao em
+`docs/KIOSK-V3-BASELINE.md`.
+
 Preparar e executar em `web`:
 
 ```powershell
 npx playwright install chromium
 npm run build
 npm run test:e2e
+```
+
+Para regenerar intencionalmente a referencia V3:
+
+```powershell
+npm run capture:baseline
 ```
 
 Em falhas, screenshot, video, trace e arvore acessivel ficam em

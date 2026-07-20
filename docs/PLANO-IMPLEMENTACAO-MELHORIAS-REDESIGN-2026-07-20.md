@@ -227,17 +227,17 @@ visual sem perder comportamento.
 
 Tarefas:
 
-- [ ] Capturar screenshots atuais de inicio, apartamento, confirmacao, porta,
+- [x] Capturar screenshots atuais de inicio, apartamento, confirmacao, porta,
   sucesso, PIN, QR, erro e timeout.
-- [ ] Adicionar projetos Playwright para `1024x600`, `1280x800`, `800x480` e
+- [x] Adicionar projetos Playwright para `1024x600`, `1280x800`, `800x480` e
   `390x844`.
-- [ ] Criar teste de layout que detecta overflow externo, botoes fora do
+- [x] Criar teste de layout que detecta overflow externo, botoes fora do
   viewport, texto cortado e sobreposicao dos controles principais.
-- [ ] Cobrir teclado, retorno, cancelamento, timeout e `Nova entrega` no E2E.
-- [ ] Adicionar verificacao de foco visivel e nomes acessiveis dos controles.
-- [ ] Registrar metricas iniciais de bundle, tempo de primeira tela e erros do
+- [x] Cobrir teclado, retorno, cancelamento, timeout e `Nova entrega` no E2E.
+- [x] Adicionar verificacao de foco visivel e nomes acessiveis dos controles.
+- [x] Registrar metricas iniciais de bundle, tempo de primeira tela e erros do
   console.
-- [ ] Preservar o APK `2.0.25-lab` como rollback do piloto.
+- [x] Preservar o APK `2.0.25-lab` como rollback do piloto.
 
 Criterios de aceite:
 
@@ -247,6 +247,9 @@ Criterios de aceite:
 - Nenhuma regra de porta ou versao do produto muda nesta parte.
 
 **Esforco relativo:** pequeno.
+
+**Status em 20/07/2026:** concluida. Evidencias, metricas e procedimento de
+reproducao estao em [KIOSK-V3-BASELINE.md](KIOSK-V3-BASELINE.md).
 
 ## Parte 2 - Fundacao visual e tela inicial V4
 

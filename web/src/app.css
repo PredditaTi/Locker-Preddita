@@ -2743,8 +2743,38 @@ button {
 }
 
 @media (max-width: 600px) {
+  body {
+    overflow: hidden;
+  }
+
+  .locker-app {
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  .locker-shell.locker-shell--flow {
+    height: calc(100vh - 20px);
+    min-height: 0;
+    grid-template-rows: max-content;
+    align-content: start;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .locker-shell.locker-shell--flow.locker-shell--has-banner {
+    grid-template-rows: auto max-content;
+  }
+
+  .public-kiosk-host {
+    height: auto;
+    min-height: 100%;
+    align-self: start;
+  }
+
   .public-kiosk-screen {
     height: auto;
+    min-height: 100%;
+    align-content: start;
     overflow: visible;
   }
 
@@ -2786,12 +2816,189 @@ button {
     grid-template-columns: 1fr;
   }
 
+  .public-pickup-layout {
+    height: auto;
+    grid-auto-rows: max-content;
+    align-content: start;
+  }
+
+  .public-pin-panel,
+  .public-qr-panel {
+    align-content: start;
+  }
+
   .public-apartment-grid {
     overflow: visible;
   }
 
   .public-number-key.is-muted {
     font-size: 0.9rem;
+  }
+}
+
+@media (max-height: 520px) and (min-width: 601px) {
+  body {
+    overflow: hidden;
+  }
+
+  .locker-app {
+    height: 100vh;
+    padding: 4px;
+    overflow: hidden;
+  }
+
+  .locker-shell,
+  .locker-shell.locker-shell--flow {
+    height: calc(100vh - 8px);
+    min-height: 0;
+    padding: 6px;
+    border-radius: 18px;
+    overflow: hidden;
+  }
+
+  .public-kiosk-screen {
+    padding: 8px;
+    border-radius: 18px;
+    gap: 6px;
+  }
+
+  .public-kiosk-header {
+    min-height: 58px;
+    gap: 8px;
+  }
+
+  .public-kiosk-site {
+    margin-bottom: 2px;
+    font-size: 0.62rem;
+  }
+
+  .public-kiosk-header h1 {
+    font-size: 2rem;
+    line-height: 1;
+  }
+
+  .public-kiosk-header p {
+    margin-top: 2px;
+    font-size: 0.82rem;
+  }
+
+  .public-back-button,
+  .public-secondary-button,
+  .public-primary-button,
+  .public-danger-button {
+    min-height: 48px;
+    padding: 0 14px;
+    border-radius: 16px;
+    font-size: 0.95rem;
+  }
+
+  .public-apartment-layout,
+  .public-pickup-layout {
+    gap: 8px;
+  }
+
+  .public-apartment-input,
+  .public-apartment-results,
+  .public-pin-panel,
+  .public-qr-panel,
+  .public-confirm-card,
+  .public-door-hero,
+  .public-door-details,
+  .public-success-copy,
+  .public-success-card {
+    padding: 8px;
+    border-radius: 18px;
+  }
+
+  .public-apartment-input,
+  .public-pin-panel,
+  .public-qr-panel {
+    gap: 6px;
+  }
+
+  .public-apartment-input input,
+  .public-pin-display {
+    min-height: 48px;
+    border-radius: 16px;
+    font-size: 2rem;
+  }
+
+  .public-number-pad {
+    gap: 5px;
+  }
+
+  .public-number-key,
+  .public-number-pad--pin .public-number-key {
+    min-height: 36px;
+    border-radius: 14px;
+    font-size: 1.2rem;
+  }
+
+  .public-number-key.is-muted {
+    font-size: 0.78rem;
+  }
+
+  .public-apartment-results {
+    gap: 5px;
+  }
+
+  .public-apartment-grid {
+    gap: 5px;
+  }
+
+  .public-apartment-card {
+    min-height: 54px;
+    border-radius: 16px;
+    font-size: 1rem;
+  }
+
+  .public-kiosk-screen--confirm,
+  .public-kiosk-screen--door,
+  .public-kiosk-screen--success,
+  .public-kiosk-screen--pickup-open {
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .public-kiosk-screen--confirm .public-kiosk-header {
+    display: none;
+  }
+
+  .public-confirm-card strong,
+  .public-door-hero strong,
+  .public-success-copy h1,
+  .public-success-card strong {
+    font-size: 3.2rem;
+  }
+
+  .public-door-hero p,
+  .public-success-copy p,
+  .public-success-card p {
+    font-size: 0.95rem;
+  }
+
+  .public-door-details {
+    display: none;
+  }
+
+  .public-action-bar {
+    gap: 6px;
+  }
+
+  .public-pin-hint {
+    min-height: 28px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+  }
+
+  .public-qr-camera {
+    min-height: 120px;
+    padding: 8px;
+    border-radius: 16px;
+  }
+
+  .public-qr-camera video {
+    height: 92px;
+    border-radius: 10px;
   }
 }
 

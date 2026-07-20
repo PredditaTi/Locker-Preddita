@@ -59,6 +59,58 @@ para a mais antiga:
 
 ## Registro
 
+### 2026-07-20 - Parte 1 do Kiosk V4 concluida
+
+**Base:** produto `2.0.25-lab`, `versionCode 25`, `schemaVersion 12`, branch
+`codex/kiosk-v4-baseline`
+
+**O que mudou**
+
+- Capturados nove estados visuais da V3 em `1024x600`, com gerador
+  reproduzivel e metricas em JSON.
+- Adicionados quatro projetos Playwright e auditoria de overflow, recorte,
+  sobreposicao, foco, nomes acessiveis e console.
+- Cobertos teclado, retorno, cancelamento, timeout e `Nova entrega`.
+- Extraida uma fixture RS-485 compartilhada pelos testes E2E.
+- Corrigidos cortes reais em `800x480` e composicao/scroll em `390x844`.
+- Confirmado o release `v2.0.25-lab`, APK e SHA-256 como rollback.
+
+**Por que**
+
+- O redesign V4 precisa de uma referencia objetiva para distinguir evolucao
+  visual de regressao funcional.
+- A primeira matriz revelou controles inacessiveis em telas baixas e retrato,
+  que foram corrigidos antes da captura definitiva.
+
+**Impacto**
+
+- A Parte 2 pode alterar a linguagem visual com comparacao automatica e
+  evidencias reproduziveis.
+- Nenhuma versao, schema, protocolo ou regra de conclusao de porta mudou.
+
+**Arquivos**
+
+- `docs/KIOSK-V3-BASELINE.md`
+- `docs/assets/kiosk-v3-baseline/`
+- `web/e2e/`
+- `web/playwright.config.js`
+- `web/src/app.css`
+- `web/package.json`
+- `docs/PLANO-IMPLEMENTACAO-MELHORIAS-REDESIGN-2026-07-20.md`
+- `docs/API-CONTRACTS-E2E.md`
+- `docs/DEVELOPER-RUNBOOK.md`
+
+**Validacao**
+
+- Jornada e auditoria visual aprovadas nos quatro viewports.
+- Contratos de interacao aprovados com relogio virtual para o timeout.
+- Bundle medido em `875.327 bytes`, ou `260.488 bytes` gzip.
+- Primeira tela pronta em `302,2 ms` no servidor local e zero erros de console.
+- Screenshots inspecionados visualmente e release de rollback consultado pelo
+  GitHub CLI.
+
+**Referencia:** [release v2.0.25-lab](https://github.com/PredditaTi/Locker-Preddita/releases/tag/v2.0.25-lab).
+
 ### 2026-07-20 - Plano de melhorias e redesign do Kiosk V4
 
 **Base:** produto `2.0.25-lab`, `versionCode 25`, `schemaVersion 12`, branch

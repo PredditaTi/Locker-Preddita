@@ -82,6 +82,16 @@ npm run test:e2e
 O teste E2E serve o mesmo bundle copiado para os assets Android. Consulte
 `docs/API-CONTRACTS-E2E.md` para o contrato coberto e os artefatos de falha.
 
+Para gerar novamente screenshots e metricas do baseline em `1024x600`:
+
+```powershell
+npm run capture:baseline
+```
+
+Esse comando substitui `docs/assets/kiosk-v3-baseline`; publique a mudanca
+somente quando a nova referencia for intencional e estiver registrada em
+`docs/UPDATES.md`.
+
 O teste nativo `scripts\Rs485FrameParserTest.java` tambem roda dentro de
 `scripts\v2-verify.ps1` usando o JDK 17.
 
