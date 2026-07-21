@@ -85,6 +85,7 @@ const NAV_BY_ROLE = {
     ['doors', 'Portas'],
     ['deliveries', 'Entregas'],
     ['audit', 'Auditoria'],
+    ['pilot', 'Piloto'],
     ['updates', 'Atualizacoes'],
     ['logs', 'Logs'],
     ['system', 'Sistema'],
@@ -96,6 +97,7 @@ const NAV_BY_ROLE = {
     ['residents', 'Apartamentos'],
     ['deliveries', 'Entregas'],
     ['audit', 'Auditoria'],
+    ['pilot', 'Piloto'],
     ['updates', 'Atualizacoes'],
     ['logs', 'Logs'],
     ['privacy', 'Privacidade'],
@@ -150,6 +152,25 @@ function appUpdateStatusLabel(status) {
     degraded: 'Operacao degradada',
     'failed-health': 'Falha no health check',
   }[status] || 'Sem telemetria';
+}
+
+function pilotOutcomeLabel(outcome) {
+  return {
+    completed: 'Concluida',
+    cancelled: 'Cancelada',
+    failed: 'Falhou',
+    interrupted: 'Interrompida',
+  }[outcome] || 'Sem resultado';
+}
+
+function pilotJourneyLabel(journeyType) {
+  return journeyType === 'courier' ? 'Entrega' : 'Retirada';
+}
+
+function formatPilotDuration(durationMs) {
+  const seconds = Math.max(0, Math.round((Number(durationMs) || 0) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}min ${seconds % 60}s`;
 }
 
 function doorSizeLabel(size) {
@@ -1338,13 +1359,13 @@ function renderUpdates() {
             <input name="failureThresholdPercentage" type="number" min="1" max="100" step="1" value="${escapeHtml(policy.failureThresholdPercentage ?? 25)}" required>
           </label>
           <label>Release
-            <input name="releaseId" maxlength="120" value="${escapeHtml(policy.releaseId || '')}" placeholder="v2.0.25-lab">
+            <input name="releaseId" maxlength="120" value="${escapeHtml(policy.releaseId || '')}" placeholder="v2.0.31-lab">
           </label>
           <label>Version code
-            <input name="versionCode" type="number" min="1" max="2147483647" step="1" value="${escapeHtml(policy.versionCode || '')}" placeholder="25">
+            <input name="versionCode" type="number" min="1" max="2147483647" step="1" value="${escapeHtml(policy.versionCode || '')}" placeholder="31">
           </label>
           <label>Version name
-            <input name="versionName" maxlength="80" value="${escapeHtml(policy.versionName || '')}" placeholder="2.0.25-lab">
+            <input name="versionName" maxlength="80" value="${escapeHtml(policy.versionName || '')}" placeholder="2.0.31-lab">
           </label>
           <label class="update-field-wide">URL HTTPS do APK
             <input name="apkUrl" type="url" maxlength="2048" value="${escapeHtml(policy.apkUrl || '')}" placeholder="https://github.com/.../PREDDITA-Locker.apk">
@@ -1365,6 +1386,119 @@ function renderUpdates() {
   `;
 }
 
+function renderPilot() {
+  title.textContent = 'Piloto controlado';
+  const summary = runtime().pilotSummary || {};
+  const metrics = state.data.pilot?.metrics || [];
+  const policy = state.data.appUpdate || {};
+  const updater = state.data.device?.appUpdater || {};
+  const candidateVersion = runtime().appVersion || '';
+  const installedVersion = updater.currentVersionName || state.data.device?.edgeAppVersion || '';
+  const readiness = [
+    ['Sinal recente do locker', isDeviceReady()],
+    ['Serial RS-485 aberta', Boolean(state.data.device?.serialOpen)],
+    ['Comissionamento concluido', state.data.device?.commissioningStatus === 'complete'],
+    ['Autenticacao do dispositivo em HMAC', runtime().deviceAuthMode === 'hmac'],
+    ['Credencial HMAC provisionada', updater.health?.credentialAvailable === true],
+    ['Versao candidata instalada', Boolean(candidateVersion) && installedVersion === candidateVersion],
+    ['Atualizador sem falha ativa', ['idle', 'up-to-date', 'healthy'].includes(updater.status)],
+    ['Canal sem distribuicao ampla', !policy.enabled || (policy.channel !== 'production' && Number(policy.rolloutPercentage || 0) <= 10)],
+    ['Rollout sem pausa automatica', !policy.autoPausedAt],
+    ['Mapa de portas recebido', Array.isArray(state.data.doors) && state.data.doors.length > 0 && state.data.doors.length === Number(state.data.device?.doorCount || state.data.doors.length)],
+  ];
+  const readyCount = readiness.filter(([, ready]) => ready).length;
+  const blocked = readyCount !== readiness.length;
+
+  root.innerHTML = `
+    <div class="grid">
+      <div class="grid stats">
+        <article class="stat-card"><span class="muted">Jornadas</span><strong>${escapeHtml(summary.sampleCount || 0)}</strong></article>
+        <article class="stat-card"><span class="muted">Conclusao</span><strong>${escapeHtml(summary.completionPercentage || 0)}%</strong></article>
+        <article class="stat-card"><span class="muted">Mediana</span><strong>${escapeHtml(formatPilotDuration(summary.medianDurationMs))}</strong></article>
+        <article class="stat-card"><span class="muted">P95</span><strong>${escapeHtml(formatPilotDuration(summary.p95DurationMs))}</strong></article>
+      </div>
+
+      <section class="panel pilot-readiness ${blocked ? 'is-warning' : ''}">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Preflight operacional</p>
+            <h3>${blocked ? 'Piloto bloqueado por pendencias' : 'Software pronto para o piloto'}</h3>
+          </div>
+          <span class="tag">${escapeHtml(readyCount)}/${escapeHtml(readiness.length)} prontos</span>
+        </div>
+        <div class="pilot-check-grid">
+          ${readiness.map(([label, ready]) => `
+            <div class="pilot-check ${ready ? 'is-ready' : 'is-blocked'}">
+              <span aria-hidden="true">${ready ? '&#10003;' : '!'}</span>
+              <strong>${escapeHtml(label)}</strong>
+            </div>
+          `).join('')}
+        </div>
+        <p class="panel-note">A validacao fisica do KS1062, o APK assinado e a autorizacao do local continuam obrigatorios antes de liberar usuarios reais.</p>
+      </section>
+
+      <div class="grid two">
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Resultado das jornadas</p>
+              <h3>Entrega e retirada</h3>
+            </div>
+          </div>
+          <div class="health-grid">
+            <div><span class="muted">Entregas</span><strong>${escapeHtml(summary.courierCount || 0)}</strong></div>
+            <div><span class="muted">Retiradas</span><strong>${escapeHtml(summary.pickupCount || 0)}</strong></div>
+            <div><span class="muted">PIN</span><strong>${escapeHtml(summary.pinPickupCount || 0)}</strong></div>
+            <div><span class="muted">QR</span><strong>${escapeHtml(summary.qrPickupCount || 0)}</strong></div>
+            <div><span class="muted">Canceladas</span><strong>${escapeHtml(summary.cancelledCount || 0)}</strong></div>
+            <div><span class="muted">Interrompidas</span><strong>${escapeHtml(summary.interruptedCount || 0)}</strong></div>
+          </div>
+        </section>
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Friccao observada</p>
+              <h3>Ajuda, fallback e erros</h3>
+            </div>
+          </div>
+          <div class="health-grid">
+            <div><span class="muted">Pedidos de ajuda</span><strong>${escapeHtml(summary.helpRequestCount || 0)}</strong></div>
+            <div><span class="muted">Taxa de ajuda</span><strong>${escapeHtml(summary.helpRequestPercentage || 0)}%</strong></div>
+            <div><span class="muted">Fallback de tamanho</span><strong>${escapeHtml(summary.fallbackCount || 0)}</strong></div>
+            <div><span class="muted">Taxa de fallback</span><strong>${escapeHtml(summary.fallbackPercentage || 0)}%</strong></div>
+            <div><span class="muted">Erros sinalizados</span><strong>${escapeHtml(summary.errorCount || 0)}</strong></div>
+            <div><span class="muted">Falhas finais</span><strong>${escapeHtml(summary.failedCount || 0)}</strong></div>
+          </div>
+        </section>
+      </div>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Amostras sanitizadas</p>
+            <h3>Jornadas recentes</h3>
+          </div>
+          <span class="tag">Sem apartamento, PIN, QR ou porta</span>
+        </div>
+        <div class="pilot-metric-list">
+          ${metrics.slice(0, 12).map((metric) => `
+            <article class="pilot-metric-row">
+              <div>
+                <strong>${escapeHtml(pilotJourneyLabel(metric.journeyType))}</strong>
+                <span>${escapeHtml(pilotOutcomeLabel(metric.outcome))}</span>
+              </div>
+              <div><span>Duracao</span><strong>${escapeHtml(formatPilotDuration(metric.durationMs))}</strong></div>
+              <div><span>Modo</span><strong>${escapeHtml(metric.pickupMode === 'none' ? '--' : metric.pickupMode.toUpperCase())}</strong></div>
+              <div><span>Ajuda</span><strong>${metric.helpRequested ? 'Sim' : 'Nao'}</strong></div>
+              <div><span>Erros</span><strong>${escapeHtml(metric.errorCount || 0)}</strong></div>
+            </article>
+          `).join('') || '<div class="empty">As metricas aparecem depois das primeiras jornadas no locker.</div>'}
+        </div>
+      </section>
+    </div>
+  `;
+}
+
 function render() {
   if (!state.data) return;
   updateChrome();
@@ -1374,6 +1508,7 @@ function render() {
   if (state.view === 'residents') renderResidents();
   if (state.view === 'deliveries') renderDeliveries();
   if (state.view === 'audit') renderAudit();
+  if (state.view === 'pilot') renderPilot();
   if (state.view === 'logs') renderLogs();
   if (state.view === 'updates') renderUpdates();
   if (state.view === 'privacy') renderPrivacy();

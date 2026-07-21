@@ -14,9 +14,9 @@ instalar um locker, operar o Admin Online ou publicar uma nova versao.
 | Item | Valor |
 | --- | --- |
 | Produto | PREDDITA Entregas Locker |
-| Versao do produto | `2.0.25-lab` |
-| Android `versionCode` | `25` |
-| API `schemaVersion` | `12` |
+| Versao do produto | `2.0.31-lab` |
+| Android `versionCode` | `31` |
+| API `schemaVersion` | `13` |
 | Pacote Android | `com.preddita.entregaslocker` |
 | Hardware validado | KS1062-N-ZY, RK3562, Android 11/13 |
 | Serial prioritaria | `/dev/ttyS5` |
@@ -104,6 +104,7 @@ flowchart LR
 | [Console tecnico do Kiosk V4](KIOSK-V4-CONSOLE-TECNICO.md) | Acesso, allowlist Android, abas, auditoria, testes e evidencias da Parte 5 | Credencial, bridge, diagnostico ou procedimento de campo mudar |
 | [Resiliencia serial do Kiosk V4](KIOSK-V4-RESILIENCIA-SERIAL.md) | Fila nativa, correlacao, retry seguro, recuperacao, metricas e gate da Parte 6 | Protocolo, driver, politica de retry ou evidencia de bancada mudar |
 | [Saude de update do Kiosk V4](KIOSK-V4-SAUDE-UPDATE.md) | Primeiro boot, backup tecnico, pausa automatica, recuperacao e gate da Parte 7 | Estado, prazo, rollout, recuperacao ou evidencia fisica mudar |
+| [Piloto controlado do Kiosk V4](KIOSK-V4-PILOTO-CONTROLADO.md) | Metricas sanitizadas, preflight, matriz fisica, parada, recuperacao e decisoes da Parte 8 | Evidencia de campo, taxa, gate ou decisao de escopo mudar |
 | [Redesign publico](PASSO-A-PASSO-REDESIGN-PUBLICO.md) | Orientacoes da interface do kiosk | Experiencia publica mudar |
 | [Plano original do redesign](superpowers/plans/2026-07-09-public-kiosk-redesign.md) | Plano historico que orientou a implementacao publica | Nao usar como runbook atual; preservar como decisao historica |
 | [Notas do KS1062](../NOTES-KS1062.md) | Pesquisa do hardware e protocolo da placa | Nova evidencia de campo ou manual for validada |

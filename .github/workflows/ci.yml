@@ -90,6 +90,8 @@ jobs:
           node scripts/v2-remote-command-journal-test.mjs
           node scripts/v2-edge-agent-contract-test.mjs
           node scripts/app-update-health-test.mjs
+          node scripts/pilot-metrics-test.mjs
+          node scripts/pilot-preflight-test.mjs
           node scripts/CommandWakeupTest.mjs
           node scripts/IotCommandBusTest.mjs
           node scripts/v2-qr-scanner-test.mjs
@@ -119,6 +121,7 @@ jobs:
           node --check admin-online/commandStore.mjs
           node --check admin-online/iotCommandBus.mjs
           node --check admin-online/privacyLifecycle.mjs
+          node --check admin-online/pilotMetrics.mjs
           node --check admin-online/public/app.js
 
       - name: Test native RS-485 parser

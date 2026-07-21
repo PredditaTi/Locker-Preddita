@@ -1,6 +1,6 @@
 {
   "name": "preddita-entregas-locker",
-  "version": "2.0.25-lab",
+  "version": "2.0.31-lab",
   "type": "module",
   "description": "PREDDITA Entregas Locker - Kiosk App",
   "scripts": {
@@ -19,7 +19,9 @@
     "test:edge-agent": "node ../scripts/v2-edge-agent-contract-test.mjs",
     "test:audio": "node ../scripts/audio-guidance-test.mjs",
     "test:diagnostics": "node ../scripts/diagnostic-console-test.mjs",
-    "test:update-health": "node ../scripts/app-update-health-test.mjs"
+    "test:update-health": "node ../scripts/app-update-health-test.mjs",
+    "test:pilot-metrics": "node ../scripts/pilot-metrics-test.mjs",
+    "test:pilot-preflight": "node ../scripts/pilot-preflight-test.mjs"
   },
   "dependencies": {
     "@fontsource-variable/atkinson-hyperlegible-next": "^5.3.0",

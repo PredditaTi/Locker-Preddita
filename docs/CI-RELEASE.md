@@ -50,6 +50,12 @@ A versao `2.0.22-lab` e o bootstrap do atualizador e ainda precisa ser instalada
 por ADB nos lockers existentes. Depois dela, releases com `versionCode` maior
 podem usar o rollout do Admin Online.
 
+A candidata atual do Kiosk V4 e `2.0.31-lab`, `versionCode 31`. Por manter o
+sufixo `-lab`, o workflow deve ser executado com canal `lab`; a promocao para
+`pilot` ou `production` exige novo nome/versao, nova validacao e outra release
+imutavel. Antes de usuarios reais, execute os dois preflights descritos em
+`docs/KIOSK-V4-PILOTO-CONTROLADO.md`.
+
 ## Custodia da chave
 
 A mesma chave deve assinar todas as atualizacoes futuras do aplicativo. Perder

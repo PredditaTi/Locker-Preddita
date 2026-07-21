@@ -511,6 +511,13 @@ queda de energia e recuperacao no KS1062 permanecem na Parte 8.
 **Objetivo:** validar as partes obrigatorias no equipamento e decidir recursos
 que aumentam escopo, dados pessoais ou superficie de ataque.
 
+**Status em 21/07/2026:** preparacao de software concluida na release candidata
+`2.0.31-lab`, `versionCode 31`, schema `13`. Metricas sem PII, agregacao no
+Admin, preflight bloqueante, verificacao ADB somente leitura e runbook do
+piloto estao implementados. A matriz abaixo continua pendente porque exige APK
+assinado, KS1062 comissionado e usuarios autorizados. Consulte
+[KIOSK-V4-PILOTO-CONTROLADO.md](KIOSK-V4-PILOTO-CONTROLADO.md).
+
 ### Piloto obrigatorio
 
 - [ ] Instalar em um locker comissionado usando rollout pequeno.
@@ -632,6 +639,6 @@ As partes 1 a 7 estarao concluidas quando:
 
 ## Proxima acao recomendada
 
-Comecar pela **Parte 1**. Ela reduz o risco de todo o restante e produz a
-referencia visual necessaria para implementar a home V4 na Parte 2 sem perder
-os contratos funcionais ja conquistados.
+Gerar o APK assinado `2.0.31-lab`, instalar em um unico KS1062 comissionado e
+executar o preflight e a matriz da **Parte 8**. Nenhum recurso condicional deve
+entrar antes dessa evidencia.

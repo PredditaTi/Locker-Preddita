@@ -67,6 +67,11 @@ import {
   sanitizeAuditMessage,
   sanitizeAuditMeta,
 } from './privacyLifecycle.mjs';
+import {
+  normalizePilotState,
+  recordPilotMetric,
+  summarizePilotMetrics,
+} from './pilotMetrics.mjs';
 
 const ROOT_DIR = fileURLToPath(new URL('.', import.meta.url));
 const PUBLIC_DIR = join(ROOT_DIR, 'public');
@@ -74,8 +79,8 @@ const DATA_DIR = process.env.PREDDITA_DATA_DIR ? normalize(process.env.PREDDITA_
 const DB_PATH = join(DATA_DIR, 'state.json');
 const BACKUP_DIR = join(DATA_DIR, 'backups');
 const OPERATIONAL_LOG_PATH = join(DATA_DIR, 'operational-logs.jsonl');
-const APP_VERSION = '2.0.25-lab';
-const SCHEMA_VERSION = 12;
+const APP_VERSION = '2.0.31-lab';
+const SCHEMA_VERSION = 13;
 const DEFAULT_ADMIN_TOKEN = 'preddita-admin-local';
 const DEFAULT_SUPER_ADMIN_TOKEN = 'preddita-super-admin-local';
 const DEFAULT_DEVICE_KEY = 'preddita-device-local';
@@ -922,6 +927,7 @@ function createInitialState(options = {}) {
     notificationOutbox: [],
     commands: [],
     processedDeviceEvents: [],
+    pilot: normalizePilotState(),
     privacy: {
       schemaVersion: PRIVACY_SCHEMA_VERSION,
       lastAppliedAt: '',
@@ -1043,6 +1049,7 @@ function migrateState(parsed = {}, options = {}) {
     processedDeviceEvents: Array.isArray(parsed.processedDeviceEvents)
       ? parsed.processedDeviceEvents.slice(0, MAX_PROCESSED_DEVICE_EVENTS)
       : [],
+    pilot: normalizePilotState(parsed.pilot),
     privacy: parsed.privacy && typeof parsed.privacy === 'object'
       ? {
           schemaVersion: PRIVACY_SCHEMA_VERSION,
@@ -2236,6 +2243,7 @@ function getRuntimeSummary(state) {
     appUpdateTargetVersion: cleanText(state.appUpdate?.versionName),
     appUpdateRolloutPercentage: Number.parseInt(state.appUpdate?.rolloutPercentage, 10) || 0,
     deviceAppUpdateStatus: cleanText(state.device?.appUpdater?.status) || 'unknown',
+    pilotSummary: summarizePilotMetrics(state.pilot),
     deviceAuthMode: DEVICE_AUTH_MODE,
     iotMode: iotStatus.mode,
     iotConfigured: iotStatus.configured,
@@ -3242,6 +3250,24 @@ async function applyDeviceEvent(state, event) {
         ? `Porta ${door} acionada localmente no armario.`
         : 'Porta acionada localmente no armario.',
       { eventId: event.id, ...event.payload }
+    );
+    return { state: withProcessedDeviceEvent(nextState, event), notification: null };
+  }
+
+  if (event.type === 'pilot-metric') {
+    const pilot = recordPilotMetric(state.pilot, event.payload, event);
+    const metric = pilot.metrics[0];
+    const nextState = withAudit(
+      { ...state, pilot },
+      'device-pilot-metric',
+      'Metrica sanitizada de jornada recebida do armario.',
+      {
+        eventId: event.id,
+        journeyType: metric.journeyType,
+        outcome: metric.outcome,
+        durationMs: metric.durationMs,
+        reasonCode: metric.reasonCode,
+      }
     );
     return { state: withProcessedDeviceEvent(nextState, event), notification: null };
   }

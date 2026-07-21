@@ -416,12 +416,17 @@ export function KioskNoticeDialog({ tone = 'warn', title, text, onClose }) {
   );
 }
 
-export function KioskFlowFrame({ siteName, stepLabel, className = '', children }) {
+export function KioskFlowFrame({ siteName, stepLabel, className = '', children, onHelp }) {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+
+  function openHelp() {
+    onHelp?.();
+    setIsHelpOpen(true);
+  }
 
   return (
     <section className={joinClasses('kiosk-v4-flow', className)}>
-      <KioskTopBar siteName={siteName} stepLabel={stepLabel} onHelp={() => setIsHelpOpen(true)} />
+      <KioskTopBar siteName={siteName} stepLabel={stepLabel} onHelp={openHelp} />
       {children}
       {isHelpOpen ? <KioskHelpDialog onClose={() => setIsHelpOpen(false)} /> : null}
     </section>
@@ -485,6 +490,7 @@ export function CourierApartmentStep({
   onClear,
   onSelectRecipient,
   onBack,
+  onHelp,
 }) {
   useKioskAudioPrompt('courier-choice');
 
@@ -493,6 +499,7 @@ export function CourierApartmentStep({
       siteName={tenantName}
       stepLabel="Entrega · Apartamento"
       className="public-kiosk-screen public-kiosk-screen--apartment kiosk-v4-flow--apartment"
+      onHelp={onHelp}
     >
       <main className="kiosk-v4-flow-main kiosk-v4-flow-main--apartment">
         <header className="kiosk-v4-flow-heading">
@@ -534,7 +541,7 @@ export function CourierApartmentStep({
   );
 }
 
-export function CourierConfirmStep({ tenantName, recipient, isBusy, onBack, onConfirm }) {
+export function CourierConfirmStep({ tenantName, recipient, isBusy, onBack, onConfirm, onHelp }) {
   useKioskAudioPrompt('courier-confirm');
 
   return (
@@ -542,6 +549,7 @@ export function CourierConfirmStep({ tenantName, recipient, isBusy, onBack, onCo
       siteName={tenantName}
       stepLabel="Entrega · Confirmacao"
       className="public-kiosk-screen public-kiosk-screen--confirm kiosk-v4-flow--confirm"
+      onHelp={onHelp}
     >
       <main className="kiosk-v4-flow-main kiosk-v4-flow-main--confirm">
         <header className="kiosk-v4-flow-heading">
@@ -576,6 +584,7 @@ export function CourierDoorStep({
   onStored,
   onDoesNotFit,
   onCancel,
+  onHelp,
 }) {
   const isCancelling = stage === 'cancelling-small-close';
   const isWaiting = stage === 'waiting-small-close' || isCancelling;
@@ -602,6 +611,7 @@ export function CourierDoorStep({
       siteName={tenantName}
       stepLabel={isWaiting ? 'Entrega · Fechamento' : 'Entrega · Porta'}
       className="public-kiosk-screen public-kiosk-screen--door kiosk-v4-flow--door"
+      onHelp={onHelp}
     >
       <main className="kiosk-v4-flow-main kiosk-v4-flow-main--door">
         <div className={joinClasses('kiosk-v4-door-icon', isWaiting || isConfirming ? 'is-waiting' : '')} aria-hidden="true">
@@ -639,7 +649,7 @@ export function CourierDoorStep({
   );
 }
 
-export function CourierSuccessStep({ tenantName, presentation, delivery, qrImage, onNewDelivery, onHome }) {
+export function CourierSuccessStep({ tenantName, presentation, delivery, qrImage, onNewDelivery, onHome, onHelp }) {
   useKioskAudioPrompt('courier-success');
 
   return (
@@ -647,6 +657,7 @@ export function CourierSuccessStep({ tenantName, presentation, delivery, qrImage
       siteName={tenantName}
       stepLabel="Entrega · Concluida"
       className="public-kiosk-screen public-kiosk-screen--success kiosk-v4-flow--success"
+      onHelp={onHelp}
     >
       <main className={joinClasses('kiosk-v4-flow-main kiosk-v4-flow-main--success', presentation.shouldShowCredential ? 'has-credential' : '')}>
         <KioskIcon icon={KioskIcons.check} className="kiosk-v4-success-icon" />
@@ -694,6 +705,7 @@ export function ResidentPickupStep({
   onCompletePickup,
   onStartQr,
   onStopQr,
+  onHelp,
 }) {
   const audioPromptId = completedPickup
     ? 'pickup-success'
@@ -710,6 +722,7 @@ export function ResidentPickupStep({
         siteName={tenantName}
         stepLabel="Retirada · Concluida"
         className="public-kiosk-screen public-kiosk-screen--pickup-success kiosk-v4-flow--success"
+        onHelp={onHelp}
       >
         <main className="kiosk-v4-flow-main kiosk-v4-flow-main--success">
           <KioskIcon icon={KioskIcons.check} className="kiosk-v4-success-icon" />
@@ -735,6 +748,7 @@ export function ResidentPickupStep({
         siteName={tenantName}
         stepLabel="Retirada · Porta"
         className="public-kiosk-screen public-kiosk-screen--pickup-open kiosk-v4-flow--door"
+        onHelp={onHelp}
       >
         <main className="kiosk-v4-flow-main kiosk-v4-flow-main--door">
           <div className={joinClasses('kiosk-v4-door-icon', isBusy ? 'is-waiting' : '')} aria-hidden="true">
@@ -762,6 +776,7 @@ export function ResidentPickupStep({
       siteName={tenantName}
       stepLabel={isPinMode ? 'Retirada · PIN' : 'Retirada · QR'}
       className={joinClasses('public-kiosk-screen public-kiosk-screen--pickup kiosk-v4-flow--pickup', isPinMode ? 'is-pin' : 'is-qr')}
+      onHelp={onHelp}
     >
       <main className="kiosk-v4-flow-main kiosk-v4-flow-main--pickup">
         <header className="kiosk-v4-flow-heading">

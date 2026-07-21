@@ -235,7 +235,7 @@ cd web
 $env:VITE_PREDDITA_REMOTE_URL="https://locker.example.com"
 $env:VITE_PREDDITA_LOCKER_ID="ks1062-aurora"
 $env:VITE_PREDDITA_DEVICE_AUTH_MODE="hmac"
-$env:VITE_PREDDITA_EDGE_APP_VERSION="2.0.25-lab"
+$env:VITE_PREDDITA_EDGE_APP_VERSION="2.0.31-lab"
 npm run build
 Remove-Item Env:VITE_PREDDITA_REMOTE_URL
 Remove-Item Env:VITE_PREDDITA_LOCKER_ID
@@ -354,6 +354,29 @@ solicitar ao operador que autorize esta fonte de instalacao.
   depois aberta e novamente fechada.
 - Deposito, retirada e abertura remota permaneceram ocupados ate a leitura
   individual confirmar o fechamento.
+
+## Preflight do piloto controlado
+
+Os testes sem hardware podem ser executados em qualquer plataforma:
+
+```powershell
+node .\scripts\pilot-metrics-test.mjs
+node .\scripts\pilot-preflight-test.mjs
+```
+
+No servidor que possui `state.json`, execute com as mesmas variaveis de
+autenticacao do Admin:
+
+```powershell
+$env:PREDDITA_DEVICE_AUTH_MODE="hmac"
+node .\scripts\pilot-preflight.mjs --state .\admin-online\data\state.json --expected-version 2.0.31-lab
+```
+
+No equipamento conectado por ADB, `deploy.ps1 pilot-check` ou
+`./scripts/deploy.sh pilot-check` valida pacote, versao, processo e existencia
+da serial sem enviar frame RS-485. Um retorno diferente de zero bloqueia o
+piloto. A matriz completa, criterios de parada e recuperacao ficam em
+`docs/KIOSK-V4-PILOTO-CONTROLADO.md`.
 
 ## Como revisar uma mudanca
 

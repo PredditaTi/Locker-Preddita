@@ -404,6 +404,23 @@ ficam apenas como SHA-256, aceitam no maximo cinco tentativas e sao consumidos
 atomicamente. O ultimo passo TOTP aceito e persistido para impedir replay entre
 replicas. Em producao, Postgres e `PREDDITA_MFA_ENCRYPTION_KEY` sao obrigatorios.
 
+## Observabilidade do piloto
+
+O contrato 4 do Edge Agent mantem uma unica jornada tecnica no armazenamento
+local. Um restart encerra essa jornada como `interrupted`; conclusao ou
+cancelamento remove o registro. O evento `pilot-metric` usa id estavel e passa
+pelo mesmo diario offline/idempotente dos demais eventos do locker.
+
+O payload possui allowlist fechada: tipo, resultado, duracao limitada, modo
+PIN/QR, fallback de tamanho, booleano de ajuda, contagem limitada de erros e
+codigo de motivo. Identificador de entrega, apartamento, porta, credencial,
+imagem e texto livre nao atravessam essa fronteira.
+
+O Admin normaliza novamente o evento, mantem no maximo 500 amostras por locker
+e calcula taxas e percentis em leitura. A tela `Piloto` combina esses agregados
+com sinal recente, serial, comissionamento, HMAC, versao, update e escopo do
+rollout; ela informa bloqueios, mas nao substitui a aprovacao fisica.
+
 ## Riscos conhecidos e proximos passos
 
 - `web/src/App.jsx` ainda e grande. Antes de escalar para muitos armarios, vale

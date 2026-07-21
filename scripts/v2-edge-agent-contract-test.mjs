@@ -134,6 +134,41 @@ async function testSanitizedRemoteMetrics() {
   assert.equal(JSON.stringify(info).includes('baseUrl'), false);
 }
 
+async function testPilotJourneyContract() {
+  const storage = new MemoryStorage();
+  let currentTime = '2026-07-21T12:00:00.000Z';
+  const agent = new EdgeAgentRuntime({
+    storage,
+    hardware: createHardware(),
+    remote: createRemote(),
+    now: () => currentTime,
+  });
+
+  agent.startPilotJourney('courier');
+  agent.recordPilotJourneySignal('help');
+  agent.recordPilotJourneySignal('size-fallback');
+  currentTime = '2026-07-21T12:02:00.000Z';
+  const queued = agent.completePilotJourney('completed');
+  assert.equal(queued.type, 'pilot-metric');
+  assert.equal(queued.payload.durationMs, 120000);
+  assert.equal(queued.payload.helpRequested, true);
+  assert.equal(queued.payload.usedSizeFallback, true);
+  assert.equal(JSON.stringify(queued.payload).includes('apartment'), false);
+
+  agent.startPilotJourney('pickup');
+  agent.recordPilotJourneySignal('pickup-mode', { pickupMode: 'qr' });
+  currentTime = '2026-07-21T12:03:00.000Z';
+  const recoveredAgent = new EdgeAgentRuntime({
+    storage,
+    hardware: createHardware(),
+    remote: createRemote(),
+    now: () => currentTime,
+  });
+  const interrupted = recoveredAgent.recoverInterruptedPilotJourney();
+  assert.equal(interrupted.payload.outcome, 'interrupted');
+  assert.equal(interrupted.payload.pickupMode, 'qr');
+}
+
 async function testIdempotentRemoteCommand() {
   const storage = new MemoryStorage();
   const completed = [];
@@ -407,10 +442,11 @@ async function testKioskBoundary() {
   }
 }
 
-assert.equal(EDGE_AGENT_CONTRACT_VERSION, 3);
+assert.equal(EDGE_AGENT_CONTRACT_VERSION, 4);
 await testOfflineEventRecovery();
 await testOperationalStateStorage();
 await testSanitizedRemoteMetrics();
+await testPilotJourneyContract();
 await testIdempotentRemoteCommand();
 await testUnknownExecutionAfterRestart();
 await testConcurrentCycles();

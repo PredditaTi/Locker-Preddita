@@ -59,6 +59,57 @@ para a mais antiga:
 
 ## Registro
 
+### 2026-07-21 - Parte 8 preparada para piloto fisico controlado
+
+**Base:** produto `2.0.31-lab`, `versionCode 31`, `schemaVersion 13`, branch
+`codex/kiosk-v4-pilot-readiness`
+
+**O que mudou**
+
+- O kiosk passou a medir jornadas sem enviar apartamento, pessoa, PIN, QR,
+  porta ou texto livre; o contrato do Edge Agent passou da versao 3 para 4.
+- O servidor normaliza uma allowlist, limita 500 amostras por locker e agrega
+  conclusao, duracao, ajuda, fallback, erros e modos PIN/QR.
+- O Admin ganhou a pagina Piloto, com preflight e amostras sanitizadas.
+- Foram criados preflight bloqueante, verificacao ADB somente leitura, testes
+  automatizados e runbook de ensaio, parada, recuperacao e consentimento.
+- A release candidata foi consolidada em `2.0.31-lab`; referencias a
+  `v2.0.25-lab` permanecem como historico e rollback funcional.
+
+**Por que**
+
+- A Parte 8 precisava transformar observacao de campo em evidencia comparavel
+  sem ampliar a coleta de dados pessoais.
+- Um piloto nao pode comecar com serial, comissionamento, HMAC, versao, update
+  ou rollout em estado inadequado.
+
+**Impacto**
+
+- A equipe consegue medir as jornadas e interromper o piloto por criterio
+  objetivo.
+- O preflight retorna erro quando existe bloqueio e nao aciona nenhuma porta.
+- APK assinado, bancada KS1062 e observacao autorizada continuam pendentes; a
+  release nao foi promovida a producao.
+
+**Arquivos**
+
+- `docs/KIOSK-V4-PILOTO-CONTROLADO.md`
+- `docs/PLANO-IMPLEMENTACAO-MELHORIAS-REDESIGN-2026-07-20.md`
+- `docs/ARCHITECTURE.md`
+- `docs/API-CONTRACTS-E2E.md`
+- `docs/PRIVACY-DATA-LIFECYCLE.md`
+- `docs/DEVELOPER-RUNBOOK.md`
+- `docs/HISTORICO-COMPLETO-DE-MELHORIAS.md`
+
+**Validacao**
+
+- Testes de metricas, preflight, Edge Agent, smoke, build web e verificacoes
+  de documentacao executados.
+- Painel Piloto conferido em viewport desktop e movel.
+- Testes fisicos permanecem explicitamente pendentes no runbook.
+
+**Referencia:** PR da Parte 8 a publicar.
+
 ### 2026-07-21 - Parte 7 do Kiosk V4 concluida em laboratorio
 
 **Base:** produto `2.0.25-lab`, `versionCode 25`, `schemaVersion 12`, branch

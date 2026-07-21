@@ -77,7 +77,7 @@ const COMMANDS = createCommandSet(LOCKER_PROFILE);
 const DOORS_PER_PAGE = 8;
 const DOOR_COUNT_PRESETS = [8, 12, 16, 20, 24];
 const ADMIN_VIEWS = new Set(['admin', 'adminDeposit', 'adminPickup', 'doors', 'system']);
-const APP_VERSION = '2.0.25-lab';
+const APP_VERSION = '2.0.31-lab';
 const POPUP_BANNER_TITLES = new Set([
   'Porta pequena ainda aberta',
   'Sem porta grande disponivel',
@@ -393,6 +393,9 @@ export default function App() {
 
   useEffect(() => {
     edgeAgent.reportAppUpdateHealth(lockerStateRef.current);
+    if (edgeAgent.recoverInterruptedPilotJourney()) {
+      void flushPendingDeviceEvents();
+    }
   }, []);
 
   useEffect(() => {
@@ -751,6 +754,7 @@ export default function App() {
     try {
       const rememberOpened = (outcome) => {
         queueDoorOpenedEvent(channel, outcome, successText);
+        if (!outcome.ok) edgeAgent.recordPilotJourneySignal('error');
         return outcome;
       };
       const baselineReading = await readDoorPhysicalStatus(channel);
@@ -1104,6 +1108,8 @@ export default function App() {
   async function handleUseLargeDoor() {
     if (!activeDeposit || isBusy) return;
 
+    edgeAgent.recordPilotJourneySignal('size-fallback');
+
     const previousDeposit = activeDeposit;
     const availableLargeDoor = findAvailableDoor(lockerStateRef.current, 'G', largeDoorCatalog);
     if (!availableLargeDoor) {
@@ -1167,6 +1173,8 @@ export default function App() {
         title: 'Operacao cancelada',
         text: `A porta ${previousDeposit.door} foi confirmada fechada e a reserva foi cancelada.`,
       });
+      edgeAgent.completePilotJourney('cancelled', { reasonCode: 'user-cancelled' });
+      void flushPendingDeviceEvents();
       return;
     }
 
@@ -1318,6 +1326,9 @@ export default function App() {
         id: buildDeliveryStoredEventId(deliveryToConfirm.id),
         occurredAt: confirmedDelivery.depositedAt || confirmedDelivery.notificationRequestedAt,
       });
+      if (isCourierDeposit) {
+        edgeAgent.completePilotJourney('completed');
+      }
       void flushPendingDeviceEvents();
     } catch (error) {
       if (isCourierDeposit) {
@@ -1344,6 +1355,10 @@ export default function App() {
       title: 'Reserva cancelada',
       text: `A porta ${activeDeposit.door} voltou a ficar disponivel para uma nova entrega.`,
     });
+    if (view === 'courier') {
+      edgeAgent.completePilotJourney('cancelled', { reasonCode: 'user-cancelled' });
+      void flushPendingDeviceEvents();
+    }
   }
 
   function handleCancelWaitingForLargeDoor() {
@@ -1538,6 +1553,10 @@ export default function App() {
   async function validatePickupCredential(mode, rawValue) {
     if (isBusy) return;
 
+    edgeAgent.recordPilotJourneySignal('pickup-mode', {
+      pickupMode: mode === 'pin' ? 'pin' : 'qr',
+    });
+
     if (mode === 'pin' && !isCompletePin(rawValue)) {
       setBanner({ tone: 'warn', title: 'PIN incompleto', text: 'Digite os 6 digitos do PIN para abrir a porta.' });
       return;
@@ -1545,6 +1564,7 @@ export default function App() {
 
     const resolution = resolvePickupRequest(lockerStateRef.current, mode, rawValue);
     if (!resolution.ok) {
+      edgeAgent.recordPilotJourneySignal('error');
       setBanner({ tone: 'danger', title: 'Retirada nao autorizada', text: resolution.error });
       return;
     }
@@ -1582,6 +1602,7 @@ export default function App() {
   async function handleScannedPickupPayload(rawValue) {
     const credential = resolveScannedPickupCredential(rawValue);
     if (!credential.ok) {
+      edgeAgent.recordPilotJourneySignal('error');
       qrScanLockedRef.current = false;
       setQrScannerState((current) => ({ ...current, error: credential.error, status: 'Tente novamente' }));
       return;
@@ -1648,6 +1669,7 @@ export default function App() {
 
       qrScanFrameRef.current = window.requestAnimationFrame(scanLoop);
     } catch (error) {
+      edgeAgent.recordPilotJourneySignal('error');
       stopQrScanner({ updateState: false });
       setQrScannerState({
         active: false,
@@ -1698,6 +1720,11 @@ export default function App() {
       }, {
         id: buildDeliveryCollectedEventId(pickupToComplete.id),
       });
+      if (view === 'resident') {
+        edgeAgent.completePilotJourney('completed', {
+          pickupMode: pickupMode === 'pin' ? 'pin' : 'qr',
+        });
+      }
       void flushPendingDeviceEvents();
       setPickupValue('');
       setActivePickupId('');
@@ -1764,6 +1791,7 @@ export default function App() {
     setActiveDepositId('');
     setBanner(PUBLIC_READY_BANNER);
     resetCourierFlow();
+    edgeAgent.startPilotJourney('courier');
     setView('courier');
   }
 
@@ -1773,7 +1801,12 @@ export default function App() {
     setPickupValue('');
     setActivePickupId('');
     setPickupSuccessDelivery(null);
+    edgeAgent.startPilotJourney('pickup');
     setView('resident');
+  }
+
+  function handlePilotHelp() {
+    edgeAgent.recordPilotJourneySignal('help');
   }
 
   async function handleSelectRecipient(recipientId) {
@@ -2303,6 +2336,7 @@ export default function App() {
                     qrImage={qrImage}
                     onNewDelivery={openCourierFlow}
                     onHome={finishCourierSuccessNow}
+                    onHelp={handlePilotHelp}
                   />
                 ) : activeDeposit ? (
                   <CourierDoorStep
@@ -2314,6 +2348,7 @@ export default function App() {
                     onStored={handleConfirmDeposit}
                     onDoesNotFit={handleUseLargeDoor}
                     onCancel={handleCancelWaitingForLargeDoor}
+                    onHelp={handlePilotHelp}
                   />
                 ) : courierStep === 'confirm' && selectedRecipient ? (
                   <CourierConfirmStep
@@ -2322,6 +2357,7 @@ export default function App() {
                     isBusy={isBusy}
                     onBack={handleBackToApartmentList}
                     onConfirm={handleConfirmCourierRecipient}
+                    onHelp={handlePilotHelp}
                   />
                 ) : (
                   <CourierApartmentStep
@@ -2334,9 +2370,12 @@ export default function App() {
                     onClear={() => setRecipientSearch('')}
                     onSelectRecipient={handleSelectRecipient}
                     onBack={() => {
+                      edgeAgent.completePilotJourney('cancelled', { reasonCode: 'user-cancelled' });
+                      void flushPendingDeviceEvents();
                       resetCourierFlow();
                       setView('home');
                     }}
+                    onHelp={handlePilotHelp}
                   />
                 )}
               </section>
@@ -2475,6 +2514,8 @@ export default function App() {
                   qrVideoRef={qrVideoRef}
                   qrCanvasRef={qrCanvasRef}
                   onBack={() => {
+                    edgeAgent.completePilotJourney('cancelled', { reasonCode: 'user-cancelled' });
+                    void flushPendingDeviceEvents();
                     stopQrScanner();
                     setPickupValue('');
                     setActivePickupId('');
@@ -2497,6 +2538,7 @@ export default function App() {
                   onCompletePickup={handleCompletePickup}
                   onStartQr={startQrScanner}
                   onStopQr={stopQrScanner}
+                  onHelp={handlePilotHelp}
                 />
               </section>
             ) : null}
