@@ -22,7 +22,7 @@ instalar um locker, operar o Admin Online ou publicar uma nova versao.
 | Serial prioritaria | `/dev/ttyS5` |
 | Frontend | React 18, Vite 8, Node.js 20.19+ |
 | Backend | Node.js, armazenamento JSON para laboratorio ou Postgres 16 |
-| Status | Kiosk V4 com jornadas, audio opcional e console tecnico autenticado integrados em laboratorio, aguardando piloto controlado |
+| Status | Kiosk V4 com jornadas, audio, console tecnico e coordenador serial resiliente integrados em laboratorio, aguardando bancada e piloto controlado |
 
 O estado acima descreve a base funcional. Mudancas apenas documentais feitas
 depois da tag permanecem registradas em [UPDATES.md](UPDATES.md).
@@ -102,6 +102,7 @@ flowchart LR
 | [Jornadas publicas do Kiosk V4](KIOSK-V4-JORNADAS-PUBLICAS.md) | Fluxos reais, contratos fisicos, screenshots, metricas e testes da Parte 3 | Uma jornada publica, regra de porta ou referencia visual mudar |
 | [Audio acessivel do Kiosk V4](KIOSK-V4-AUDIO-ACESSIVEL.md) | Politica sem PII, assets, controles, testes e evidencias da Parte 4 | Prompt, volume, reproducao ou politica de audio mudar |
 | [Console tecnico do Kiosk V4](KIOSK-V4-CONSOLE-TECNICO.md) | Acesso, allowlist Android, abas, auditoria, testes e evidencias da Parte 5 | Credencial, bridge, diagnostico ou procedimento de campo mudar |
+| [Resiliencia serial do Kiosk V4](KIOSK-V4-RESILIENCIA-SERIAL.md) | Fila nativa, correlacao, retry seguro, recuperacao, metricas e gate da Parte 6 | Protocolo, driver, politica de retry ou evidencia de bancada mudar |
 | [Redesign publico](PASSO-A-PASSO-REDESIGN-PUBLICO.md) | Orientacoes da interface do kiosk | Experiencia publica mudar |
 | [Plano original do redesign](superpowers/plans/2026-07-09-public-kiosk-redesign.md) | Plano historico que orientou a implementacao publica | Nao usar como runbook atual; preservar como decisao historica |
 | [Notas do KS1062](../NOTES-KS1062.md) | Pesquisa do hardware e protocolo da placa | Nova evidencia de campo ou manual for validada |

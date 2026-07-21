@@ -16,6 +16,8 @@ public final class Rs485FrameParser {
 
     private final List<Byte> buffer = new ArrayList<>();
     private byte[] expectedRequest;
+    private long invalidFrameCount;
+    private long discardedByteCount;
 
     public synchronized void expectResponseFor(byte[] request) {
         expectedRequest = request == null ? null : Arrays.copyOf(request, request.length);
@@ -37,6 +39,7 @@ public final class Rs485FrameParser {
         while (!buffer.isEmpty()) {
             if (!isKnownCommand(unsigned(buffer.get(0)))) {
                 buffer.remove(0);
+                discardedByteCount += 1;
                 continue;
             }
 
@@ -46,6 +49,8 @@ public final class Rs485FrameParser {
             byte[] candidate = take(frameLength);
             if (!hasValidBcc(candidate)) {
                 buffer.remove(0);
+                invalidFrameCount += 1;
+                discardedByteCount += 1;
                 continue;
             }
 
@@ -58,6 +63,14 @@ public final class Rs485FrameParser {
 
     public synchronized int bufferedByteCount() {
         return buffer.size();
+    }
+
+    public synchronized long invalidFrameCount() {
+        return invalidFrameCount;
+    }
+
+    public synchronized long discardedByteCount() {
+        return discardedByteCount;
     }
 
     private int expectedFrameLength() {
@@ -110,6 +123,7 @@ public final class Rs485FrameParser {
     private void trimOversizedBuffer() {
         while (buffer.size() > MAX_BUFFER_SIZE) {
             buffer.remove(0);
+            discardedByteCount += 1;
         }
     }
 

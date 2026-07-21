@@ -458,8 +458,15 @@ export function responseMatchesRequest(parsed, requestBytes) {
 }
 
 const responseCallbacks = new Map();
+const nativeCommandCallbacks = new Map();
 let responseId = 0;
+let nativeExecutionSequence = 0;
 let sendQueue = Promise.resolve();
+
+function createSerialExecutionId() {
+  nativeExecutionSequence += 1;
+  return `rs485-${Date.now().toString(36)}-${nativeExecutionSequence.toString(36)}`;
+}
 
 if (typeof window !== 'undefined') {
   window.onRS485Response = (hexString) => {
@@ -478,6 +485,24 @@ if (typeof window !== 'undefined') {
       responseCallbacks.delete(id);
       callback({ ok: false, error: message });
     }
+  };
+
+  window.onRS485CommandResult = (payload) => {
+    const executionId = String(payload?.executionId ?? '');
+    const callback = nativeCommandCallbacks.get(executionId);
+    if (!callback) return;
+    nativeCommandCallbacks.delete(executionId);
+    callback({
+      ok: Boolean(payload?.ok),
+      error: String(payload?.error ?? ''),
+      hex: String(payload?.hex ?? ''),
+      executionId,
+      operation: String(payload?.operation ?? 'unknown'),
+      attempts: Number(payload?.attempts) || 0,
+      queueWaitMs: Number(payload?.queueWaitMs) || 0,
+      durationMs: Number(payload?.durationMs) || 0,
+      executionOutcomeUnknown: Boolean(payload?.executionOutcomeUnknown),
+    });
   };
 }
 
@@ -589,13 +614,46 @@ function sendFrameNow(bytes, timeoutMs = 900) {
 
   return new Promise((resolve) => {
     const id = ++responseId;
+    const bridge = isNative() ? getAndroidBridge() : null;
+    const usesNativeCoordinator = typeof bridge?.sendRS485Command === 'function';
+    const executionId = usesNativeCoordinator ? createSerialExecutionId() : '';
+    const clientTimeoutMs = usesNativeCoordinator
+      ? Math.max(4000, timeoutMs * 3 + 1500)
+      : timeoutMs;
 
     const timer = setTimeout(() => {
       responseCallbacks.delete(id);
-      resolve({ ok: false, error: 'TIMEOUT', hex: hexString });
-    }, timeoutMs);
+      if (executionId) nativeCommandCallbacks.delete(executionId);
+      resolve({
+        ok: false,
+        error: usesNativeCoordinator ? 'NATIVE_COORDINATOR_TIMEOUT' : 'TIMEOUT',
+        hex: hexString,
+        executionId,
+      });
+    }, clientTimeoutMs);
 
-    if (isNative()) {
+    if (usesNativeCoordinator) {
+      nativeCommandCallbacks.set(executionId, (result) => {
+        if (result.ok) {
+          const parsed = parseResponse(result.hex);
+          if (!responseMatchesRequest(parsed, bytes)) {
+            clearTimeout(timer);
+            resolve({
+              ok: false,
+              error: 'NATIVE_RESPONSE_MISMATCH',
+              executionId,
+            });
+            return;
+          }
+        }
+        clearTimeout(timer);
+        resolve(result);
+      });
+      bridge.sendRS485Command(executionId, hexString);
+      return;
+    }
+
+    if (bridge) {
       responseCallbacks.set(id, (result) => {
         if (result.ok) {
           const parsed = parseResponse(result.hex);
@@ -607,7 +665,7 @@ function sendFrameNow(bytes, timeoutMs = 900) {
         resolve(result);
         return true;
       });
-      window.Android.sendRS485(hexString);
+      bridge.sendRS485(hexString);
       return;
     }
 
@@ -663,12 +721,44 @@ export const Serial = {
         serialOpen: true,
         serialPath: '/dev/ttyS5',
         serialError: 'SIMULATED',
+        serialCoordinator: {
+          state: 'READY',
+          queueDepth: 0,
+          maxQueueDepth: 0,
+          inFlight: false,
+          blockedActuations: 0,
+          submitted: 0,
+          completed: 0,
+          rejected: 0,
+          writes: 0,
+          readRetries: 0,
+          timeouts: 0,
+          invalidFrames: 0,
+          discardedBytes: 0,
+          mismatchedFrames: 0,
+          reconnections: 0,
+          ioFailures: 0,
+          unknownActuations: 0,
+          lastQueueWaitMs: 0,
+          maxQueueWaitMs: 0,
+          lastValidResponseAt: '',
+        },
         zysjAvailable: true,
         zysjError: 'SIMULATED',
         zysjMcuVersion: simBoard.mcuVersion,
         zysjOutputChannel: simBoard.outputChannel,
         zysjGpio: { ...simBoard.gpio },
       };
+    }
+
+    let serialCoordinator = { state: 'UNAVAILABLE' };
+    if (typeof bridge.getSerialCoordinatorStatus === 'function') {
+      try {
+        const parsed = JSON.parse(bridge.getSerialCoordinatorStatus() || '{}');
+        if (parsed && typeof parsed === 'object') serialCoordinator = parsed;
+      } catch {
+        serialCoordinator = { state: 'UNAVAILABLE' };
+      }
     }
 
     return {
@@ -684,6 +774,7 @@ export const Serial = {
         typeof bridge.getLastSerialError === 'function'
           ? bridge.getLastSerialError()
           : 'N/A',
+      serialCoordinator,
       zysjAvailable: false,
       zysjError: ZYSJ_SAFE_MODE ? 'ZYSJ_DISABLED_SAFE_MODE' : 'N/A',
       zysjMcuVersion: null,

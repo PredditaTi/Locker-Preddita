@@ -49,6 +49,8 @@ Principais arquivos:
   timeout e allowlist do console tecnico local.
 - `android/app/src/main/java/.../MainActivity.java`: WebView e ponte JavaScript
   para ler/escrever na serial.
+- `android/app/src/main/java/.../SerialCommandCoordinator.java`: fila nativa
+  unica, correlacao, timeout, retry de leitura e recuperacao limitada da UART.
 - `android/app/src/main/java/.../DiagnosticCredentialStore.java`: salt e hash
   PBKDF2 da credencial tecnica; o PIN original nao e persistido.
 - `android/app/src/main/java/.../AppUpdateManager.java`: download, verificacao
@@ -69,6 +71,21 @@ antes do acionamento e bloqueia reexecucao automatica quando um restart deixa o
 resultado fisico desconhecido. A implementacao continua no mesmo APK para
 preservar o deploy atual; transformar o agente em um Android Service separado
 nao exige mudar os fluxos da Kiosk UI.
+
+### Coordenacao RS-485
+
+`serial.js` cria um `executionId` para cada pedido e entrega o frame ao bridge.
+No Android, uma fila limitada alimenta um unico worker; somente esse worker
+escreve na UART. O parser pode receber chunks, eco, ruido e frames colados, mas
+o item em voo so conclui com BCC, comando, board e canal correlacionados.
+
+Leituras podem ser repetidas uma vez. Atuacoes nunca sao repetidas depois que a
+escrita pode ter chegado a placa. Timeout ou falha de I/O deixam o resultado
+desconhecido e bloqueiam novas atuacoes no canal ate uma leitura de sensor. O
+driver tenta uma reabertura com backoff; falha nessa recuperacao deixa a fila
+degradada e fechada. O Edge Agent recebe apenas contadores e estados
+sanitizados. O contrato completo esta em
+[KIOSK-V4-RESILIENCIA-SERIAL.md](KIOSK-V4-RESILIENCIA-SERIAL.md).
 
 Fluxo do entregador:
 

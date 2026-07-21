@@ -430,18 +430,18 @@ enfraquecer a seguranca fisica atual.
 
 Tarefas:
 
-- [ ] Criar um coordenador serial nativo com uma unica fila por barramento.
-- [ ] Garantir no maximo uma escrita fisica em voo.
-- [ ] Correlacionar comando, board, canal, tipo de resposta e `executionId`.
-- [ ] Separar politica de retry de leitura e de atuacao.
-- [ ] Permitir retry limitado de leitura de estado.
-- [ ] Nao repetir automaticamente abertura depois que a escrita pode ter
+- [x] Criar um coordenador serial nativo com uma unica fila por barramento.
+- [x] Garantir no maximo uma escrita fisica em voo.
+- [x] Correlacionar comando, board, canal, tipo de resposta e `executionId`.
+- [x] Separar politica de retry de leitura e de atuacao.
+- [x] Permitir retry limitado de leitura de estado.
+- [x] Nao repetir automaticamente abertura depois que a escrita pode ter
   chegado a placa; reconciliar pelo sensor e pelo diario.
-- [ ] Fechar e reabrir o driver uma vez em falha de I/O, com backoff e limite.
-- [ ] Registrar fila, tempo de espera, timeout, frames invalidos, reconexoes e
+- [x] Fechar e reabrir o driver uma vez em falha de I/O, com backoff e limite.
+- [x] Registrar fila, tempo de espera, timeout, frames invalidos, reconexoes e
   ultima resposta valida.
-- [ ] Expor somente metricas sanitizadas ao Edge Agent e ao console tecnico.
-- [ ] Adicionar testes Java para concorrencia, fragmentacao, timeout, ruido,
+- [x] Expor somente metricas sanitizadas ao Edge Agent e ao console tecnico.
+- [x] Adicionar testes Java para concorrencia, fragmentacao, timeout, ruido,
   reconexao e atuacao de resultado desconhecido.
 
 Criterios de aceite:
@@ -455,6 +455,13 @@ Criterios de aceite:
   polaridades.
 
 **Esforco relativo:** grande e de alto risco; exige bancada fisica.
+
+**Status em 21/07/2026:** implementacao de laboratorio concluida. Fila nativa,
+correlacao por `executionId`, retry exclusivo de leitura, reabertura limitada,
+bloqueio de atuacao incerta e metricas sanitizadas passaram nos contratos Java
+e JavaScript. Arquitetura, testes e gate fisico estao em
+[KIOSK-V4-RESILIENCIA-SERIAL.md](KIOSK-V4-RESILIENCIA-SERIAL.md). Os criterios
+eletricos e as duas polaridades ainda precisam ser confirmados no KS1062.
 
 ## Parte 7 - Health check e recuperacao de update
 

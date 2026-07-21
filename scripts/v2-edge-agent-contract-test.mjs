@@ -34,7 +34,11 @@ class MemoryStorage {
 function createHardware() {
   return {
     isNative: () => false,
-    getHardwareInfo: () => ({ serialOpen: true, bridgeVersion: 'TEST' }),
+    getHardwareInfo: () => ({
+      serialOpen: true,
+      bridgeVersion: 'TEST',
+      serialCoordinator: { state: 'READY', queueDepth: 0, invalidFrames: 0 },
+    }),
     readAll: async () => ({ ok: true }),
     readStatus: async () => ({ ok: true }),
     setTimeout: async () => ({ ok: true }),
@@ -125,6 +129,8 @@ async function testSanitizedRemoteMetrics() {
   assert.equal(info.lastRemoteSyncAt, '2026-07-21T12:00:00.000Z');
   assert.equal(info.lastRemoteOutcome, 'online');
   assert.equal(Number.isInteger(info.lastRemoteLatencyMs), true);
+  assert.equal(info.serialCoordinator.state, 'READY');
+  assert.equal(info.serialCoordinator.queueDepth, 0);
   assert.equal(JSON.stringify(info).includes('baseUrl'), false);
 }
 

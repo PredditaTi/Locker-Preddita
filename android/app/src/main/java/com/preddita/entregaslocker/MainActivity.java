@@ -43,6 +43,7 @@ import java.util.Map;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * PREDDITA Smart Locker - MainActivity
@@ -63,6 +64,10 @@ public class MainActivity extends Activity {
     private static final int BAUD_RATE = 9600;
     private static final long DIAGNOSTIC_SESSION_MS = 5L * 60L * 1000L;
     private static final long DIAGNOSTIC_LOCKOUT_MS = 60L * 1000L;
+    private static final long SERIAL_RESPONSE_TIMEOUT_MS = 900L;
+    private static final long SERIAL_RECOVERY_BACKOFF_MS = 250L;
+    private static final long SERIAL_RECOVERY_WAIT_MS = 1800L;
+    private static final int SERIAL_QUEUE_CAPACITY = 32;
     private static final String TECHNICAL_PREFERENCES = "preddita_technical_controls_v1";
     private static final String PREF_DIAGNOSTIC_FAILED_ATTEMPTS = "diagnosticFailedAttempts";
     private static final String PREF_DIAGNOSTIC_LOCKED_UNTIL = "diagnosticLockedUntil";
@@ -81,8 +86,11 @@ public class MainActivity extends Activity {
     private WebView webView;
     private FileOutputStream serialOut;
     private FileInputStream serialIn;
-    private Thread serialThread;
+    private volatile Thread serialThread;
     private final Rs485FrameParser serialFrameParser = new Rs485FrameParser();
+    private final Object serialWriteLock = new Object();
+    private final AtomicLong legacySerialExecution = new AtomicLong();
+    private SerialCommandCoordinator serialCoordinator;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private DeviceCredentialStore deviceCredentialStore;
     private DiagnosticCredentialStore diagnosticCredentialStore;
@@ -122,6 +130,7 @@ public class MainActivity extends Activity {
         diagnosticCredentialStore = new DiagnosticCredentialStore(getApplicationContext());
         technicalPreferences = getSharedPreferences(TECHNICAL_PREFERENCES, MODE_PRIVATE);
         appUpdateManager = new AppUpdateManager(this, this::dispatchAppUpdateStatus);
+        serialCoordinator = createSerialCoordinator();
         applyPersistedTechnicalControls();
 
         WebSettings settings = webView.getSettings();
@@ -331,6 +340,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         if (appUpdateManager != null) appUpdateManager.shutdown();
+        if (serialCoordinator != null) serialCoordinator.shutdown();
         stopSerialThread();
         closeSerialStreams();
         super.onDestroy();
@@ -349,6 +359,7 @@ public class MainActivity extends Activity {
 
     private synchronized void initSerial() {
         serialReconnectCount += 1;
+        serialCoordinator.markDriverStarting();
         stopSerialThread();
         closeSerialStreams();
         serialThread = new Thread(this::openAndReadSerial, "preddita-serial");
@@ -356,53 +367,135 @@ public class MainActivity extends Activity {
     }
 
     private void openAndReadSerial() {
+        Thread currentThread = Thread.currentThread();
         try {
             String openedPort = openFirstAvailablePort();
             if (openedPort == null) {
                 throw new IOException(lastSerialError);
             }
 
-            serialOpen = true;
-            serialFrameParser.reset();
-            activeSerialPort = openedPort;
-            lastSerialError = "OK";
+            FileInputStream input;
+            synchronized (this) {
+                if (currentThread != serialThread || currentThread.isInterrupted()) {
+                    throw new IOException("SERIAL_OPEN_CANCELLED");
+                }
+                input = serialIn;
+                if (input == null) throw new IOException("SERIAL_INPUT_UNAVAILABLE");
+                serialOpen = true;
+                serialFrameParser.reset();
+                activeSerialPort = openedPort;
+                lastSerialError = "OK";
+            }
+            serialCoordinator.markDriverReady();
             Log.i(TAG, "Serial port opened on " + openedPort + " at " + BAUD_RATE + " bps");
 
             byte[] buffer = new byte[32];
             while (!Thread.currentThread().isInterrupted()) {
-                int size = serialIn.read(buffer);
+                int size = input.read(buffer);
                 if (size > 0) {
+                    long invalidBefore = serialFrameParser.invalidFrameCount();
+                    long discardedBefore = serialFrameParser.discardedByteCount();
                     List<byte[]> frames = serialFrameParser.append(buffer, size);
+                    serialCoordinator.recordParserActivity(
+                        serialFrameParser.invalidFrameCount() - invalidBefore,
+                        serialFrameParser.discardedByteCount() - discardedBefore
+                    );
                     for (byte[] frame : frames) {
                         final String hex = formatHexFrame(frame);
                         lastSerialFrameAt = java.time.Instant.now().toString();
                         Log.d(TAG, "RX <- " + hex);
-                        mainHandler.post(() -> webView.evaluateJavascript(
-                            "window.onRS485Response && window.onRS485Response('" + escapeJs(hex) + "')",
-                            null
-                        ));
+                        serialCoordinator.onFrame(frame);
                     }
                 }
             }
         } catch (Exception error) {
-            serialOpen = false;
-            lastSerialError = error.getMessage() != null ? error.getMessage() : "SERIAL_OPEN_FAILED";
-            Log.e(TAG, "Serial error: " + lastSerialError, error);
-            notifyError("SERIAL_OPEN_FAILED: " + lastSerialError);
+            boolean activeFailure = currentThread == serialThread && !currentThread.isInterrupted();
+            if (activeFailure) {
+                closeSerialStreams();
+                lastSerialError = error.getMessage() != null ? error.getMessage() : "SERIAL_OPEN_FAILED";
+                Log.e(TAG, "Serial error: " + lastSerialError, error);
+                serialCoordinator.onDriverFailure("SERIAL_IO_FAILURE");
+            }
         }
+    }
+
+    private SerialCommandCoordinator createSerialCoordinator() {
+        return new SerialCommandCoordinator(
+            new SerialCommandCoordinator.Transport() {
+                @Override
+                public boolean isAvailable() {
+                    return serialOpen && serialOut != null;
+                }
+
+                @Override
+                public void write(byte[] frame) throws Exception {
+                    writeSerialFrame(frame);
+                }
+
+                @Override
+                public boolean recover() {
+                    return recoverSerialTransport();
+                }
+            },
+            this::dispatchSerialCommandResult,
+            SERIAL_QUEUE_CAPACITY,
+            SERIAL_RESPONSE_TIMEOUT_MS,
+            SERIAL_RECOVERY_BACKOFF_MS
+        );
+    }
+
+    private void writeSerialFrame(byte[] frame) throws IOException {
+        synchronized (serialWriteLock) {
+            FileOutputStream output = serialOut;
+            if (!serialOpen || output == null) throw new IOException("SERIAL_NOT_OPEN");
+            serialFrameParser.expectResponseFor(frame);
+            output.write(frame);
+            output.flush();
+            Log.d(TAG, "TX -> " + formatHexFrame(frame));
+        }
+    }
+
+    private boolean recoverSerialTransport() {
+        initSerial();
+        long deadline = System.currentTimeMillis() + SERIAL_RECOVERY_WAIT_MS;
+        while (System.currentTimeMillis() < deadline) {
+            if (serialOpen && serialOut != null) return true;
+            try {
+                Thread.sleep(50L);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return serialOpen && serialOut != null;
     }
 
     private String openFirstAvailablePort() {
         StringBuilder attempts = new StringBuilder();
 
         for (String candidate : SERIAL_PORT_CANDIDATES) {
+            FileOutputStream candidateOut = null;
+            FileInputStream candidateIn = null;
             try {
                 preparePort(candidate);
-                serialOut = new FileOutputStream(candidate);
-                serialIn = new FileInputStream(candidate);
+                candidateOut = new FileOutputStream(candidate);
+                candidateIn = new FileInputStream(candidate);
+                synchronized (this) {
+                    if (Thread.currentThread() != serialThread || Thread.currentThread().isInterrupted()) {
+                        throw new IOException("SERIAL_OPEN_CANCELLED");
+                    }
+                    synchronized (serialWriteLock) {
+                        serialOut = candidateOut;
+                        serialIn = candidateIn;
+                    }
+                }
                 return candidate;
             } catch (Exception error) {
-                closeSerialStreams();
+                closeQuietly(candidateOut);
+                closeQuietly(candidateIn);
+                if (Thread.currentThread() != serialThread || Thread.currentThread().isInterrupted()) {
+                    return null;
+                }
                 if (attempts.length() > 0) {
                     attempts.append(" | ");
                 }
@@ -413,6 +506,14 @@ public class MainActivity extends Activity {
 
         lastSerialError = attempts.length() > 0 ? attempts.toString() : "NO_SERIAL_PORT_AVAILABLE";
         return null;
+    }
+
+    private void closeQuietly(java.io.Closeable closeable) {
+        if (closeable == null) return;
+        try {
+            closeable.close();
+        } catch (IOException ignored) {
+        }
     }
 
     private void preparePort(String port) {
@@ -436,23 +537,25 @@ public class MainActivity extends Activity {
     }
 
     private synchronized void closeSerialStreams() {
-        try {
-            if (serialOut != null) {
-                serialOut.close();
+        synchronized (serialWriteLock) {
+            try {
+                if (serialOut != null) {
+                    serialOut.close();
+                }
+            } catch (IOException ignored) {
             }
-        } catch (IOException ignored) {
-        }
 
-        try {
-            if (serialIn != null) {
-                serialIn.close();
+            try {
+                if (serialIn != null) {
+                    serialIn.close();
+                }
+            } catch (IOException ignored) {
             }
-        } catch (IOException ignored) {
-        }
 
-        serialOut = null;
-        serialIn = null;
-        serialOpen = false;
+            serialOut = null;
+            serialIn = null;
+            serialOpen = false;
+        }
     }
 
     private String escapeJs(String value) {
@@ -472,11 +575,80 @@ public class MainActivity extends Activity {
         return builder.toString();
     }
 
-    private void notifyError(final String message) {
-        mainHandler.post(() -> webView.evaluateJavascript(
-            "window.onRS485Error && window.onRS485Error('" + escapeJs(message) + "')",
-            null
-        ));
+    private byte[] parseSerialRequest(String hexFrame) {
+        String[] parts = hexFrame == null ? new String[0] : hexFrame.trim().split("\\s+");
+        if (parts.length != 5) throw new IllegalArgumentException("INVALID_FRAME_LENGTH");
+        byte[] frame = new byte[5];
+        for (int index = 0; index < parts.length; index++) {
+            if (!parts[index].matches("(?i)[0-9a-f]{2}")) {
+                throw new IllegalArgumentException("INVALID_FRAME_BYTE");
+            }
+            frame[index] = (byte) Integer.parseInt(parts[index], 16);
+        }
+        return frame;
+    }
+
+    private void dispatchSerialCommandResult(SerialCommandCoordinator.Result result) {
+        try {
+            String responseHex = result.getResponse() == null
+                ? ""
+                : formatHexFrame(result.getResponse());
+            if (result.getExecutionId().startsWith("legacy-")) {
+                String callback = result.isOk()
+                    ? "window.onRS485Response && window.onRS485Response('" + escapeJs(responseHex) + "')"
+                    : "window.onRS485Error && window.onRS485Error('" + escapeJs(result.getErrorCode()) + "')";
+                mainHandler.post(() -> webView.evaluateJavascript(callback, null));
+                return;
+            }
+
+            org.json.JSONObject payload = new org.json.JSONObject()
+                .put("executionId", result.getExecutionId())
+                .put("operation", result.getOperationKind() == null
+                    ? "unknown"
+                    : result.getOperationKind().name().toLowerCase(java.util.Locale.ROOT))
+                .put("ok", result.isOk())
+                .put("error", result.getErrorCode())
+                .put("hex", responseHex)
+                .put("attempts", result.getAttempts())
+                .put("queueWaitMs", result.getQueueWaitMs())
+                .put("durationMs", result.getDurationMs())
+                .put("executionOutcomeUnknown", result.isExecutionOutcomeUnknown());
+            String encoded = org.json.JSONObject.quote(payload.toString());
+            mainHandler.post(() -> webView.evaluateJavascript(
+                "window.onRS485CommandResult && window.onRS485CommandResult(JSON.parse(" + encoded + "))",
+                null
+            ));
+        } catch (Exception error) {
+            Log.e(TAG, "Serial result dispatch failed", error);
+        }
+    }
+
+    private org.json.JSONObject buildSerialCoordinatorMetricsJson() throws org.json.JSONException {
+        SerialCommandCoordinator.Metrics metrics = serialCoordinator.snapshotMetrics();
+        String lastResponseAt = metrics.lastValidResponseAtMs > 0L
+            ? java.time.Instant.ofEpochMilli(metrics.lastValidResponseAtMs).toString()
+            : "";
+        return new org.json.JSONObject()
+            .put("state", metrics.state)
+            .put("queueDepth", metrics.queueDepth)
+            .put("maxQueueDepth", metrics.maxQueueDepth)
+            .put("inFlight", metrics.inFlight)
+            .put("blockedActuations", metrics.blockedActuations)
+            .put("submitted", metrics.submitted)
+            .put("completed", metrics.completed)
+            .put("rejected", metrics.rejected)
+            .put("writes", metrics.writes)
+            .put("readRetries", metrics.readRetries)
+            .put("timeouts", metrics.timeouts)
+            .put("invalidFrames", metrics.invalidFrames)
+            .put("discardedBytes", metrics.discardedBytes)
+            .put("mismatchedFrames", metrics.mismatchedFrames)
+            .put("reconnections", metrics.reconnections)
+            .put("ioFailures", metrics.ioFailures)
+            .put("unknownActuations", metrics.unknownActuations)
+            .put("lastQueueWaitMs", metrics.lastQueueWaitMs)
+            .put("maxQueueWaitMs", metrics.maxQueueWaitMs)
+            .put("lastValidResponseAt", lastResponseAt);
     }
 
     private boolean isDiagnosticAuthorized(boolean extend) {
@@ -570,7 +742,8 @@ public class MainActivity extends Activity {
                 .put("baudRate", BAUD_RATE)
                 .put("reconnectCount", Math.max(0, serialReconnectCount))
                 .put("lastFrameAt", lastSerialFrameAt)
-                .put("errorCode", DiagnosticControlContract.serialErrorCode(serialOpen, lastSerialError));
+                .put("errorCode", DiagnosticControlContract.serialErrorCode(serialOpen, lastSerialError))
+                .put("coordinator", buildSerialCoordinatorMetricsJson());
             org.json.JSONObject network = new org.json.JSONObject()
                 .put("online", isNetworkOnline())
                 .put("transport", getNetworkTransport());
@@ -883,39 +1056,17 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void sendRS485(String hexFrame) {
-            new Thread(() -> {
-                try {
-                    if (serialOut == null || !serialOpen) {
-                        notifyError("SERIAL_NOT_OPEN");
-                        return;
-                    }
+            String executionId = "legacy-" + legacySerialExecution.incrementAndGet();
+            sendRS485Command(executionId, hexFrame);
+        }
 
-                    String[] parts = hexFrame == null ? new String[0] : hexFrame.trim().split("\\s+");
-                    if (parts.length != 5) {
-                        throw new IllegalArgumentException("INVALID_FRAME_LENGTH");
-                    }
-
-                    byte[] frame = new byte[5];
-                    for (int i = 0; i < parts.length; i++) {
-                        if (!parts[i].matches("(?i)[0-9a-f]{2}")) {
-                            throw new IllegalArgumentException("INVALID_FRAME_BYTE");
-                        }
-                        frame[i] = (byte) Integer.parseInt(parts[i], 16);
-                    }
-
-                    byte expectedBcc = (byte) (frame[0] ^ frame[1] ^ frame[2] ^ frame[3]);
-                    if (frame[4] != expectedBcc) {
-                        throw new IllegalArgumentException("INVALID_FRAME_BCC");
-                    }
-
-                    serialFrameParser.expectResponseFor(frame);
-                    serialOut.write(frame);
-                    serialOut.flush();
-                    Log.d(TAG, "TX -> " + hexFrame);
-                } catch (Exception error) {
-                    notifyError("SEND_FAILED: " + error.getMessage());
-                }
-            }).start();
+        @JavascriptInterface
+        public boolean sendRS485Command(String executionId, String hexFrame) {
+            try {
+                return serialCoordinator.submit(executionId, parseSerialRequest(hexFrame));
+            } catch (IllegalArgumentException error) {
+                return serialCoordinator.submit(executionId, new byte[0]);
+            }
         }
 
         @JavascriptInterface
@@ -956,7 +1107,7 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public String getBridgeVersion() {
-            return "PREDDITA-BRIDGE-1.7.0";
+            return "PREDDITA-BRIDGE-1.8.0";
         }
 
         @JavascriptInterface
@@ -972,6 +1123,15 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String getLastSerialError() {
             return lastSerialError;
+        }
+
+        @JavascriptInterface
+        public String getSerialCoordinatorStatus() {
+            try {
+                return buildSerialCoordinatorMetricsJson().toString();
+            } catch (Exception error) {
+                return "{\"state\":\"UNAVAILABLE\"}";
+            }
         }
 
         @JavascriptInterface
