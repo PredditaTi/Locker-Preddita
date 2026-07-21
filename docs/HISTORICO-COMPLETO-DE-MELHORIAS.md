@@ -611,6 +611,12 @@ processo de acesso e eliminacao do titular.
   fechamento da porta pequena; retirada por QR ganhou prova E2E pelo `jsQR`.
 - Treze capturas reais documentam a jornada V4, com bundle de `953.710 bytes`
   (`319.470 bytes` gzip) e zero erro de console.
+- A Parte 4 adicionou 12 prompts locais opcionais, iniciou em mudo, limitou o
+  volume e persistiu somente preferencia sem identidade.
+- A allowlist impede fala dinamica e os testes bloqueiam nome, apartamento,
+  bloco, porta, PIN, QR ou numeros literais nas transcricoes.
+- Duas capturas documentam o dialogo responsivo; os audios atuais sao assets de
+  laboratorio e exigem confirmacao de direito de distribuicao antes de producao.
 - Esta consolidacao nao altera contrato de API, schema ou versao do produto.
 
 ## Evolucao de dados e compatibilidade
@@ -667,7 +673,8 @@ O projeto passou a verificar, em camadas:
 7. Contrato real entre `remoteBridge` e Admin Online.
 8. Jornada Playwright do bundle Android.
 9. Regressao visual das jornadas V4 em quatro viewports e captura de 13 estados.
-10. Build web, build Android, auditoria de dependencias e release assinado no CI.
+10. Politica e integridade do audio, com comportamento real em quatro viewports.
+11. Build web, build Android, auditoria de dependencias e release assinado no CI.
 
 O release `v2.0.25-lab` teve APK e checksum publicados, e o checksum baixado foi
 comparado com o artefato da release.
@@ -753,6 +760,7 @@ comparado com o artefato da release.
 - [Baseline visual do Kiosk V3](KIOSK-V3-BASELINE.md)
 - [Fundacao visual do Kiosk V4](KIOSK-V4-FUNDACAO-VISUAL.md)
 - [Jornadas publicas do Kiosk V4](KIOSK-V4-JORNADAS-PUBLICAS.md)
+- [Audio acessivel do Kiosk V4](KIOSK-V4-AUDIO-ACESSIVEL.md)
 - [Privacidade e ciclo de vida](PRIVACY-DATA-LIFECYCLE.md)
 - [Revisao e plano executado](REVISAO-PLANO-MELHORIA-2026-07-08.md)
 - [Direcao tecnica v2](V2-ROADMAP.md)

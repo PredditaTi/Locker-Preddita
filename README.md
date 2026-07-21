@@ -24,6 +24,8 @@ Para entender a versao atual antes de alterar codigo, leia:
   do kiosk no Playwright.
 - `docs/KIOSK-V4-JORNADAS-PUBLICAS.md`: telas reais, contratos fisicos,
   screenshots e metricas do fluxo publico V4.
+- `docs/KIOSK-V4-AUDIO-ACESSIVEL.md`: prompts locais sem dados pessoais,
+  controles acessiveis, origem dos assets e testes da orientacao sonora.
 - `docs/PRIVACY-DATA-LIFECYCLE.md`: retencao, anonimização e controles do
   titular.
 

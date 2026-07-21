@@ -25,9 +25,17 @@ test('home V4 oferece marca, ajuda e controles com alvo estavel', async ({ page 
   const browserErrors = await bootKiosk(page);
   await expect(page.getByLabel(/PREDDITA Locker/i)).toBeVisible();
 
-  const audioButton = page.getByRole('button', { name: 'Audio indisponivel nesta versao' });
-  await expect(audioButton).toBeDisabled();
-  await expect(audioButton).toHaveAttribute('title', /proxima etapa/i);
+  const audioButton = page.getByRole('button', { name: 'Configurar audio. Desativado' });
+  await expect(audioButton).toBeEnabled();
+  await audioButton.click();
+  const audioDialog = page.getByRole('dialog', { name: 'Orientacao sonora' });
+  await expect(audioDialog).toBeVisible();
+  await expect(audioDialog.getByRole('switch')).not.toBeChecked();
+  await expect(audioDialog.getByRole('slider', { name: 'Volume da orientacao sonora' })).toBeDisabled();
+  await expect(audioDialog.getByRole('button', { name: 'Fechar audio' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(audioDialog).toBeHidden();
+  await expect(audioButton).toBeFocused();
 
   const helpButton = page.getByRole('button', { name: 'Ajuda', exact: true });
   await helpButton.click();

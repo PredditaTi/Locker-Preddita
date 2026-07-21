@@ -9,7 +9,7 @@ async function collectLayoutIssues(page, stage) {
     const viewport = { width: window.innerWidth, height: window.innerHeight };
     const root = document.documentElement;
     const body = document.body;
-    const dialog = document.querySelector('[role="alertdialog"]');
+    const dialog = document.querySelector('[role="alertdialog"], [role="dialog"]');
     const scope = dialog || document.querySelector('.public-kiosk-host') || document;
     const isVisible = (element) => {
       const style = window.getComputedStyle(element);
@@ -137,6 +137,11 @@ test('telas publicas permanecem legiveis e dentro do viewport', async ({ page },
   await expect(page.getByRole('button', { name: /Entregar encomenda/i })).toBeVisible();
   await expectFocusVisible(page);
   await recordLayout(page, findings, 'inicio');
+
+  await page.getByRole('button', { name: 'Configurar audio. Desativado' }).click();
+  await expect(page.getByRole('dialog', { name: 'Orientacao sonora' })).toBeVisible();
+  await recordLayout(page, findings, 'audio');
+  await page.keyboard.press('Escape');
 
   await page.getByRole('button', { name: /Entregar encomenda/i }).click();
   await expect(page.getByRole('heading', { name: 'Qual e o apartamento?' })).toBeVisible();

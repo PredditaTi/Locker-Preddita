@@ -59,6 +59,7 @@ import {
   CourierConfirmStep,
   CourierDoorStep,
   CourierSuccessStep,
+  KioskAudioProvider,
   KioskNoticeDialog,
   PublicHome,
   ResidentPickupStep,
@@ -2133,6 +2134,7 @@ export default function App() {
   }, [view, pickupSuccessDelivery?.id]);
 
   return (
+    <KioskAudioProvider active={isHomeView || isPublicFlowView}>
     <main className={joinClasses('locker-app', isHomeView || isPublicFlowView ? 'locker-app--public' : '', isHomeView ? 'locker-app--kiosk-v4-home' : '', isPublicFlowView ? 'locker-app--kiosk-v4-flow' : '')}>
       <div className={joinClasses('locker-shell', isHomeView ? 'locker-shell--home' : '', isPublicFlowView ? 'locker-shell--flow' : '', showInlineBanner ? 'locker-shell--has-banner' : '', isAdminView ? 'locker-shell--admin' : '')}>
         {!isHomeView && !isPublicFlowView ? (
@@ -2670,5 +2672,6 @@ export default function App() {
           )
         ) : null}
     </main>
+    </KioskAudioProvider>
   );
 }

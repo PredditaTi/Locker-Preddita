@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   TriangleAlert,
   Volume2,
+  VolumeX,
   X,
 } from 'lucide-react';
 
@@ -47,4 +48,5 @@ export const KioskIcons = {
   shield: ShieldCheck,
   warning: TriangleAlert,
   volume: Volume2,
+  volumeMuted: VolumeX,
 };

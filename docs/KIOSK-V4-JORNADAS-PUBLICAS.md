@@ -138,7 +138,8 @@ publicada quando a mudanca for intencional e registrada em `docs/UPDATES.md`.
 
 ## Limites desta parte
 
-- audio permanece indisponivel ate a Parte 4;
+- a orientacao sonora opcional foi integrada na Parte 4 e esta documentada em
+  [KIOSK-V4-AUDIO-ACESSIVEL.md](KIOSK-V4-AUDIO-ACESSIVEL.md);
 - a validacao atual usa bridge RS-485 deterministico, nao o locker fisico;
 - versao, schema, protocolo, canais e formato persistido nao mudaram;
 - os prototipos da Parte 2 continuam como registro da decisao visual, mas as

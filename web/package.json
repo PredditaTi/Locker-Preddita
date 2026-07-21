@@ -9,12 +9,14 @@
     "capture:baseline": "vite build && node e2e/capture-kiosk-v3-baseline.mjs",
     "capture:v4-foundation": "vite build && node e2e/capture-kiosk-v4-foundation.mjs",
     "capture:v4-journeys": "vite build && node e2e/capture-kiosk-v4-journeys.mjs",
+    "capture:v4-audio": "vite build && node e2e/capture-kiosk-v4-audio.mjs",
     "preview": "vite preview",
     "test:e2e": "playwright test",
     "test:workflow": "node ../scripts/v2-workflow-test.mjs",
     "test:door-safety": "node ../scripts/v2-door-safety-test.mjs",
     "test:event-journal": "node ../scripts/v2-device-event-journal-test.mjs",
-    "test:edge-agent": "node ../scripts/v2-edge-agent-contract-test.mjs"
+    "test:edge-agent": "node ../scripts/v2-edge-agent-contract-test.mjs",
+    "test:audio": "node ../scripts/audio-guidance-test.mjs"
   },
   "dependencies": {
     "@fontsource-variable/atkinson-hyperlegible-next": "^5.3.0",

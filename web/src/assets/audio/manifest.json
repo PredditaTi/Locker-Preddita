@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-20",
+  "origin": {
+    "promptText": "Original PREDDITA project copy",
+    "generator": "Apple macOS say",
+    "voice": "Luciana (pt_BR)",
+    "rateWordsPerMinute": 175,
+    "runtimeDependency": false
+  },
+  "encoding": {
+    "container": "M4A",
+    "codec": "AAC-LC",
+    "channels": 1,
+    "sampleRateHz": 22050,
+    "targetBitrate": 64000
+  },
+  "distributionNotice": "Synthetic lab assets generated locally. Confirm the macOS voice output distribution terms before a production release.",
+  "prompts": [
+    { "id": "home", "file": "home.m4a", "durationSeconds": 5.342857, "bytes": 48611, "sha256": "a750b1a50a2ddcf12bbd89770a2fff0219ad44aefb63edaa41a316cad715bccf", "transcript": "Para entregar uma encomenda, toque em Entregar. Para retirar, toque em Retirar." },
+    { "id": "courier-choice", "file": "courier-choice.m4a", "durationSeconds": 3.177778, "bytes": 30750, "sha256": "c2b49cae875f9ab5a66175d1fa521c948e51a722485261f10f45cdcd60678bab", "transcript": "Use o teclado e escolha o destino correto." },
+    { "id": "courier-confirm", "file": "courier-confirm.m4a", "durationSeconds": 4.419955, "bytes": 40893, "sha256": "d924594ae58f6fb3c8572918a0d56ab7711d7899d42432f98f7e80e619b20ae9", "transcript": "Confira o destino. Se estiver correto, toque no botao azul." },
+    { "id": "courier-dropoff", "file": "courier-dropoff.m4a", "durationSeconds": 4.270295, "bytes": 40269, "sha256": "01f79a897f1b8b2aa568e2524bd9c65e513a4220d64d7e845c1c60fbae6e2d71", "transcript": "Guarde a encomenda, feche o compartimento e confirme na tela." },
+    { "id": "courier-close", "file": "courier-close.m4a", "durationSeconds": 5.068481, "bytes": 46734, "sha256": "f8587b11eb04344943e0906889c7b04fcdcbaa3f24be323d680379d9da0372a4", "transcript": "Feche o compartimento anterior e aguarde a confirmacao antes de continuar." },
+    { "id": "courier-success", "file": "courier-success.m4a", "durationSeconds": 2.49932, "bytes": 25693, "sha256": "d834eccd28d5f221e871e097506f3ddde9eb0286d59740d61e4f4cdbe180482f", "transcript": "Entrega registrada com sucesso." },
+    { "id": "pickup-pin", "file": "pickup-pin.m4a", "durationSeconds": 2.549206, "bytes": 25618, "sha256": "9f4761ecac97b3d61923a77ad24a063c07760f67c58556eae8544c40f849b12c", "transcript": "Digite os seis numeros recebidos." },
+    { "id": "pickup-qr", "file": "pickup-qr.m4a", "durationSeconds": 3.172789, "bytes": 30259, "sha256": "0b3ba0c7c617eca57317e72406d038cabdad2c2f877b1c86f3a4f3b03cab154d", "transcript": "Aponte o codigo de retirada para a camera." },
+    { "id": "pickup-open", "file": "pickup-open.m4a", "durationSeconds": 4.230385, "bytes": 39617, "sha256": "6d89418c02f7fbc19e6a67157cd3f6e470e32a7daf870f1e156698d7a52d7067", "transcript": "Retire a encomenda, feche o compartimento e confirme na tela." },
+    { "id": "pickup-success", "file": "pickup-success.m4a", "durationSeconds": 2.494331, "bytes": 25521, "sha256": "bee4539d10a07e144d68c4ca99aeb041dfb056ac4027c8dc5d6415066edaad02", "transcript": "Retirada concluida com sucesso." },
+    { "id": "cancel", "file": "cancel.m4a", "durationSeconds": 5.392744, "bytes": 49638, "sha256": "569b544bb295ade52151674cda805ea3db6479aacda12e62fa27631a93f2149d", "transcript": "Para cancelar com seguranca, feche o compartimento e aguarde a confirmacao." },
+    { "id": "error", "file": "error.m4a", "durationSeconds": 5.203175, "bytes": 46947, "sha256": "1363ab0ef8500fa3af5a2f3db0e7b94346207b7b1ceefef3a57d4bdccff1829c", "transcript": "Nao foi possivel continuar. Leia a mensagem na tela e tente novamente." }
+  ]
+}
