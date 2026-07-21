@@ -108,6 +108,12 @@ As referencias da fundacao e das jornadas reais estao em
 `docs/KIOSK-V4-JORNADAS-PUBLICAS.md`. A politica e as evidencias de audio ficam
 em `docs/KIOSK-V4-AUDIO-ACESSIVEL.md`.
 
+O console tecnico possui uma matriz E2E separada em
+`web/e2e/kiosk-diagnostics.spec.js`. Ela prova bloqueio por URL/credencial,
+PIN invalido, seis abas, allowlist simulada, limites de tela, confirmacao e
+prova da porta, auditoria e timeout nos quatro viewports. O contrato detalhado
+esta em `docs/KIOSK-V4-CONSOLE-TECNICO.md`.
+
 Em falhas, screenshot, video, trace e arvore acessivel ficam em
 `web/test-results`. O CI envia esses arquivos como artifact por sete dias.
 

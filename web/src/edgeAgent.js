@@ -183,6 +183,9 @@ export class EdgeAgentRuntime {
     this.commandExecutions = loadRemoteCommandExecutions(this.storage);
     this.eventsInFlight = false;
     this.remoteCycleInFlight = false;
+    this.lastRemoteSyncAt = '';
+    this.lastRemoteLatencyMs = 0;
+    this.lastRemoteOutcome = 'not-attempted';
   }
 
   get contractVersion() {
@@ -237,8 +240,19 @@ export class EdgeAgentRuntime {
     return this.remote.openNativeDeviceProvisioning();
   }
 
-  fetchRemoteSnapshot() {
-    return this.remote.fetchRemoteSnapshot();
+  async fetchRemoteSnapshot() {
+    const startedAt = Date.now();
+    try {
+      const snapshot = await this.remote.fetchRemoteSnapshot();
+      this.lastRemoteLatencyMs = Math.max(0, Date.now() - startedAt);
+      this.lastRemoteOutcome = snapshot ? 'online' : 'offline';
+      if (snapshot) this.lastRemoteSyncAt = this.now();
+      return snapshot;
+    } catch (error) {
+      this.lastRemoteLatencyMs = Math.max(0, Date.now() - startedAt);
+      this.lastRemoteOutcome = 'failed';
+      throw error;
+    }
   }
 
   publishRemoteStatus(payload) {
@@ -264,6 +278,22 @@ export class EdgeAgentRuntime {
 
   getCommandWakeupStatus() {
     return this.commandWakeup.getStatus();
+  }
+
+  getOperationalInfo() {
+    return {
+      contractVersion: this.contractVersion,
+      pendingEvents: this.pendingEvents.length,
+      pendingCompletions: this.pendingCompletions.length,
+      commandExecutions: this.commandExecutions.length,
+      eventsInFlight: this.eventsInFlight,
+      remoteCycleInFlight: this.remoteCycleInFlight,
+      commandWakeup: this.getCommandWakeupStatus(),
+      appUpdater: this.getAppUpdateStatus(),
+      lastRemoteSyncAt: this.lastRemoteSyncAt,
+      lastRemoteLatencyMs: this.lastRemoteLatencyMs,
+      lastRemoteOutcome: this.lastRemoteOutcome,
+    };
   }
 
   queueEvent(type, payload = {}, options = {}) {
@@ -514,7 +544,7 @@ export class EdgeAgentRuntime {
         },
       });
 
-      const snapshot = await this.remote.fetchRemoteSnapshot();
+      const snapshot = await this.fetchRemoteSnapshot();
       if (!snapshot) return { ok: false, offline: true };
 
       const residents = Array.isArray(snapshot.residents) ? snapshot.residents : [];

@@ -113,6 +113,21 @@ async function testOperationalStateStorage() {
   assert.equal(recovered.loadLockerState().tenant.id, 'tenant-edge-test');
 }
 
+async function testSanitizedRemoteMetrics() {
+  const agent = new EdgeAgentRuntime({
+    storage: new MemoryStorage(),
+    hardware: createHardware(),
+    remote: createRemote(),
+    now: () => '2026-07-21T12:00:00.000Z',
+  });
+  await agent.fetchRemoteSnapshot();
+  const info = agent.getOperationalInfo();
+  assert.equal(info.lastRemoteSyncAt, '2026-07-21T12:00:00.000Z');
+  assert.equal(info.lastRemoteOutcome, 'online');
+  assert.equal(Number.isInteger(info.lastRemoteLatencyMs), true);
+  assert.equal(JSON.stringify(info).includes('baseUrl'), false);
+}
+
 async function testIdempotentRemoteCommand() {
   const storage = new MemoryStorage();
   const completed = [];
@@ -352,6 +367,7 @@ async function testKioskBoundary() {
 assert.equal(EDGE_AGENT_CONTRACT_VERSION, 2);
 await testOfflineEventRecovery();
 await testOperationalStateStorage();
+await testSanitizedRemoteMetrics();
 await testIdempotentRemoteCommand();
 await testUnknownExecutionAfterRestart();
 await testConcurrentCycles();

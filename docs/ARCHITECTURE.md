@@ -45,8 +45,12 @@ Principais arquivos:
 - `web/src/commandWakeup.js`: conexao MQTT WSS opcional, validacao,
   deduplicacao e reconexao com ticket temporario.
 - `web/src/diagnostics.js`: testes de diagnostico executaveis dentro do armario.
+- `web/src/useDiagnosticGate.js` e `web/src/diagnosticBridge.js`: autenticacao,
+  timeout e allowlist do console tecnico local.
 - `android/app/src/main/java/.../MainActivity.java`: WebView e ponte JavaScript
   para ler/escrever na serial.
+- `android/app/src/main/java/.../DiagnosticCredentialStore.java`: salt e hash
+  PBKDF2 da credencial tecnica; o PIN original nao e persistido.
 - `android/app/src/main/java/.../AppUpdateManager.java`: download, verificacao
   criptografica e handoff do APK ao instalador do sistema.
 
@@ -333,6 +337,12 @@ Build do app:
 Em APK, URL, `lockerId` e chave sao provisionados no modo diagnostico. A chave
 fica no Android Keystore e o JavaScript recebe somente assinaturas. Definir
 `VITE_PREDDITA_DEVICE_KEY` em um build de producao causa falha deliberada.
+
+O console local usa uma credencial separada, derivada com PBKDF2 no Android.
+Sua bridge aceita apenas status sanitizado, ajustes numericos limitados, um
+toggle booleano e retry serial sem argumentos. Nao existe shell, caminho ou
+comando textual. A sessao expira em cinco minutos e cada acao relevante entra
+na auditoria do locker.
 
 Cada chamada `/api/device/*` assina metodo, rota, `lockerId`, timestamp, nonce e
 SHA-256 do corpo com HMAC-SHA256. O servidor valida a janela de tempo e consome o

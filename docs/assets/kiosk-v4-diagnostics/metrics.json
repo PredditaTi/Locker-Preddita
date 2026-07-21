@@ -1,0 +1,60 @@
+{
+  "capturedAt": "2026-07-21T04:31:37.497Z",
+  "results": [
+    {
+      "scenario": {
+        "name": "01-status-1024x600",
+        "width": 1024,
+        "height": 600,
+        "tab": "Status"
+      },
+      "geometry": {
+        "top": 0,
+        "right": 1024,
+        "bottom": 600,
+        "left": 0,
+        "width": 1024,
+        "height": 600,
+        "documentOverflowX": 0
+      },
+      "browserErrors": []
+    },
+    {
+      "scenario": {
+        "name": "02-portas-confirmacao-1024x600",
+        "width": 1024,
+        "height": 600,
+        "tab": "Portas",
+        "confirmation": true
+      },
+      "geometry": {
+        "top": 0,
+        "right": 1024,
+        "bottom": 600,
+        "left": 0,
+        "width": 1024,
+        "height": 600,
+        "documentOverflowX": 0
+      },
+      "browserErrors": []
+    },
+    {
+      "scenario": {
+        "name": "03-tela-390x844",
+        "width": 390,
+        "height": 844,
+        "tab": "Tela"
+      },
+      "geometry": {
+        "top": 0,
+        "right": 390,
+        "bottom": 844,
+        "left": 0,
+        "width": 390,
+        "height": 844,
+        "documentOverflowX": 0
+      },
+      "browserErrors": []
+    }
+  ]
+}

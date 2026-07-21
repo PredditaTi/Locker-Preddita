@@ -748,6 +748,23 @@ comparado com o artefato da release.
 | Contratos e E2E | [PR #16](https://github.com/PredditaTi/Locker-Preddita/pull/16) |
 | Privacidade e retencao | [PR #17](https://github.com/PredditaTi/Locker-Preddita/pull/17) |
 
+### 2026-07-21 - Console tecnico autenticado e limitado
+
+- O acesso tecnico deixou de aceitar parametro de URL, PIN em `localStorage` ou
+  abertura permissiva sem credencial.
+- O Android passou a derivar o PIN com PBKDF2 e salt aleatorio, aplicar lockout
+  e manter uma sessao nativa curta.
+- Uma bridge dedicada aceita somente leituras, ajustes numericos limitados,
+  toggle de tela e retry serial sem argumentos.
+- O console foi reorganizado em seis abas com status serial/rede/Edge,
+  comissionamento, preview temporario da camera, tela e update.
+- Todo teste de porta exige confirmacao e registra inicio, resultado e prova de
+  fechamento; ajustes persistentes tambem entram no diario local.
+- Testes de contrato e Playwright cobrem bloqueio, autenticacao, timeout,
+  allowlist, quatro viewports e o ciclo fisico simulado.
+- Tres referencias visuais e o procedimento completo foram registrados em
+  [KIOSK-V4-CONSOLE-TECNICO.md](KIOSK-V4-CONSOLE-TECNICO.md).
+
 ## Documentos relacionados
 
 - [Central de documentacao](README.md)
@@ -761,6 +778,7 @@ comparado com o artefato da release.
 - [Fundacao visual do Kiosk V4](KIOSK-V4-FUNDACAO-VISUAL.md)
 - [Jornadas publicas do Kiosk V4](KIOSK-V4-JORNADAS-PUBLICAS.md)
 - [Audio acessivel do Kiosk V4](KIOSK-V4-AUDIO-ACESSIVEL.md)
+- [Console tecnico do Kiosk V4](KIOSK-V4-CONSOLE-TECNICO.md)
 - [Privacidade e ciclo de vida](PRIVACY-DATA-LIFECYCLE.md)
 - [Revisao e plano executado](REVISAO-PLANO-MELHORIA-2026-07-08.md)
 - [Direcao tecnica v2](V2-ROADMAP.md)

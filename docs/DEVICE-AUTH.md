@@ -43,8 +43,9 @@ Uma assinatura HMAC presente e invalida nunca faz fallback para a chave legada.
 ## Android Keystore
 
 O APK nao recebe a chave durante o build. No modo diagnostico, o comando
-`Provisionar conexao` abre um dialogo Android nativo para URL, `lockerId` e
-chave. A chave e importada no alias `preddita_device_hmac_v1` do Android
+`Provisionar conexao` abre um dialogo Android nativo para URL, `lockerId`,
+chave e PIN tecnico local. A chave e importada no alias
+`preddita_device_hmac_v1` do Android
 Keystore como HMAC-SHA256 nao exportavel. Apenas URL, `lockerId` e horario de
 provisionamento ficam em `SharedPreferences` privados.
 
@@ -58,8 +59,8 @@ O JavaScript recebe somente os metadados nao sensiveis e chama
    `PREDDITA_DEVICE_AUTH_MODE=dual`.
 2. Gere e instale o APK novo, que nao contem credenciais.
 3. Abra o modo diagnostico no armario e toque em `Provisionar conexao`.
-4. Informe a URL HTTPS, o `lockerId` e a mesma chave individual registrada em
-   `PREDDITA_DEVICE_KEYS` no servidor.
+4. Informe a URL HTTPS, o `lockerId`, a mesma chave individual registrada em
+   `PREDDITA_DEVICE_KEYS` no servidor e um PIN tecnico de 8 a 12 digitos.
 5. Confirme no painel que o heartbeat e os comandos funcionam.
 6. Altere o servidor para `PREDDITA_DEVICE_AUTH_MODE=hmac`.
 7. Reinicie e confirme que uma chamada apenas com `x-device-key` recebe `401`.
@@ -69,3 +70,7 @@ relogio do servidor e do Android. HTTPS continua obrigatorio: HMAC nao substitui
 TLS. O Keystore impede a extracao direta da chave, mas o app instalado continua
 sendo um oraculo de assinatura; por isso a WebView permanece restrita aos assets
 internos e o backend limita as rotas e a taxa do dispositivo.
+
+O PIN tecnico nao e a chave HMAC. Ele protege apenas o console local, e o
+Android persiste salt e hash PBKDF2 em vez do valor original. Detalhes de
+rotacao, lockout e recuperacao estao em `docs/KIOSK-V4-CONSOLE-TECNICO.md`.

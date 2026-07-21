@@ -18,7 +18,7 @@ import {
 const STORAGE_KEY = 'preddita_entregas_locker_state_v1';
 const EDGE_SECRET = 'PREDDITA-EDGE-LOCAL-2025';
 const EXPIRATION_HOURS = 72;
-const EVENT_LIMIT = 18;
+const EVENT_LIMIT = 160;
 
 /*
  * Regras puras do locker.
@@ -136,6 +136,10 @@ function withEvent(state, kind, message, meta = {}) {
     auditTrail: [createEvent(kind, message, meta), ...state.auditTrail].slice(0, EVENT_LIMIT),
     updatedAt: nowIso(),
   };
+}
+
+export function recordAuditEvent(state, kind, message, meta = {}) {
+  return withEvent(state, cleanText(kind) || 'system', cleanText(message) || 'Evento registrado.', meta);
 }
 
 function ensureRecipients(items) {

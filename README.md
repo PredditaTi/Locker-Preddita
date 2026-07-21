@@ -26,6 +26,8 @@ Para entender a versao atual antes de alterar codigo, leia:
   screenshots e metricas do fluxo publico V4.
 - `docs/KIOSK-V4-AUDIO-ACESSIVEL.md`: prompts locais sem dados pessoais,
   controles acessiveis, origem dos assets e testes da orientacao sonora.
+- `docs/KIOSK-V4-CONSOLE-TECNICO.md`: acesso autenticado, bridge Android
+  restrita, diagnostico de campo, auditoria e evidencias da Parte 5.
 - `docs/PRIVACY-DATA-LIFECYCLE.md`: retencao, anonimização e controles do
   titular.
 
