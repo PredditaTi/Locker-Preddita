@@ -25,6 +25,7 @@ import {
   markDeliveryNotification,
   markDepositDoorOpened,
   markPickupDoorOpened,
+  recordAuditEvent,
   reserveDelivery,
   resolvePickupRequest,
   updateDeviceConfig,
@@ -379,7 +380,7 @@ export default function App() {
   const packedAlignmentRef = useRef('auto');
   const remoteCycleRunnerRef = useRef(null);
   const remotePickupReconcileRef = useRef(null);
-  const diagnosticGate = useDiagnosticGate();
+  const diagnosticGate = useDiagnosticGate({ onEvent: handleDiagnosticSessionEvent });
   const bannerKey = `${banner.tone || ''}:${banner.title}:${banner.text}`;
 
   useEffect(() => {
@@ -439,6 +440,42 @@ export default function App() {
         return nextState;
       });
     });
+  }
+
+  function handleDiagnosticSessionEvent(event) {
+    const messages = {
+      opened: 'Sessao tecnica autenticada e aberta.',
+      closed: 'Sessao tecnica encerrada.',
+      timeout: 'Sessao tecnica encerrada por inatividade.',
+      blocked: 'Acesso tecnico bloqueado por falta de credencial provisionada.',
+      'auth-failed': 'Tentativa de acesso tecnico recusada.',
+    };
+    commitState((current) => recordAuditEvent(
+      current,
+      'diagnostic-access',
+      messages[event.type] || 'Evento de acesso tecnico registrado.',
+      {
+        actor: 'technical-local',
+        lockerId: lockerStateRef.current?.tenant?.lockerId || 'unprovisioned-local-locker',
+        outcome: event.type,
+        reason: event.reason,
+        occurredAt: event.at,
+      }
+    ));
+  }
+
+  function handleDiagnosticAudit(entry) {
+    commitState((current) => recordAuditEvent(
+      current,
+      entry.kind || 'diagnostic',
+      entry.message || 'Acao tecnica registrada.',
+      {
+        ...(entry.meta || {}),
+        actor: 'technical-local',
+        lockerId: lockerStateRef.current?.tenant?.lockerId || 'unprovisioned-local-locker',
+        outcome: entry.outcome || 'recorded',
+      }
+    ));
   }
 
   async function syncHardwareStatus(options = {}) {
@@ -2643,7 +2680,9 @@ export default function App() {
         {diagnosticGate.open ? (
           <DiagnosticsView
             lockerState={lockerState}
-            onClose={diagnosticGate.close}
+            expiresAt={diagnosticGate.expiresAt}
+            onAudit={handleDiagnosticAudit}
+            onClose={() => diagnosticGate.close('user')}
             onCommissioningComplete={handleCommissioningComplete}
           />
         ) : null}

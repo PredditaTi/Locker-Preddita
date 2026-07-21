@@ -98,6 +98,78 @@ export function installAudioProbe() {
   };
 }
 
+export function installDiagnosticBridge() {
+  let authorized = false;
+  const display = {
+    brightnessPercent: 70,
+    mediaVolumePercent: 45,
+    keepScreenOn: true,
+  };
+  window.__predditaDiagnosticEvents = [];
+  window.__predditaPromptValue = '86420975';
+  window.__predditaAlerts = [];
+  window.prompt = () => window.__predditaPromptValue;
+  window.alert = (message) => window.__predditaAlerts.push(String(message));
+
+  window.PredditaDiagnostics = {
+    getCredentialStatus() {
+      return JSON.stringify({ provisioned: true, minimumLength: 8 });
+    },
+    verifyPin(pin) {
+      authorized = pin === '86420975';
+      window.__predditaDiagnosticEvents.push({ type: 'verify-pin', accepted: authorized });
+      return authorized;
+    },
+    openProvisioning() {
+      window.__predditaDiagnosticEvents.push({ type: 'open-provisioning' });
+    },
+    endSession() {
+      authorized = false;
+      window.__predditaDiagnosticEvents.push({ type: 'end-session' });
+    },
+    getStatus() {
+      return JSON.stringify({
+        authorized,
+        serial: {
+          open: true,
+          path: '/dev/e2e-rs485',
+          baudRate: 9600,
+          reconnectCount: 0,
+          lastFrameAt: new Date().toISOString(),
+          errorCode: 'OK',
+        },
+        network: { online: true, transport: 'ethernet' },
+        camera: { available: true, permission: 'granted' },
+        display,
+        storage: { freeBytes: 512 * 1024 * 1024, totalBytes: 2 * 1024 * 1024 * 1024 },
+        app: { versionName: '2.0.25-e2e', versionCode: 25 },
+      });
+    },
+    setBrightnessPercent(value) {
+      const accepted = authorized && Number.isInteger(value) && value >= 10 && value <= 100;
+      if (accepted) display.brightnessPercent = value;
+      window.__predditaDiagnosticEvents.push({ type: 'brightness', value, accepted });
+      return accepted;
+    },
+    setMediaVolumePercent(value) {
+      const accepted = authorized && Number.isInteger(value) && value >= 0 && value <= 65;
+      if (accepted) display.mediaVolumePercent = value;
+      window.__predditaDiagnosticEvents.push({ type: 'volume', value, accepted });
+      return accepted;
+    },
+    setKeepScreenOn(value) {
+      const accepted = authorized && typeof value === 'boolean';
+      if (accepted) display.keepScreenOn = value;
+      window.__predditaDiagnosticEvents.push({ type: 'keep-screen-on', value, accepted });
+      return accepted;
+    },
+    retrySerial() {
+      window.__predditaDiagnosticEvents.push({ type: 'retry-serial', accepted: authorized });
+      return authorized;
+    },
+  };
+}
+
 export async function bootKiosk(page, options = {}) {
   const browserErrors = [];
   page.on('pageerror', (error) => browserErrors.push(error.message));
@@ -105,6 +177,7 @@ export async function bootKiosk(page, options = {}) {
     if (message.type() === 'error') browserErrors.push(message.text());
   });
   if (options.audioProbe) await page.addInitScript(installAudioProbe);
+  if (options.diagnostics) await page.addInitScript(installDiagnosticBridge);
   await page.addInitScript(installRs485Bridge);
   await page.goto(options.url || '/');
   return browserErrors;

@@ -392,18 +392,18 @@ Escopo inicial:
 
 Tarefas:
 
-- [ ] Remover o fallback permissivo do modo diagnostico quando nao existe PIN.
-- [ ] Exigir credencial tecnica provisionada e registrar abertura/fechamento da
+- [x] Remover o fallback permissivo do modo diagnostico quando nao existe PIN.
+- [x] Exigir credencial tecnica provisionada e registrar abertura/fechamento da
   sessao de diagnostico.
-- [ ] Reorganizar `DiagnosticsView` em abas de status, portas, conectividade,
+- [x] Reorganizar `DiagnosticsView` em abas de status, portas, conectividade,
   camera, tela e update.
-- [ ] Usar controles nativos adequados: sliders para brilho/volume, toggles
+- [x] Usar controles nativos adequados: sliders para brilho/volume, toggles
   para opcoes binarias e icones para comandos familiares.
-- [ ] Criar bridge Android com allowlist estrita para leitura e ajustes
+- [x] Criar bridge Android com allowlist estrita para leitura e ajustes
   numericos; nunca aceitar shell, caminho ou comando informado pela UI.
-- [ ] Auditar todo teste de porta e ajuste persistente.
-- [ ] Aplicar timeout curto da sessao tecnica e retorno seguro ao kiosk.
-- [ ] Exibir erro sanitizado para o tecnico e detalhe completo apenas nos logs
+- [x] Auditar todo teste de porta e ajuste persistente.
+- [x] Aplicar timeout curto da sessao tecnica e retorno seguro ao kiosk.
+- [x] Exibir erro sanitizado para o tecnico e detalhe completo apenas nos logs
   protegidos.
 
 Criterios de aceite:
@@ -416,6 +416,12 @@ Criterios de aceite:
 - Eventos aparecem na auditoria com ator, locker, horario e resultado.
 
 **Esforco relativo:** grande.
+
+**Status em 21/07/2026:** implementacao de laboratorio concluida. Acesso,
+allowlist nativa, seis abas, timeout, confirmacao fisica, auditoria e quatro
+viewports estao cobertos. Procedimento, evidencias e gate de bancada estao em
+[KIOSK-V4-CONSOLE-TECNICO.md](KIOSK-V4-CONSOLE-TECNICO.md). O build Android e
+os controles reais ainda precisam ser confirmados pela CI e no KS1062.
 
 ## Parte 6 - Resiliencia serial observavel
 

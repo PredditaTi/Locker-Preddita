@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   DOOR_SIZE_OPTIONS,
   buildCommissioningRecord,
@@ -75,11 +75,17 @@ function explainFailure(reason) {
   return messages[reason] || `Falha de validacao: ${reason || 'sem resposta'}.`;
 }
 
-export default function CommissioningPanel({ lockerState, onComplete }) {
+function safeCommissioningFailure(channel) {
+  return `O teste da porta ${channel} nao foi concluido. Consulte os logs protegidos do dispositivo.`;
+}
+
+export default function CommissioningPanel({ lockerState, onAudit, onComplete }) {
   const [draft, setDraft] = useState(() => initialDraft(lockerState?.deviceConfig));
   const [busyChannel, setBusyChannel] = useState(0);
+  const [confirmChannel, setConfirmChannel] = useState(0);
   const [stage, setStage] = useState('');
   const [notice, setNotice] = useState({ tone: '', text: '' });
+  const cancelConfirmRef = useRef(null);
 
   const board = Math.min(31, Math.max(1, Number.parseInt(draft.board, 10) || 1));
   const doorCount = Math.min(24, Math.max(1, Number.parseInt(draft.doorCount, 10) || 1));
@@ -90,6 +96,10 @@ export default function CommissioningPanel({ lockerState, onComplete }) {
     () => Math.round((passedCount / Math.max(1, doorCount)) * 100),
     [doorCount, passedCount],
   );
+
+  useEffect(() => {
+    if (confirmChannel) cancelConfirmRef.current?.focus();
+  }, [confirmChannel]);
 
   function resetCriticalField(field, value) {
     const nextDoorCount = field === 'doorCount'
@@ -130,6 +140,12 @@ export default function CommissioningPanel({ lockerState, onComplete }) {
     if (busyChannel) return;
     setBusyChannel(channel);
     setNotice({ tone: '', text: '' });
+    onAudit?.({
+      kind: 'diagnostic-door-test',
+      message: `Teste tecnico da porta ${channel} iniciado.`,
+      outcome: 'started',
+      meta: { board, channel },
+    });
 
     try {
       setStage(`Porta ${channel}: confirme que esta fechada. Lendo sensor...`);
@@ -204,7 +220,14 @@ export default function CommissioningPanel({ lockerState, onComplete }) {
         ),
       }));
       setNotice({ tone: 'success', text: `Porta ${channel} mapeada e sensor validado.` });
+      onAudit?.({
+        kind: 'diagnostic-door-test',
+        message: `Teste tecnico da porta ${channel} concluido com prova de fechamento.`,
+        outcome: 'passed',
+        meta: { board, channel, closeProof: true },
+      });
     } catch (error) {
+      console.error(`Commissioning test failed for channel ${channel}.`, error);
       setDraft((current) => ({
         ...current,
         channels: current.channels.map((item) =>
@@ -213,7 +236,13 @@ export default function CommissioningPanel({ lockerState, onComplete }) {
             : item
         ),
       }));
-      setNotice({ tone: 'danger', text: error?.message || `Nao foi possivel testar a porta ${channel}.` });
+      setNotice({ tone: 'danger', text: safeCommissioningFailure(channel) });
+      onAudit?.({
+        kind: 'diagnostic-door-test',
+        message: `Teste tecnico da porta ${channel} falhou.`,
+        outcome: 'failed',
+        meta: { board, channel, closeProof: false },
+      });
     } finally {
       setBusyChannel(0);
       setStage('');
@@ -245,9 +274,22 @@ export default function CommissioningPanel({ lockerState, onComplete }) {
         startedAt: record.startedAt,
         completedAt: record.completedAt,
       });
+      onAudit?.({
+        kind: 'diagnostic-commissioning',
+        message: 'Comissionamento tecnico concluido.',
+        outcome: 'completed',
+        meta: { board, doorCount, testedChannels: record.channels.length },
+      });
       setNotice({ tone: 'success', text: 'Comissionamento salvo. O mapa ja esta ativo no locker.' });
     } catch (error) {
-      setNotice({ tone: 'danger', text: error?.message || 'Nao foi possivel concluir o comissionamento.' });
+      console.error('Commissioning completion failed.', error);
+      setNotice({ tone: 'danger', text: 'Nao foi possivel concluir o comissionamento. Consulte os logs protegidos.' });
+      onAudit?.({
+        kind: 'diagnostic-commissioning',
+        message: 'Comissionamento tecnico recusado.',
+        outcome: 'failed',
+        meta: { board, doorCount },
+      });
     }
   }
 
@@ -307,7 +349,7 @@ export default function CommissioningPanel({ lockerState, onComplete }) {
               <span>Sensor</span>
               <strong>{channel.status === 'passed' ? 'Validado' : 'Pendente'}</strong>
             </div>
-            <button type="button" disabled={Boolean(busyChannel)} onClick={() => handleTestChannel(channel.channel)}>
+            <button type="button" disabled={Boolean(busyChannel)} onClick={() => setConfirmChannel(channel.channel)}>
               {busyChannel === channel.channel ? 'Testando...' : channel.status === 'passed' ? 'Testar novamente' : 'Identificar e testar'}
             </button>
           </article>
@@ -318,6 +360,30 @@ export default function CommissioningPanel({ lockerState, onComplete }) {
         <p>{allPassed ? 'Todos os canais possuem prova fisica completa.' : 'A conclusao fica disponivel depois que todas as portas forem validadas.'}</p>
         <button type="button" onClick={handleComplete} disabled={!allPassed || Boolean(busyChannel)}>Concluir comissionamento</button>
       </div>
+
+      {confirmChannel ? (
+        <div className="commissioning-confirm-backdrop">
+          <section className="commissioning-confirm" role="alertdialog" aria-modal="true" aria-labelledby="commissioning-confirm-title" aria-describedby="commissioning-confirm-detail">
+            <p className="diagnostic-eyebrow">Acionamento fisico</p>
+            <h3 id="commissioning-confirm-title">Testar porta {confirmChannel}?</h3>
+            <p id="commissioning-confirm-detail">Confirme que a area esta livre e que a porta indicada esta fechada. Ela sera destravada durante o teste.</p>
+            <div className="commissioning-confirm-actions">
+              <button ref={cancelConfirmRef} type="button" className="diagnostic-secondary-action" onClick={() => setConfirmChannel(0)}>Cancelar</button>
+              <button
+                type="button"
+                className="diagnostic-danger-action"
+                onClick={() => {
+                  const channel = confirmChannel;
+                  setConfirmChannel(0);
+                  void handleTestChannel(channel);
+                }}
+              >
+                Confirmar e testar
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </section>
   );
 }

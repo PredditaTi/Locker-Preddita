@@ -44,6 +44,12 @@ function assertEq(actual, expected, message) {
   }
 }
 
+function sanitizeDiagnosticDetail(value) {
+  return String(value ?? '')
+    .replace(/PIN=\d{6}/g, 'PIN=[simulado]')
+    .replace(/([?&](?:token|key|secret|signature)=)[^&\s]+/gi, '$1[redacted]');
+}
+
 function makeRecipient() {
   return {
     id: 'diag-ap-101',
@@ -110,9 +116,20 @@ function makeRunner(onProgress) {
     let outcome;
     try {
       const detail = await fn();
-      outcome = { name, status: 'pass', detail: detail || '', durationMs: Date.now() - start };
+      outcome = {
+        name,
+        status: 'pass',
+        detail: sanitizeDiagnosticDetail(detail),
+        durationMs: Date.now() - start,
+      };
     } catch (error) {
-      outcome = { name, status: 'fail', detail: error?.message || String(error), durationMs: Date.now() - start };
+      console.error(`Diagnostic test failed: ${name}`, error);
+      outcome = {
+        name,
+        status: 'fail',
+        detail: 'Falha tecnica registrada. Consulte os logs protegidos do dispositivo.',
+        durationMs: Date.now() - start,
+      };
     }
     current.tests.push(outcome);
     emit();

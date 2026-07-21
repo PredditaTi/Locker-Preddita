@@ -146,6 +146,16 @@ jobs:
             scripts/AppUpdateContractTest.java
           java -cp "$output_dir" AppUpdateContractTest
 
+      - name: Test technical diagnostics contracts
+        run: |
+          npm run test:diagnostics --prefix web
+          output_dir="$(mktemp -d)"
+          trap 'rm -rf "$output_dir"' EXIT
+          javac -d "$output_dir" \
+            android/app/src/main/java/com/preddita/entregaslocker/DiagnosticControlContract.java \
+            scripts/DiagnosticControlContractTest.java
+          java -cp "$output_dir" DiagnosticControlContractTest
+
       - name: Audit production dependencies
         run: |
           npm audit --omit=dev --audit-level=high --prefix admin-online

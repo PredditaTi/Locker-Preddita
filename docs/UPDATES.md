@@ -59,6 +59,58 @@ para a mais antiga:
 
 ## Registro
 
+### 2026-07-21 - Parte 5 do Kiosk V4 concluida
+
+**Base:** produto `2.0.25-lab`, `versionCode 25`, `schemaVersion 12`, branch
+`codex/kiosk-v4-diagnostics`
+
+**O que mudou**
+
+- O console tecnico passou a exigir PIN derivado e provisionado no Android,
+  aplicar lockout e expirar a sessao em cinco minutos.
+- Seis abas reúnem status, portas, conectividade, camera, tela e update por uma
+  bridge com allowlist e limites nativos.
+- Testes de porta, ajustes e acesso agora possuem confirmacao e auditoria com
+  ator, locker, horario e resultado.
+- Uma pagina especializada e tres capturas documentam operacao, seguranca,
+  testes e gate de campo.
+
+**Por que**
+
+- O suporte local precisava de observabilidade sem manter o fallback sem PIN
+  nem introduzir terminal, shell ou comandos arbitrarios no WebView.
+
+**Impacto**
+
+- URL nao abre o console e ausencia de credencial falha de forma fechada.
+- Brilho, volume e persistencia sao validados na pagina e no Android.
+- O build web e os testes passaram; o build Android local depende da instalacao
+  do SDK e a validacao fisica continua obrigatoria antes do piloto.
+
+**Arquivos**
+
+- `docs/KIOSK-V4-CONSOLE-TECNICO.md`
+- `docs/assets/kiosk-v4-diagnostics/`
+- `web/src/useDiagnosticGate.js`
+- `web/src/diagnosticBridge.js`
+- `web/src/DiagnosticsView.jsx`
+- `web/src/CommissioningPanel.jsx`
+- `android/app/src/main/java/com/preddita/entregaslocker/DiagnosticControlContract.java`
+- `android/app/src/main/java/com/preddita/entregaslocker/DiagnosticCredentialStore.java`
+- `android/app/src/main/java/com/preddita/entregaslocker/MainActivity.java`
+- `web/e2e/kiosk-diagnostics.spec.js`
+
+**Validacao**
+
+- Contratos Java e JavaScript do console aprovados.
+- Quatorze cenarios dedicados passaram; seis repeticoes fisicas foram ignoradas
+  intencionalmente fora do viewport de referencia.
+- A suite Playwright completa terminou com 45 aprovacoes e 27 skips condicionais.
+- Cinco cenarios de layout passaram e tres capturas tiveram overflow zero.
+- Build Vite de producao concluido; Gradle local bloqueado por ausencia do SDK.
+
+**Referencia:** documentacao da Parte 5 na branch `codex/kiosk-v4-diagnostics`.
+
 ### 2026-07-20 - Parte 4 do Kiosk V4 concluida
 
 **Base:** produto `2.0.25-lab`, `versionCode 25`, `schemaVersion 12`, branch

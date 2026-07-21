@@ -4,12 +4,18 @@ import android.annotation.SuppressLint;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.media.AudioManager;
+import android.net.ConnectivityManager;
+import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.StatFs;
 import android.util.Log;
 import android.text.InputType;
 import android.view.View;
@@ -55,6 +61,11 @@ public class MainActivity extends Activity {
     private static final String KIOSK_URL = KIOSK_ORIGIN + KIOSK_ASSET_PATH + "index.html";
     private static final int CAMERA_PERMISSION_REQUEST = 4201;
     private static final int BAUD_RATE = 9600;
+    private static final long DIAGNOSTIC_SESSION_MS = 5L * 60L * 1000L;
+    private static final long DIAGNOSTIC_LOCKOUT_MS = 60L * 1000L;
+    private static final String TECHNICAL_PREFERENCES = "preddita_technical_controls_v1";
+    private static final String PREF_DIAGNOSTIC_FAILED_ATTEMPTS = "diagnosticFailedAttempts";
+    private static final String PREF_DIAGNOSTIC_LOCKED_UNTIL = "diagnosticLockedUntil";
     private static final String[] SERIAL_PORT_CANDIDATES = new String[]{
         "/dev/ttyS5",
         "/dev/ttyS1",
@@ -74,12 +85,17 @@ public class MainActivity extends Activity {
     private final Rs485FrameParser serialFrameParser = new Rs485FrameParser();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private DeviceCredentialStore deviceCredentialStore;
+    private DiagnosticCredentialStore diagnosticCredentialStore;
+    private SharedPreferences technicalPreferences;
     private AppUpdateManager appUpdateManager;
     private volatile String lastDeviceAuthError = "";
 
     private volatile boolean serialOpen = false;
     private volatile String activeSerialPort = SERIAL_PORT_CANDIDATES[0];
     private volatile String lastSerialError = "INIT_PENDING";
+    private volatile String lastSerialFrameAt = "";
+    private volatile int serialReconnectCount = -1;
+    private volatile long diagnosticAuthorizedUntilMs = 0L;
     private volatile Object zysjManager;
     private volatile String lastZysjError = "ZYSJ_PENDING";
     private final Map<String, Method> zysjMethodCache = new ConcurrentHashMap<>();
@@ -103,7 +119,10 @@ public class MainActivity extends Activity {
         webView = new WebView(this);
         setContentView(webView);
         deviceCredentialStore = new DeviceCredentialStore(getApplicationContext());
+        diagnosticCredentialStore = new DiagnosticCredentialStore(getApplicationContext());
+        technicalPreferences = getSharedPreferences(TECHNICAL_PREFERENCES, MODE_PRIVATE);
         appUpdateManager = new AppUpdateManager(this, this::dispatchAppUpdateStatus);
+        applyPersistedTechnicalControls();
 
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -127,6 +146,7 @@ public class MainActivity extends Activity {
         webView.addJavascriptInterface(new RS485Bridge(), "Android");
         webView.addJavascriptInterface(new DeviceAuthBridge(), "PredditaDeviceAuth");
         webView.addJavascriptInterface(new AppUpdateBridge(), "PredditaUpdater");
+        webView.addJavascriptInterface(new TechnicalDiagnosticsBridge(), "PredditaDiagnostics");
         WebView.setWebContentsDebuggingEnabled(isDebuggableBuild());
 
         webView.setWebChromeClient(new WebChromeClient() {
@@ -243,10 +263,20 @@ public class MainActivity extends Activity {
             ""
         );
         deviceKeyInput.setHint("Minimo de 32 caracteres");
+        EditText diagnosticPinInput = newProvisioningInput(
+            InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD,
+            ""
+        );
+        diagnosticPinInput.setHint(
+            diagnosticCredentialStore.isProvisioned()
+                ? "Deixe vazio para manter o PIN atual"
+                : "8 a 12 digitos"
+        );
 
         addProvisioningField(form, "URL HTTPS do Admin Online", baseUrlInput);
         addProvisioningField(form, "Identificador do locker", lockerIdInput);
         addProvisioningField(form, "Chave HMAC do dispositivo", deviceKeyInput);
+        addProvisioningField(form, "PIN tecnico local", diagnosticPinInput);
 
         AlertDialog dialog = new AlertDialog.Builder(this)
             .setTitle("Provisionar conexao segura")
@@ -257,26 +287,38 @@ public class MainActivity extends Activity {
 
         dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> {
             try {
+                String rawDiagnosticPin = diagnosticPinInput.getText().toString().trim();
+                if (!diagnosticCredentialStore.isProvisioned() || !rawDiagnosticPin.isEmpty()) {
+                    DiagnosticControlContract.normalizeTechnicalPin(rawDiagnosticPin);
+                }
                 deviceCredentialStore.provision(
                     baseUrlInput.getText().toString(),
                     lockerIdInput.getText().toString(),
                     deviceKeyInput.getText().toString(),
                     isDebuggableBuild()
                 );
+                if (!rawDiagnosticPin.isEmpty()) {
+                    diagnosticCredentialStore.provision(rawDiagnosticPin);
+                }
                 lastDeviceAuthError = "";
                 deviceKeyInput.getText().clear();
+                diagnosticPinInput.getText().clear();
                 webView.evaluateJavascript(
-                    "window.dispatchEvent(new Event('preddita-device-auth-changed'))",
+                    "window.dispatchEvent(new Event('preddita-device-auth-changed'));"
+                        + "window.dispatchEvent(new Event('preddita-diagnostic-credential-changed'))",
                     null
                 );
-                Toast.makeText(this, "Credencial protegida no Android Keystore.", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "Conexao e PIN tecnico protegidos no Android.", Toast.LENGTH_LONG).show();
                 dialog.dismiss();
             } catch (Exception error) {
                 lastDeviceAuthError = error.getMessage() != null ? error.getMessage() : "PROVISIONING_FAILED";
                 Toast.makeText(this, lastDeviceAuthError, Toast.LENGTH_LONG).show();
             }
         }));
-        dialog.setOnDismissListener(ignored -> deviceKeyInput.getText().clear());
+        dialog.setOnDismissListener(ignored -> {
+            deviceKeyInput.getText().clear();
+            diagnosticPinInput.getText().clear();
+        });
         dialog.show();
     }
 
@@ -306,6 +348,7 @@ public class MainActivity extends Activity {
     }
 
     private synchronized void initSerial() {
+        serialReconnectCount += 1;
         stopSerialThread();
         closeSerialStreams();
         serialThread = new Thread(this::openAndReadSerial, "preddita-serial");
@@ -332,6 +375,7 @@ public class MainActivity extends Activity {
                     List<byte[]> frames = serialFrameParser.append(buffer, size);
                     for (byte[] frame : frames) {
                         final String hex = formatHexFrame(frame);
+                        lastSerialFrameAt = java.time.Instant.now().toString();
                         Log.d(TAG, "RX <- " + hex);
                         mainHandler.post(() -> webView.evaluateJavascript(
                             "window.onRS485Response && window.onRS485Response('" + escapeJs(hex) + "')",
@@ -433,6 +477,132 @@ public class MainActivity extends Activity {
             "window.onRS485Error && window.onRS485Error('" + escapeJs(message) + "')",
             null
         ));
+    }
+
+    private boolean isDiagnosticAuthorized(boolean extend) {
+        long now = System.currentTimeMillis();
+        if (diagnosticAuthorizedUntilMs <= now) {
+            diagnosticAuthorizedUntilMs = 0L;
+            return false;
+        }
+        if (extend) diagnosticAuthorizedUntilMs = now + DIAGNOSTIC_SESSION_MS;
+        return true;
+    }
+
+    private void applyPersistedTechnicalControls() {
+        int brightness = technicalPreferences.getInt("brightnessPercent", 70);
+        int volume = technicalPreferences.getInt("mediaVolumePercent", 45);
+        boolean keepScreenOn = technicalPreferences.getBoolean("keepScreenOn", true);
+        applyBrightness(brightness);
+        applyMediaVolume(volume);
+        applyKeepScreenOn(keepScreenOn);
+    }
+
+    private boolean applyBrightness(int percent) {
+        if (!DiagnosticControlContract.isBrightnessAllowed(percent)) return false;
+        WindowManager.LayoutParams attributes = getWindow().getAttributes();
+        attributes.screenBrightness = percent / 100f;
+        getWindow().setAttributes(attributes);
+        technicalPreferences.edit().putInt("brightnessPercent", percent).apply();
+        return true;
+    }
+
+    private boolean applyMediaVolume(int percent) {
+        if (!DiagnosticControlContract.isVolumeAllowed(percent)) return false;
+        AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        if (audioManager == null) return false;
+        int maximum = Math.max(1, audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC));
+        int target = Math.round(maximum * (percent / 100f));
+        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0);
+        technicalPreferences.edit().putInt("mediaVolumePercent", percent).apply();
+        return true;
+    }
+
+    private boolean applyKeepScreenOn(boolean enabled) {
+        if (enabled) {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        } else {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        }
+        technicalPreferences.edit().putBoolean("keepScreenOn", enabled).apply();
+        return true;
+    }
+
+    private String getNetworkTransport() {
+        ConnectivityManager manager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (manager == null) return "unknown";
+        NetworkCapabilities capabilities = manager.getNetworkCapabilities(manager.getActiveNetwork());
+        if (capabilities == null) return "offline";
+        if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) return "ethernet";
+        if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) return "wifi";
+        if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) return "cellular";
+        return "other";
+    }
+
+    private boolean isNetworkOnline() {
+        ConnectivityManager manager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (manager == null) return false;
+        NetworkCapabilities capabilities = manager.getNetworkCapabilities(manager.getActiveNetwork());
+        return capabilities != null && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+    }
+
+    private String buildTechnicalStatusJson() {
+        if (!isDiagnosticAuthorized(true)) {
+            return "{\"available\":true,\"authorized\":false,\"errorCode\":\"SESSION_REQUIRED\"}";
+        }
+        try {
+            StatFs storage = new StatFs(getFilesDir().getAbsolutePath());
+            AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+            int maxVolume = audioManager == null ? 1 : Math.max(1, audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC));
+            int currentVolume = audioManager == null ? 0 : audioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
+            int mediaVolumePercent = Math.round(currentVolume * 100f / maxVolume);
+            int brightnessPercent = technicalPreferences.getInt("brightnessPercent", 70);
+            boolean keepScreenOn = technicalPreferences.getBoolean("keepScreenOn", true);
+            android.content.pm.PackageInfo packageInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
+            long versionCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                ? packageInfo.getLongVersionCode()
+                : packageInfo.versionCode;
+            boolean hasCamera = getPackageManager().hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY);
+
+            org.json.JSONObject serial = new org.json.JSONObject()
+                .put("open", serialOpen && serialOut != null)
+                .put("path", activeSerialPort)
+                .put("baudRate", BAUD_RATE)
+                .put("reconnectCount", Math.max(0, serialReconnectCount))
+                .put("lastFrameAt", lastSerialFrameAt)
+                .put("errorCode", DiagnosticControlContract.serialErrorCode(serialOpen, lastSerialError));
+            org.json.JSONObject network = new org.json.JSONObject()
+                .put("online", isNetworkOnline())
+                .put("transport", getNetworkTransport());
+            org.json.JSONObject camera = new org.json.JSONObject()
+                .put("available", hasCamera)
+                .put("permission", hasCameraPermission() ? "granted" : "denied");
+            org.json.JSONObject display = new org.json.JSONObject()
+                .put("brightnessPercent", brightnessPercent)
+                .put("mediaVolumePercent", mediaVolumePercent)
+                .put("keepScreenOn", keepScreenOn);
+            org.json.JSONObject storageJson = new org.json.JSONObject()
+                .put("freeBytes", storage.getAvailableBytes())
+                .put("totalBytes", storage.getTotalBytes());
+            org.json.JSONObject app = new org.json.JSONObject()
+                .put("versionName", packageInfo.versionName == null ? "" : packageInfo.versionName)
+                .put("versionCode", versionCode);
+
+            return new org.json.JSONObject()
+                .put("available", true)
+                .put("authorized", true)
+                .put("serial", serial)
+                .put("network", network)
+                .put("camera", camera)
+                .put("display", display)
+                .put("storage", storageJson)
+                .put("app", app)
+                .put("errorCode", "")
+                .toString();
+        } catch (Exception error) {
+            Log.e(TAG, "Technical status failed", error);
+            return "{\"available\":true,\"authorized\":true,\"errorCode\":\"STATUS_UNAVAILABLE\"}";
+        }
     }
 
     private synchronized Object getZysjManager() {
@@ -556,6 +726,102 @@ public class MainActivity extends Activity {
                 Log.w(TAG, "ZYSJ void call failed for " + methodName + ": " + lastZysjError, error);
             }
             return false;
+        }
+    }
+
+    public class TechnicalDiagnosticsBridge {
+        @JavascriptInterface
+        public String getCredentialStatus() {
+            return diagnosticCredentialStore.getStatusJson(
+                technicalPreferences.getLong(PREF_DIAGNOSTIC_LOCKED_UNTIL, 0L)
+            );
+        }
+
+        @JavascriptInterface
+        public boolean verifyPin(String pin) {
+            long now = System.currentTimeMillis();
+            long lockedUntilMs = technicalPreferences.getLong(PREF_DIAGNOSTIC_LOCKED_UNTIL, 0L);
+            if (lockedUntilMs > now) return false;
+            if (diagnosticCredentialStore.verify(pin)) {
+                technicalPreferences.edit()
+                    .remove(PREF_DIAGNOSTIC_FAILED_ATTEMPTS)
+                    .remove(PREF_DIAGNOSTIC_LOCKED_UNTIL)
+                    .commit();
+                diagnosticAuthorizedUntilMs = now + DIAGNOSTIC_SESSION_MS;
+                Log.i(TAG, "Technical session authorized locally");
+                return true;
+            }
+
+            int failedAttempts = technicalPreferences.getInt(PREF_DIAGNOSTIC_FAILED_ATTEMPTS, 0) + 1;
+            SharedPreferences.Editor failureEditor = technicalPreferences.edit();
+            if (failedAttempts >= 5) {
+                failureEditor
+                    .remove(PREF_DIAGNOSTIC_FAILED_ATTEMPTS)
+                    .putLong(PREF_DIAGNOSTIC_LOCKED_UNTIL, now + DIAGNOSTIC_LOCKOUT_MS)
+                    .commit();
+                Log.w(TAG, "Technical credential temporarily locked after failed attempts");
+            } else {
+                failureEditor.putInt(PREF_DIAGNOSTIC_FAILED_ATTEMPTS, failedAttempts).commit();
+            }
+            return false;
+        }
+
+        @JavascriptInterface
+        public void openProvisioning() {
+            mainHandler.post(() -> showDeviceProvisioningDialog(
+                deviceCredentialStore.getBaseUrl(),
+                deviceCredentialStore.getLockerId()
+            ));
+        }
+
+        @JavascriptInterface
+        public void endSession() {
+            diagnosticAuthorizedUntilMs = 0L;
+            Log.i(TAG, "Technical session ended locally");
+        }
+
+        @JavascriptInterface
+        public String getStatus() {
+            return buildTechnicalStatusJson();
+        }
+
+        @JavascriptInterface
+        public boolean setBrightnessPercent(int percent) {
+            if (!isDiagnosticAuthorized(true) || !DiagnosticControlContract.isBrightnessAllowed(percent)) {
+                return false;
+            }
+            technicalPreferences.edit().putInt("brightnessPercent", percent).apply();
+            mainHandler.post(() -> applyBrightness(percent));
+            Log.i(TAG, "Technical brightness adjustment accepted");
+            return true;
+        }
+
+        @JavascriptInterface
+        public boolean setMediaVolumePercent(int percent) {
+            if (!isDiagnosticAuthorized(true) || !DiagnosticControlContract.isVolumeAllowed(percent)) {
+                return false;
+            }
+            technicalPreferences.edit().putInt("mediaVolumePercent", percent).apply();
+            mainHandler.post(() -> applyMediaVolume(percent));
+            Log.i(TAG, "Technical media volume adjustment accepted");
+            return true;
+        }
+
+        @JavascriptInterface
+        public boolean setKeepScreenOn(boolean enabled) {
+            if (!isDiagnosticAuthorized(true)) return false;
+            technicalPreferences.edit().putBoolean("keepScreenOn", enabled).apply();
+            mainHandler.post(() -> applyKeepScreenOn(enabled));
+            Log.i(TAG, "Technical keep-screen-on adjustment accepted");
+            return true;
+        }
+
+        @JavascriptInterface
+        public boolean retrySerial() {
+            if (!isDiagnosticAuthorized(true)) return false;
+            new Thread(MainActivity.this::initSerial, "preddita-serial-retry").start();
+            Log.i(TAG, "Technical serial reconnect requested");
+            return true;
         }
     }
 
@@ -690,7 +956,7 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public String getBridgeVersion() {
-            return "PREDDITA-BRIDGE-1.6.0";
+            return "PREDDITA-BRIDGE-1.7.0";
         }
 
         @JavascriptInterface

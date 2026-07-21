@@ -287,7 +287,9 @@ $apk = Join-Path (Get-Location) "android\app\build\outputs\apk\debug\app-debug.a
 
 No equipamento, abra o modo diagnostico, toque em `Provisionar conexao` e
 informe a URL HTTPS, o `lockerId` e a chave individual cadastrada em
-`PREDDITA_DEVICE_KEYS` no servidor. A chave fica no Android Keystore.
+`PREDDITA_DEVICE_KEYS` no servidor. No primeiro provisionamento, informe tambem
+um PIN tecnico local de 8 a 12 digitos. A chave fica no Android Keystore e o
+PIN original nao e persistido. Consulte `docs/KIOSK-V4-CONSOLE-TECNICO.md`.
 
 Ver versao instalada:
 
@@ -324,6 +326,7 @@ solicitar ao operador que autorize esta fonte de instalacao.
 - Testes do diario remoto e parser RS-485 passaram.
 - Teste `v2-door-safety-test.mjs` passou.
 - `npm run build` passou.
+- `npm run test:diagnostics` e `npx playwright test e2e/kiosk-diagnostics.spec.js` passaram.
 - `gradlew assembleDebug` passou.
 - O APK `release` foi assinado com a keystore de producao, nunca com a de debug.
 - O GitHub Release possui o APK e `.sha256`, e a URL/checksum do rollout
