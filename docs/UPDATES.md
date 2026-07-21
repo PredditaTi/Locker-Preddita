@@ -59,6 +59,46 @@ para a mais antiga:
 
 ## Registro
 
+### 2026-07-21 - Relatorio consolidado e deploy controlado iniciados
+
+**Base:** produto `2.0.31-lab`, release `v2.0.31-lab`, branch
+`codex/kiosk-v4-pilot-readiness`
+
+**O que mudou**
+
+- Foi criado um relatorio unico para recuperacao, seguranca, dados, backend,
+  Kiosk V4, release, diagnostico, deploy e rollback.
+- O servidor legado e o KS1062 foram identificados por verificacoes somente
+  leitura, sem registrar IP, serial, chaves ou dados pessoais no Git.
+- O app antigo, seu estado local e o snapshot remoto foram preservados fora do
+  repositorio antes da troca de assinatura.
+
+**Por que**
+
+- A implantacao exige uma evidencia auditavel e um caminho de retorno antes de
+  substituir o backend ou remover o pacote antigo do equipamento.
+
+**Impacto**
+
+- A equipe possui uma visao consolidada do que foi alterado e do motivo.
+- O deploy fica bloqueado de forma explicita enquanto o host HTTPS nao estiver
+  autenticado e saudavel; nenhuma porta foi acionada.
+
+**Arquivos**
+
+- `docs/RELATORIO-CONSOLIDADO-IMPLEMENTACAO-DEPLOY-2026-07-21.md`
+- `docs/README.md`
+- `docs/UPDATES.md`
+
+**Validacao**
+
+- Release, certificado e checksum ja verificados pelo workflow de release.
+- Servidor legado confirmou `2.0.8-lab`, schema `6`.
+- KS1062 confirmou Android 13, app `2.0.8-lab`, processo ativo e `/dev/ttyS5`.
+- Backups foram criados com o app parado e acesso local restrito.
+
+**Referencia:** [PR #26](https://github.com/PredditaTi/Locker-Preddita/pull/26).
+
 ### 2026-07-21 - APK assinado 2.0.31-lab publicado
 
 **Base:** tag `v2.0.31-lab`, commit
