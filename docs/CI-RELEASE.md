@@ -50,10 +50,18 @@ A versao `2.0.22-lab` e o bootstrap do atualizador e ainda precisa ser instalada
 por ADB nos lockers existentes. Depois dela, releases com `versionCode` maior
 podem usar o rollout do Admin Online.
 
-A candidata atual do Kiosk V4 e `2.0.31-lab`, `versionCode 31`. Por manter o
-sufixo `-lab`, o workflow deve ser executado com canal `lab`; a promocao para
-`pilot` ou `production` exige novo nome/versao, nova validacao e outra release
-imutavel. Antes de usuarios reais, execute os dois preflights descritos em
+A candidata atual do Kiosk V4 e `2.0.31-lab`, `versionCode 31`. A prerelease
+imutavel [`v2.0.31-lab`](https://github.com/PredditaTi/Locker-Preddita/releases/tag/v2.0.31-lab)
+foi publicada em 21 de julho de 2026 pelo workflow
+[#29860294336](https://github.com/PredditaTi/Locker-Preddita/actions/runs/29860294336).
+O APK possui SHA-256
+`fd79beaa803d5d031c72e5c576b2a1c52cad7f6df35e761793931aae1576b25c` e a
+assinatura v2 foi validada com o certificado lab registrado abaixo.
+
+Por manter o sufixo `-lab`, essa release nao pode ser promovida apenas por
+renomeacao: os canais `pilot` e `production` exigem novo nome/versao, nova
+validacao e outra release imutavel. Antes de usuarios reais, instale-a em um
+unico equipamento e execute os dois preflights descritos em
 `docs/KIOSK-V4-PILOTO-CONTROLADO.md`.
 
 ## Custodia da chave

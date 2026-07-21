@@ -514,8 +514,9 @@ que aumentam escopo, dados pessoais ou superficie de ataque.
 **Status em 21/07/2026:** preparacao de software concluida na release candidata
 `2.0.31-lab`, `versionCode 31`, schema `13`. Metricas sem PII, agregacao no
 Admin, preflight bloqueante, verificacao ADB somente leitura e runbook do
-piloto estao implementados. A matriz abaixo continua pendente porque exige APK
-assinado, KS1062 comissionado e usuarios autorizados. Consulte
+piloto estao implementados. O APK assinado foi publicado na prerelease
+`v2.0.31-lab` e seu checksum foi conferido. A matriz abaixo continua pendente
+porque exige instalacao em KS1062 comissionado e usuarios autorizados. Consulte
 [KIOSK-V4-PILOTO-CONTROLADO.md](KIOSK-V4-PILOTO-CONTROLADO.md).
 
 ### Piloto obrigatorio
@@ -639,6 +640,6 @@ As partes 1 a 7 estarao concluidas quando:
 
 ## Proxima acao recomendada
 
-Gerar o APK assinado `2.0.31-lab`, instalar em um unico KS1062 comissionado e
-executar o preflight e a matriz da **Parte 8**. Nenhum recurso condicional deve
-entrar antes dessa evidencia.
+Instalar o APK assinado `2.0.31-lab` em um unico KS1062 comissionado e executar
+o preflight e a matriz da **Parte 8**. Nenhum recurso condicional deve entrar
+antes dessa evidencia.

@@ -2,7 +2,7 @@
 
 Este documento encerra a preparacao de laboratorio da Parte 8 e define como a
 equipe deve validar a release candidata `2.0.31-lab` em um KS1062 real. Ele nao
-substitui comissionamento, consentimento do local nem assinatura do APK.
+substitui comissionamento, instalacao controlada nem consentimento do local.
 
 ## Estado em 21 de julho de 2026
 
@@ -16,16 +16,34 @@ substitui comissionamento, consentimento do local nem assinatura do APK.
 - [x] Verificacao ADB somente leitura, sem acionar portas.
 - [x] Release candidata `2.0.31-lab`, `versionCode 31`, schema `13` preparada.
 
-### Evidencia fisica ainda obrigatoria
+### Evidencia de release concluida
 
-- [ ] APK assinado gerado e checksum conferido.
+- [x] APK assinado gerado, publicado e checksum conferido.
+
+A prerelease imutavel
+[`v2.0.31-lab`](https://github.com/PredditaTi/Locker-Preddita/releases/tag/v2.0.31-lab)
+foi gerada pelo
+[`Release APK` #29860294336](https://github.com/PredditaTi/Locker-Preddita/actions/runs/29860294336)
+em 21 de julho de 2026, a partir do commit
+`cb2fc2b16ced77f3f63136e3686ce8e050f48926`.
+
+- APK: `PREDDITA-Locker-2.0.31-lab-release.apk`, 3.389.495 bytes.
+- SHA-256: `fd79beaa803d5d031c72e5c576b2a1c52cad7f6df35e761793931aae1576b25c`.
+- Assinatura: APK Signature Scheme v2, um signatario, validada por `apksigner`.
+- Certificado SHA-256:
+  `5E:D9:93:C1:04:91:D5:FF:58:0D:85:D3:BC:C4:5F:53:CE:21:3F:19:9A:F3:44:D3:79:56:A7:AA:F1:9D:59:2D`.
+- Conferencia independente: APK e arquivo `.sha256` baixados da release; o
+  comando `shasum -a 256 -c` retornou `OK`.
+
+### Evidencia em equipamento ainda obrigatoria
+
 - [ ] Locker comissionado e autorizado para o piloto.
 - [ ] Matriz de jornadas executada no KS1062.
 - [ ] Falhas de rede, energia, UART e porta reproduzidas com seguranca.
 - [ ] Health check e pausa de rollout observados no equipamento.
 - [ ] Usuarios reais observados com consentimento e sem gravacao por padrao.
 
-Enquanto algum item fisico estiver pendente, a release continua sendo de
+Enquanto algum item em equipamento estiver pendente, a release continua sendo de
 laboratorio e nao deve ser distribuida amplamente.
 
 ## Dados coletados
@@ -79,7 +97,7 @@ instalacao e da janela de teste continua obrigatoria.
 ## Sequencia do piloto
 
 1. Publicar o APK pelo workflow `Release APK`, canal `lab`, e conferir
-   certificado e SHA-256 do artefato.
+   certificado e SHA-256 do artefato. Concluido na release `v2.0.31-lab`.
 2. Instalar em um unico locker comissionado. Nao habilitar rollout superior a
    10% nem canal `production`.
 3. Confirmar HMAC, sinal recente, serial aberta, mapa de portas e health check.

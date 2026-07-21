@@ -640,8 +640,10 @@ processo de acesso e eliminacao do titular.
   Admin, preflight bloqueante e verificacao ADB que nao aciona portas.
 - Tempo, resultado, PIN/QR, fallback, ajuda e erros podem ser comparados sem
   persistir apartamento, credencial, porta, imagem, audio ou texto livre.
-- A candidata passou a `2.0.31-lab`, `versionCode 31` e schema `13`; APK
-  assinado, KS1062 e observacao autorizada continuam como gates externos.
+- A candidata passou a `2.0.31-lab`, `versionCode 31` e schema `13`; o APK
+  assinado foi publicado na prerelease imutavel `v2.0.31-lab`, com assinatura
+  v2 e checksum conferidos. KS1062 e observacao autorizada continuam como gates
+  externos.
 
 ## Evolucao de dados e compatibilidade
 

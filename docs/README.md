@@ -22,7 +22,7 @@ instalar um locker, operar o Admin Online ou publicar uma nova versao.
 | Serial prioritaria | `/dev/ttyS5` |
 | Frontend | React 18, Vite 8, Node.js 20.19+ |
 | Backend | Node.js, armazenamento JSON para laboratorio ou Postgres 16 |
-| Status | Kiosk V4 com jornadas, audio, console, serial resiliente e health check de update integrados em laboratorio, aguardando bancada e piloto controlado |
+| Status | Kiosk V4 integrado e APK `2.0.31-lab` assinado, aguardando instalacao no KS1062, bancada e piloto controlado |
 
 O estado acima descreve a base funcional. Mudancas apenas documentais feitas
 depois da tag permanecem registradas em [UPDATES.md](UPDATES.md).

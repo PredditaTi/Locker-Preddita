@@ -59,6 +59,51 @@ para a mais antiga:
 
 ## Registro
 
+### 2026-07-21 - APK assinado 2.0.31-lab publicado
+
+**Base:** tag `v2.0.31-lab`, commit
+`cb2fc2b16ced77f3f63136e3686ce8e050f48926`
+
+**O que mudou**
+
+- O workflow `Release APK` gerou e publicou a prerelease imutavel
+  `v2.0.31-lab` com o APK e seu arquivo `.sha256`.
+- A assinatura APK v2, o signatario lab e o checksum do artefato baixado foram
+  conferidos antes de atualizar o gate do piloto.
+- O runbook, o plano e a central documental passaram a distinguir release
+  assinada concluida de instalacao e validacao fisica ainda pendentes.
+
+**Por que**
+
+- A candidata precisava possuir artefato reproduzivel e verificavel antes de
+  ser instalada no primeiro KS1062 do piloto.
+
+**Impacto**
+
+- A equipe pode instalar exatamente o artefato registrado, sem tratar um build
+  local ou uma release renomeada como equivalente.
+- A release permanece no canal `lab`; comissionamento, bancada, matriz de
+  jornadas e observacao autorizada ainda bloqueiam qualquer promocao.
+
+**Arquivos**
+
+- `docs/KIOSK-V4-PILOTO-CONTROLADO.md`
+- `docs/CI-RELEASE.md`
+- `docs/README.md`
+- `docs/PLANO-IMPLEMENTACAO-MELHORIAS-REDESIGN-2026-07-20.md`
+- `docs/HISTORICO-COMPLETO-DE-MELHORIAS.md`
+- `docs/UPDATES.md`
+
+**Validacao**
+
+- Workflow `Release APK` #29860294336 concluido com sucesso.
+- `apksigner` confirmou assinatura v2 e o certificado lab esperado.
+- O APK foi baixado da GitHub Release e `shasum -a 256 -c` retornou `OK` para
+  `fd79beaa803d5d031c72e5c576b2a1c52cad7f6df35e761793931aae1576b25c`.
+
+**Referencia:** [release `v2.0.31-lab`](https://github.com/PredditaTi/Locker-Preddita/releases/tag/v2.0.31-lab)
+e [PR #26](https://github.com/PredditaTi/Locker-Preddita/pull/26).
+
 ### 2026-07-21 - Parte 8 preparada para piloto fisico controlado
 
 **Base:** produto `2.0.31-lab`, `versionCode 31`, `schemaVersion 13`, branch
