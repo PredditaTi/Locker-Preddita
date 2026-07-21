@@ -59,6 +59,7 @@ import {
   CourierConfirmStep,
   CourierDoorStep,
   CourierSuccessStep,
+  KioskNoticeDialog,
   PublicHome,
   ResidentPickupStep,
 } from './publicKioskUi.jsx';
@@ -84,8 +85,6 @@ const COURIER_SUCCESS_RETURN_MS = 10000;
 const DOOR_COMPLETION_CLOSE_TIMEOUT_MS = 45000;
 const SMALL_DOOR_CLOSE_TIMEOUT_MS = 60000;
 const SMALL_DOOR_CLOSE_POLL_MS = 1000;
-const APARTMENT_KEYPAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
-const PICKUP_PIN_KEYPAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'backspace'];
 const LABEL_PHOTO_MAX_WIDTH = 640;
 const LABEL_PHOTO_JPEG_QUALITY = 0.62;
 const PUBLIC_READY_BANNER = {
@@ -338,6 +337,7 @@ export default function App() {
   const [activePickupId, setActivePickupId] = useState('');
   const [generatedDelivery, setGeneratedDelivery] = useState(null);
   const [courierSuccessDelivery, setCourierSuccessDelivery] = useState(null);
+  const [pickupSuccessDelivery, setPickupSuccessDelivery] = useState(null);
   const [qrImage, setQrImage] = useState('');
   const [courierStep, setCourierStep] = useState('recipient');
   const [courierDepositStage, setCourierDepositStage] = useState('small');
@@ -364,6 +364,7 @@ export default function App() {
   const remoteCloseInFlightRef = useRef(false);
   const courierOpenInFlightRef = useRef(false);
   const smallCloseCancelRef = useRef(false);
+  const courierCancelRequestedRef = useRef(false);
   const pickupAutoSubmitRef = useRef('');
   const qrVideoRef = useRef(null);
   const qrCanvasRef = useRef(null);
@@ -587,7 +588,7 @@ export default function App() {
     showBanner &&
     isPopupBanner &&
     dismissedBannerKey !== bannerKey;
-  const showInlineBanner = showBanner && !isPopupBanner;
+  const showInlineBanner = showBanner && !isPopupBanner && !isPublicFlowView;
   const doorCards = doorCatalog.map((door) => buildDoorPresentation(door, getDoorState(doorStates, door.channel), occupancyMap[door.channel] ?? null));
   const doorPageCount = Math.max(1, Math.ceil(doorCards.length / DOORS_PER_PAGE));
   const visibleDoorCards = doorCards.slice(
@@ -1003,6 +1004,7 @@ export default function App() {
 
     courierOpenInFlightRef.current = true;
     smallCloseCancelRef.current = false;
+    courierCancelRequestedRef.current = false;
     setGeneratedDelivery(null);
     setCourierSuccessDelivery(null);
     setCourierDepositStage('small');
@@ -1072,6 +1074,7 @@ export default function App() {
     }
 
     smallCloseCancelRef.current = false;
+    courierCancelRequestedRef.current = false;
     setCourierDepositStage('waiting-small-close');
     setSmallCloseSecondsLeft(Math.ceil(SMALL_DOOR_CLOSE_TIMEOUT_MS / 1000));
     setBanner({
@@ -1093,16 +1096,37 @@ export default function App() {
       return;
     }
     if (closed.status !== 'closed') {
+      const cancellationTimedOut = courierCancelRequestedRef.current;
+      courierCancelRequestedRef.current = false;
       setCourierDepositStage('small');
       setSmallCloseSecondsLeft(0);
       setBanner({
         tone: 'warn',
         title: 'Porta pequena ainda aberta',
-        text: `Feche a porta ${previousDeposit.door} para liberar uma porta grande.`,
+        text: cancellationTimedOut
+          ? `O cancelamento nao foi concluido. A reserva continua ativa; feche a porta ${previousDeposit.door} antes de tentar novamente.`
+          : `Feche a porta ${previousDeposit.door} para liberar uma porta grande.`,
       });
       return;
     }
     setSmallCloseSecondsLeft(0);
+
+    if (courierCancelRequestedRef.current) {
+      const stateAfterCancel = cancelDelivery(
+        lockerStateRef.current,
+        previousDeposit.id,
+        'Troca para porta grande cancelada pelo entregador.'
+      );
+      commitState(stateAfterCancel);
+      setActiveDepositId('');
+      resetCourierFlow();
+      setBanner({
+        tone: 'warn',
+        title: 'Operacao cancelada',
+        text: `A porta ${previousDeposit.door} foi confirmada fechada e a reserva foi cancelada.`,
+      });
+      return;
+    }
 
     const stateAfterSmallCancel = cancelDelivery(
       lockerStateRef.current,
@@ -1282,24 +1306,12 @@ export default function App() {
 
   function handleCancelWaitingForLargeDoor() {
     if (!activeDeposit) return;
-    smallCloseCancelRef.current = true;
-    setGeneratedDelivery(null);
-    setCourierSuccessDelivery(null);
-    commitState((current) => cancelDelivery(current, activeDeposit.id, 'Troca para porta grande cancelada pelo entregador.'));
-    setActiveDepositId('');
-    resetCourierFlow();
+    courierCancelRequestedRef.current = true;
+    setCourierDepositStage('cancelling-small-close');
     setBanner({
       tone: 'warn',
-      title: 'Operacao cancelada',
-      text: `A reserva da porta ${activeDeposit.door} foi cancelada. Comece uma nova entrega se precisar.`,
-    });
-  }
-
-  function handleWaitingForLargeDoorHelp() {
-    setBanner({
-      tone: 'warn',
-      title: 'Como continuar',
-      text: 'Feche a porta pequena ate o clique da trava. Se a tela nao avancar, toque em Cancelar operacao e procure a administracao.',
+      title: 'Feche a porta para cancelar',
+      text: `A reserva sera cancelada assim que o sensor confirmar a porta ${activeDeposit.door} fechada.`,
     });
   }
 
@@ -1647,6 +1659,7 @@ export default function App() {
       void flushPendingDeviceEvents();
       setPickupValue('');
       setActivePickupId('');
+      setPickupSuccessDelivery(collectedDelivery);
       setBanner({
         tone: 'success',
         title: 'Retirada concluida',
@@ -1692,6 +1705,7 @@ export default function App() {
 
   function resetCourierFlow() {
     smallCloseCancelRef.current = true;
+    courierCancelRequestedRef.current = false;
     setCourierStep('recipient');
     setCourierDepositStage('small');
     setSmallCloseSecondsLeft(0);
@@ -1716,6 +1730,7 @@ export default function App() {
     pickupAutoSubmitRef.current = '';
     setPickupValue('');
     setActivePickupId('');
+    setPickupSuccessDelivery(null);
     setView('resident');
   }
 
@@ -1773,6 +1788,16 @@ export default function App() {
   function handlePickupClear() {
     pickupAutoSubmitRef.current = '';
     setPickupValue('');
+  }
+
+  function finishPickupSuccessNow() {
+    stopQrScanner();
+    pickupAutoSubmitRef.current = '';
+    setPickupValue('');
+    setActivePickupId('');
+    setPickupSuccessDelivery(null);
+    setView('home');
+    setBanner(PUBLIC_READY_BANNER);
   }
 
   function buildRemoteDoorStatus() {
@@ -2095,8 +2120,20 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [view, courierStep, courierSuccessDelivery?.id, courierSuccessDelivery?.recipientEmail]);
 
+  useEffect(() => {
+    if (view !== 'resident' || !pickupSuccessDelivery) {
+      return undefined;
+    }
+
+    const timer = setTimeout(() => {
+      finishPickupSuccessNow();
+    }, COURIER_SUCCESS_RETURN_MS);
+
+    return () => clearTimeout(timer);
+  }, [view, pickupSuccessDelivery?.id]);
+
   return (
-    <main className={joinClasses('locker-app', isHomeView || isPublicFlowView ? 'locker-app--public' : '', isHomeView ? 'locker-app--kiosk-v4-home' : '')}>
+    <main className={joinClasses('locker-app', isHomeView || isPublicFlowView ? 'locker-app--public' : '', isHomeView ? 'locker-app--kiosk-v4-home' : '', isPublicFlowView ? 'locker-app--kiosk-v4-flow' : '')}>
       <div className={joinClasses('locker-shell', isHomeView ? 'locker-shell--home' : '', isPublicFlowView ? 'locker-shell--flow' : '', showInlineBanner ? 'locker-shell--has-banner' : '', isAdminView ? 'locker-shell--admin' : '')}>
         {!isHomeView && !isPublicFlowView ? (
         <section className="hero-card">
@@ -2217,6 +2254,7 @@ export default function App() {
               <section className="public-kiosk-host">
                 {courierStep === 'success' && courierSuccessDelivery && courierSuccessPresentation ? (
                   <CourierSuccessStep
+                    tenantName={lockerState.tenant.siteName}
                     presentation={courierSuccessPresentation}
                     delivery={courierSuccessDelivery}
                     qrImage={qrImage}
@@ -2225,6 +2263,7 @@ export default function App() {
                   />
                 ) : activeDeposit ? (
                   <CourierDoorStep
+                    tenantName={lockerState.tenant.siteName}
                     delivery={activeDeposit}
                     stage={courierDepositStage}
                     secondsLeft={smallCloseSecondsLeft}
@@ -2261,398 +2300,107 @@ export default function App() {
             ) : null}
 
             {view === 'adminDeposit' ? (
-              <section className={joinClasses('panel-card view-panel view-panel--deposit', view === 'courier' ? 'view-panel--public-deposit' : '')}>
-                {view === 'adminDeposit' ? (
-                  <div className="panel-header">
-                    <div>
-                      <h2 className="panel-title">Fluxo de deposito</h2>
-                      <p className="panel-text">Escolha o apartamento, informe o volume e abra uma porta disponivel.</p>
-                    </div>
-                    <button type="button" className="ghost-button" onClick={() => syncHardwareStatus()} disabled={isSyncing}>
-                      {isSyncing ? 'Sincronizando...' : 'Atualizar mapa'}
-                    </button>
+              <section className="panel-card view-panel view-panel--deposit">
+                <div className="panel-header">
+                  <div>
+                    <h2 className="panel-title">Fluxo de deposito</h2>
+                    <p className="panel-text">Escolha o apartamento, informe o volume e abra uma porta disponivel.</p>
                   </div>
-                ) : null}
+                  <button type="button" className="ghost-button" onClick={() => syncHardwareStatus()} disabled={isSyncing}>
+                    {isSyncing ? 'Sincronizando...' : 'Atualizar mapa'}
+                  </button>
+                </div>
 
-                {view === 'courier' && courierStep === 'success' && courierSuccessDelivery ? (
-                  <section className="public-result public-result--success">
-                    <div className="result-hero">
-                      <p className="info-kicker">Entrega registrada</p>
-                      <h2 className="result-title">Pronto</h2>
-                      <p className="result-text">
-                        A encomenda do {getDeliveryUnitLabel(courierSuccessDelivery)} ficou registrada.
-                        {courierSuccessDelivery.recipientEmail
-                          ? ' O morador recebera o codigo quando o armario sincronizar.'
-                          : ' Como nao ha e-mail cadastrado, anote o PIN desta tela.'}
-                      </p>
-                      {courierSuccessDelivery.recipientEmail ? (
-                        <div className="auto-return-card">
-                          <span>Retorno automatico</span>
-                          <strong>{Math.ceil(COURIER_SUCCESS_RETURN_MS / 1000)} segundos</strong>
-                        </div>
-                      ) : (
-                        <div className="auto-return-card auto-return-card--hold">
-                          <span>Sem e-mail cadastrado</span>
-                          <strong>PIN fica na tela</strong>
-                        </div>
-                      )}
-                    </div>
-                    <div className="result-card result-card--success">
-                      {shouldShowCourierPickupCredential(courierSuccessDelivery) ? (
-                        <>
-                          <div className="pin-tile pin-tile--success">
-                            <span>PIN de retirada</span>
-                            <strong>{courierSuccessDelivery.pin}</strong>
-                          </div>
-                          {qrImage ? (
-                            <div className="qr-shell qr-shell--success">
-                              <img className="qr-image qr-image--success" src={qrImage} alt="QR de retirada" />
-                              <p className="qr-caption">QR PREDDITA</p>
-                            </div>
-                          ) : null}
-                        </>
-                      ) : (
-                        <div className="delivery-complete-card" aria-live="polite">
-                          <span className="delivery-complete-icon" aria-hidden="true">OK</span>
-                          <strong>Codigo enviado pelo sistema</strong>
-                          <p>O PIN e o QR ficam salvos no painel e serao enviados por e-mail.</p>
-                        </div>
-                      )}
-                      <div className="summary-grid summary-grid--public">
-                        <div><span className="summary-label">Apartamento</span><p className="summary-value">{courierSuccessDelivery.recipientName}</p></div>
-                        <div><span className="summary-label">Porta</span><p className="summary-value">{courierSuccessDelivery.door}</p></div>
-                        <div>
-                          <span className="summary-label">E-mail</span>
-                          <p className="summary-value">
-                            {courierSuccessDelivery.recipientEmail ? 'Envio automatico' : 'Sem e-mail'}
-                          </p>
-                        </div>
-                        <div><span className="summary-label">Proximo passo</span><p className="summary-value">Voltar ao inicio</p></div>
+                {!activeDeposit ? (
+                  <div className="operation-grid operation-grid--split">
+                    <section className="panel-card inset-card">
+                      <div className="field">
+                        <label className="field-label" htmlFor="recipient-search">Buscar apartamento</label>
+                        <input id="recipient-search" className="text-input" type="text" inputMode="numeric" value={recipientSearch} placeholder="Digite o numero do apartamento" onChange={(event) => setRecipientSearch(event.target.value)} />
                       </div>
-                      <p className="info-text">
-                        {courierSuccessDelivery.recipientEmail
-                          ? 'Mesmo sem internet, o armario guarda essa acao e envia quando conectar.'
-                          : 'Apartamento sem e-mail cadastrado. Informe o PIN manualmente se necessario.'}
-                      </p>
-                      <div className="action-row action-row--public">
-                        <button type="button" className="action-button action-button--huge" onClick={openCourierFlow}>
-                          Nova entrega
-                        </button>
-                        <button type="button" className="ghost-button ghost-button--huge" onClick={finishCourierSuccessNow}>
-                          Voltar ao inicio
-                        </button>
+                      <div className="recipient-list recipient-list--tall">
+                        {filteredRecipients.map((recipient) => (
+                          <RecipientCard key={recipient.id} recipient={recipient} selected={recipient.id === selectedRecipientId} onSelect={() => handleSelectRecipient(recipient.id)} />
+                        ))}
+                        {filteredRecipients.length === 0 ? <div className="empty-state"><p className="empty-text">Nenhum apartamento encontrado.</p></div> : null}
                       </div>
-                    </div>
-                  </section>
-                ) : view === 'courier' && activeDeposit ? (
-                  <section className={joinClasses('public-result public-result--dropoff', courierDepositStage === 'large' ? 'is-large-stage' : '', courierDepositStage === 'waiting-small-close' ? 'is-waiting' : '')}>
-                    <div className="result-hero">
-                      <p className="info-kicker">
-                        {courierDepositStage === 'waiting-small-close'
-                          ? 'Aguardando fechamento'
-                          : courierDepositStage.includes('confirming')
-                          ? 'Confirmando fechamento'
-                          : courierDepositStage === 'large'
-                          ? 'Porta grande aberta'
-                          : 'Porta pequena aberta'}
-                      </p>
-                      <h2 className="result-title">Porta {activeDeposit.door}</h2>
-                      <p className="result-text">
-                        {courierDepositStage === 'waiting-small-close'
-                          ? `Feche a porta pequena. Restam ${smallCloseSecondsLeft || Math.ceil(SMALL_DOOR_CLOSE_TIMEOUT_MS / 1000)} segundos para o sensor confirmar.`
-                          : courierDepositStage.includes('confirming')
-                          ? `Feche a porta ${activeDeposit.door}. O sistema conclui quando o sensor confirmar.`
-                          : courierDepositStage === 'large'
-                          ? 'Guarde a encomenda na porta grande e toque em Item guardado.'
-                          : 'Tente guardar a encomenda nesta porta. Se nao couber, toque em Nao coube.'}
-                      </p>
-                    </div>
-                    <div className="result-card">
-                      <div className="summary-grid summary-grid--public">
-                        <div><span className="summary-label">Apartamento</span><p className="summary-value">{activeDeposit.recipientName}</p></div>
-                        <div><span className="summary-label">Tipo de porta</span><p className="summary-value">{activeDeposit.doorSize === 'G' ? 'Grande' : 'Pequena'}</p></div>
-                        <div><span className="summary-label">Status</span><p className="summary-value">Aguardando deposito</p></div>
-                        <div><span className="summary-label">Proximo passo</span><p className="summary-value">{courierDepositStage.includes('confirming') ? 'Feche a porta' : 'Item guardado'}</p></div>
+                    </section>
+
+                    <section className="panel-card inset-card">
+                      <div className="summary-shell">
+                        <div className="summary-grid">
+                          <div><span className="summary-label">Apartamento</span><p className="summary-value">{selectedRecipient ? formatRecipientApartment(selectedRecipient) : 'Nao selecionado'}</p></div>
+                          <div><span className="summary-label">Unidade</span><p className="summary-value">{selectedRecipient ? selectedRecipient.unit : '--'}</p></div>
+                          <div><span className="summary-label">Porta sugerida</span><p className="summary-value">{recommendedDoor ? `Porta ${recommendedDoor.channel} - ${recommendedDoor.size}` : 'Sem vaga'}</p></div>
+                          <div><span className="summary-label">Livres</span><p className="summary-value">{freeDoorCount}</p></div>
+                        </div>
                       </div>
-                      {courierDepositStage !== 'waiting-small-close' ? (
-                        <div className={joinClasses('label-capture-card', labelCapture.active ? 'is-active' : '', labelCapture.photoDataUrl ? 'is-captured' : '')}>
-                          <div className="label-capture-copy">
-                            <span className="summary-label">Comprovante</span>
-                            <strong>Etiqueta da encomenda</strong>
-                            <p>
-                              {labelCapture.photoDataUrl
-                                ? 'Foto salva. Ela seguira para o painel e para o historico da entrega.'
-                                : 'Opcional agora: fotografe a etiqueta para auditoria e futura leitura automatica por IA.'}
-                            </p>
-                            {labelCapture.error ? <p className="label-capture-error">{labelCapture.error}</p> : null}
+
+                      <div className="form-grid form-grid--compact">
+                        <div className="config-grid">
+                          <div className="field">
+                            <label className="field-label" htmlFor="courier-name">Origem</label>
+                            <input id="courier-name" className="text-input" type="text" value={deliveryForm.courierName} onChange={(event) => setDeliveryForm((current) => ({ ...current, courierName: event.target.value }))} />
                           </div>
-                          <div className="label-capture-preview">
-                            {labelCapture.active ? (
-                              <video ref={labelVideoRef} className="label-capture-video" playsInline muted />
-                            ) : labelCapture.photoDataUrl ? (
-                              <img className="label-capture-image" src={labelCapture.photoDataUrl} alt="Etiqueta capturada da encomenda" />
-                            ) : (
-                              <div className="label-capture-empty">
-                                <span>Sem foto</span>
-                              </div>
-                            )}
-                            <canvas ref={labelCanvasRef} className="label-capture-canvas" aria-hidden="true" />
-                          </div>
-                          <div className="label-capture-actions">
-                            {labelCapture.active ? (
-                              <>
-                                <button type="button" className="ghost-button" onClick={stopLabelCamera}>
-                                  Fechar camera
-                                </button>
-                                <button type="button" className="action-button" onClick={captureLabelPhoto}>
-                                  Capturar
-                                </button>
-                              </>
-                            ) : labelCapture.photoDataUrl ? (
-                              <button type="button" className="ghost-button" onClick={startLabelCamera}>
-                                Refazer foto
-                              </button>
-                            ) : (
-                              <button type="button" className="ghost-button" onClick={startLabelCamera}>
-                                Fotografar etiqueta
-                              </button>
-                            )}
+                          <div className="field">
+                            <label className="field-label" htmlFor="order-code">Referencia</label>
+                            <input id="order-code" className="text-input" type="text" value={deliveryForm.orderCode} placeholder="Pedido ou protocolo" onChange={(event) => setDeliveryForm((current) => ({ ...current, orderCode: event.target.value }))} />
                           </div>
                         </div>
-                      ) : null}
-                      <div className={joinClasses('action-row action-row--public', courierDepositStage === 'waiting-small-close' ? 'action-row--triple' : courierDepositStage !== 'small' ? 'action-row--single' : '')}>
-                        {courierDepositStage === 'waiting-small-close' ? (
-                          <>
-                            <button type="button" className="action-button action-button--huge" disabled>
-                              Aguardando porta fechar
+
+                        <div className="size-selector">
+                          {PACKAGE_SIZES.map((size) => (
+                            <button key={size.id} type="button" className={joinClasses('size-button', deliveryForm.packageSize === size.id ? 'is-active' : '')} onClick={() => setDeliveryForm((current) => ({ ...current, packageSize: size.id }))}>
+                              <span className="size-title">{size.label}</span>
+                              <span className="size-hint">{size.hint}</span>
                             </button>
-                            <button type="button" className="ghost-button ghost-button--huge" onClick={handleWaitingForLargeDoorHelp}>
-                              Ajuda
-                            </button>
-                            <button type="button" className="action-button action-button--huge is-danger" onClick={handleCancelWaitingForLargeDoor}>
-                              Cancelar operacao
-                            </button>
-                          </>
-                        ) : courierDepositStage.includes('confirming') ? (
-                          <button type="button" className="action-button action-button--huge" disabled>
-                            Verificando porta fechada
-                          </button>
-                        ) : (
-                          <button type="button" className="action-button action-button--huge" onClick={handleConfirmDeposit} disabled={isBusy}>
-                            Item guardado
-                          </button>
-                        )}
-                        {courierDepositStage === 'small' ? (
-                          <button type="button" className="action-button action-button--huge is-secondary" onClick={handleUseLargeDoor} disabled={isBusy}>
-                            Nao coube
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-                  </section>
-                ) : (
-                  <>
-                    <div className={joinClasses(
-                      'operation-grid operation-grid--split',
-                      view === 'courier' ? 'public-deposit-grid' : '',
-                      view === 'courier' ? 'public-deposit-grid--recipient-only' : ''
-                    )}>
-                      {view !== 'courier' || courierStep === 'recipient' ? (
-                      <section className={joinClasses('panel-card inset-card', view === 'courier' ? 'flow-card flow-card--recipient' : '')}>
-                        {view === 'courier' ? (
-                          <>
-                          <div className="public-flow-toolbar">
-                            <div>
-                              <p className="hero-kicker">{lockerState.tenant.siteName}</p>
-                              <h1 className="public-flow-title">Digite o apartamento</h1>
-                            </div>
-                            <button type="button" className="ghost-button back-button" onClick={() => { resetCourierFlow(); setView('home'); }}>
-                              Voltar
-                            </button>
-                          </div>
-                          <div className="step-header">
-                            <span className="step-number">1</span>
-                            <div>
-                              <h2 className="step-title">Toque no apartamento correto</h2>
-                              <p className="step-text">Depois confirme para abrir uma porta pequena automaticamente.</p>
-                            </div>
-                          </div>
-                          </>
-                        ) : null}
-                        <div className={joinClasses('field', view === 'courier' ? 'field--public' : '')}>
-                          <label className="field-label" htmlFor="recipient-search">Buscar apartamento</label>
-                          <input id="recipient-search" className="text-input" type="text" inputMode="numeric" value={recipientSearch} placeholder="Digite o numero do apartamento" onChange={(event) => setRecipientSearch(event.target.value)} />
-                        </div>
-                        {view === 'courier' ? (
-                          <div className="apartment-keypad" aria-label="Teclado de apartamento">
-                            {APARTMENT_KEYPAD_KEYS.map((key) => (
-                              <button key={key} type="button" className="keypad-button" onClick={() => handleApartmentKey(key)}>
-                                {key}
-                              </button>
-                            ))}
-                            <button type="button" className="keypad-button is-muted" onClick={handleApartmentBackspace}>
-                              Apagar
-                            </button>
-                            <button type="button" className="keypad-button is-muted" onClick={() => setRecipientSearch('')}>
-                              Limpar
-                            </button>
-                          </div>
-                        ) : null}
-                        {view === 'courier' ? (
-                          <p className="result-count">{filteredRecipients.length} resultado{filteredRecipients.length === 1 ? '' : 's'}</p>
-                        ) : null}
-                        <div className={joinClasses('recipient-list recipient-list--tall', view === 'courier' ? 'recipient-list--public' : '')}>
-                          {filteredRecipients.map((recipient) => (
-                            <RecipientCard key={recipient.id} recipient={recipient} selected={recipient.id === selectedRecipientId} onSelect={() => handleSelectRecipient(recipient.id)} />
                           ))}
-                          {filteredRecipients.length === 0 ? <div className="empty-state"><p className="empty-text">Nenhum apartamento encontrado.</p></div> : null}
                         </div>
-                      </section>
-                      ) : null}
 
-                      {view === 'courier' && courierStep === 'confirm' && selectedRecipient ? (
-                        <section className="panel-card inset-card flow-card flow-card--confirm">
-                          <div className="public-flow-toolbar">
-                            <div>
-                              <p className="hero-kicker">Antes de abrir</p>
-                              <h1 className="public-flow-title">Apartamento correto?</h1>
-                            </div>
-                            <button type="button" className="ghost-button back-button" onClick={handleBackToApartmentList}>
-                              Voltar
-                            </button>
+                        <div className="config-grid">
+                          <div className="field">
+                            <label className="field-label" htmlFor="external-code">QR externo</label>
+                            <input id="external-code" className="text-input" type="text" value={deliveryForm.externalCode} placeholder="Opcional" onChange={(event) => setDeliveryForm((current) => ({ ...current, externalCode: event.target.value }))} />
                           </div>
-                          <div className="confirm-apartment-card">
-                            <p className="info-kicker">Apartamento escolhido</p>
-                            <h2 className="confirm-apartment-title">{formatRecipientApartment(selectedRecipient)}</h2>
-                            <p className="confirm-apartment-unit">{selectedRecipient.unit}</p>
-                            <p className="info-text">Ao confirmar, uma porta pequena sera aberta para a entrega.</p>
-                          </div>
-                          <div className="action-row action-row--public">
-                            <button type="button" className="ghost-button ghost-button--huge" onClick={handleBackToApartmentList}>
-                              Corrigir
-                            </button>
-                            <button type="button" className="action-button action-button--huge" onClick={handleConfirmCourierRecipient} disabled={isBusy}>
-                              {isBusy ? 'Abrindo...' : 'Sim, abrir porta'}
-                            </button>
-                          </div>
-                        </section>
-                      ) : null}
-
-                      {view !== 'courier' ? (
-                      <section className={joinClasses('panel-card inset-card', view === 'courier' ? 'flow-card flow-card--deposit flow-card--volume-screen' : '')}>
-                        {view === 'courier' ? (
-                          <div className="step-header">
-                            <span className="step-number">2</span>
-                            <div>
-                              <h2 className="step-title">Informe o volume</h2>
-                              <p className="step-text">O sistema sugere automaticamente uma porta livre compativel.</p>
-                            </div>
-                          </div>
-                        ) : null}
-                        {view === 'courier' ? (
-                          <div className="selection-summary">
-                            <div className="selection-summary-top">
-                              <span className="summary-label">Apartamento selecionado</span>
-                              <button type="button" className="inline-link-button" onClick={() => { setDeliveryForm((current) => ({ ...current, packageSize: '' })); setCourierStep('recipient'); }}>Trocar</button>
-                            </div>
-                            <strong>{selectedRecipient ? formatRecipientApartment(selectedRecipient) : 'Toque em um apartamento'}</strong>
-                            <div className="selection-meta">
-                              <span>{selectedRecipient ? selectedRecipient.unit : 'Unidade pendente'}</span>
-                              <span>{hasSelectedPackageSize ? (recommendedDoor ? `Porta ${recommendedDoor.channel} - ${recommendedDoor.size}` : 'Sem vaga') : 'Escolha volume'}</span>
-                              <span>{freeDoorCount} livres</span>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="summary-shell">
-                            <div className="summary-grid">
-                              <div><span className="summary-label">Apartamento</span><p className="summary-value">{selectedRecipient ? formatRecipientApartment(selectedRecipient) : 'Nao selecionado'}</p></div>
-                              <div><span className="summary-label">Unidade</span><p className="summary-value">{selectedRecipient ? selectedRecipient.unit : '--'}</p></div>
-                              <div><span className="summary-label">Porta sugerida</span><p className="summary-value">{recommendedDoor ? `Porta ${recommendedDoor.channel} - ${recommendedDoor.size}` : 'Sem vaga'}</p></div>
-                              <div><span className="summary-label">Livres</span><p className="summary-value">{freeDoorCount}</p></div>
-                            </div>
-                          </div>
-                        )}
-
-                        <div className="form-grid form-grid--compact">
-                          {view === 'adminDeposit' ? (
-                            <div className="config-grid">
-                              <div className="field">
-                                <label className="field-label" htmlFor="courier-name">Origem</label>
-                                <input id="courier-name" className="text-input" type="text" value={deliveryForm.courierName} onChange={(event) => setDeliveryForm((current) => ({ ...current, courierName: event.target.value }))} />
-                              </div>
-                              <div className="field">
-                                <label className="field-label" htmlFor="order-code">Referencia</label>
-                                <input id="order-code" className="text-input" type="text" value={deliveryForm.orderCode} placeholder="Pedido ou protocolo" onChange={(event) => setDeliveryForm((current) => ({ ...current, orderCode: event.target.value }))} />
-                              </div>
-                            </div>
-                          ) : null}
-
-                          <div className={joinClasses('size-selector', view === 'courier' ? 'size-selector--public' : '')}>
-                            {PACKAGE_SIZES.map((size) => (
-                              <button key={size.id} type="button" className={joinClasses('size-button', deliveryForm.packageSize === size.id ? 'is-active' : '')} onClick={() => setDeliveryForm((current) => ({ ...current, packageSize: size.id }))}>
-                                <span className="size-title">{size.label}</span>
-                                <span className="size-hint">{size.hint}</span>
-                              </button>
-                            ))}
-                          </div>
-
-                          {view === 'adminDeposit' ? (
-                            <div className="config-grid">
-                              <div className="field">
-                                <label className="field-label" htmlFor="external-code">QR externo</label>
-                                <input id="external-code" className="text-input" type="text" value={deliveryForm.externalCode} placeholder="Opcional" onChange={(event) => setDeliveryForm((current) => ({ ...current, externalCode: event.target.value }))} />
-                              </div>
-                              <div className="field">
-                                <label className="field-label" htmlFor="delivery-notes">Observacoes</label>
-                                <textarea id="delivery-notes" className="text-area text-area--compact" value={deliveryForm.notes} placeholder="Observacoes internas" onChange={(event) => setDeliveryForm((current) => ({ ...current, notes: event.target.value }))} />
-                              </div>
-                            </div>
-                          ) : null}
-
-                          <div className={view === 'courier' ? 'public-action-panel' : 'action-row'}>
-                            {view === 'courier' ? (
-                              <div>
-                                <p className="info-kicker">Passo 3</p>
-                                <h3 className="action-panel-title">Abrir compartimento</h3>
-                                <p className="info-text">{hasSelectedPackageSize ? 'Toque para liberar a porta e guardar a encomenda.' : 'Escolha Pequena, Media ou Grande para continuar.'}</p>
-                              </div>
-                            ) : null}
-                            <button type="button" className={joinClasses('action-button', view === 'courier' ? 'action-button--huge' : '')} onClick={handleCreateDeposit} disabled={isBusy || !recommendedDoor || (view === 'courier' && !hasSelectedPackageSize)}>
-                              {isBusy ? 'Abrindo porta...' : view === 'courier' ? 'Abrir porta para deposito' : 'Abrir compartimento'}
-                            </button>
+                          <div className="field">
+                            <label className="field-label" htmlFor="delivery-notes">Observacoes</label>
+                            <textarea id="delivery-notes" className="text-area text-area--compact" value={deliveryForm.notes} placeholder="Observacoes internas" onChange={(event) => setDeliveryForm((current) => ({ ...current, notes: event.target.value }))} />
                           </div>
                         </div>
-                      </section>
-                      ) : null}
-                    </div>
 
-                    {view !== 'courier' && activeDeposit ? (
-                      <DeliveryCard
-                        delivery={activeDeposit}
-                        titleOverride="Entrega em andamento"
-                        footer={
-                          <>
-                            <div className="summary-shell">
-                              <div className="summary-grid">
-                                <div><span className="summary-label">PIN</span><p className="summary-value">{activeDeposit.pin}</p></div>
-                                <div><span className="summary-label">Expira em</span><p className="summary-value">{formatDateTime(activeDeposit.expiresAt)}</p></div>
-                                <div><span className="summary-label">QR PREDDITA</span><p className="summary-value">{trimCode(activeDeposit.qrPayload)}</p></div>
-                                <div><span className="summary-label">Notificacao</span><p className="summary-value">Pronta para envio</p></div>
-                              </div>
-                            </div>
-                            <div className="preview-shell preview-shell--compact">{buildNotificationPreview(activeDeposit)}</div>
-                            <div className="action-row">
-                              <button type="button" className="action-button" onClick={handleConfirmDeposit}>Confirmar item guardado</button>
-                              <button type="button" className="action-button is-danger" onClick={handleCancelDeposit}>Cancelar reserva</button>
-                            </div>
-                          </>
-                        }
-                      />
-                    ) : null}
-                  </>
+                        <div className="action-row">
+                          <button type="button" className="action-button" onClick={handleCreateDeposit} disabled={isBusy || !recommendedDoor}>
+                            {isBusy ? 'Abrindo porta...' : 'Abrir compartimento'}
+                          </button>
+                        </div>
+                      </div>
+                    </section>
+                  </div>
+                ) : (
+                  <DeliveryCard
+                    delivery={activeDeposit}
+                    titleOverride="Entrega em andamento"
+                    footer={
+                      <>
+                        <div className="summary-shell">
+                          <div className="summary-grid">
+                            <div><span className="summary-label">PIN</span><p className="summary-value">{activeDeposit.pin}</p></div>
+                            <div><span className="summary-label">Expira em</span><p className="summary-value">{formatDateTime(activeDeposit.expiresAt)}</p></div>
+                            <div><span className="summary-label">QR PREDDITA</span><p className="summary-value">{trimCode(activeDeposit.qrPayload)}</p></div>
+                            <div><span className="summary-label">Notificacao</span><p className="summary-value">Pronta para envio</p></div>
+                          </div>
+                        </div>
+                        <div className="preview-shell preview-shell--compact">{buildNotificationPreview(activeDeposit)}</div>
+                        <div className="action-row">
+                          <button type="button" className="action-button" onClick={handleConfirmDeposit}>Confirmar item guardado</button>
+                          <button type="button" className="action-button is-danger" onClick={handleCancelDeposit}>Cancelar reserva</button>
+                        </div>
+                      </>
+                    }
+                  />
                 )}
 
-                {view !== 'courier' && generatedDelivery && !activeDeposit ? (
+                {generatedDelivery && !activeDeposit ? (
                   <article className="credential-card">
                     <div className="credential-copy">
                       <p className="info-kicker">Codigo gerado</p>
@@ -2680,20 +2428,24 @@ export default function App() {
                   isBusy={isBusy}
                   qrScannerState={qrScannerState}
                   activePickup={activePickup}
+                  completedPickup={pickupSuccessDelivery}
                   qrVideoRef={qrVideoRef}
                   qrCanvasRef={qrCanvasRef}
                   onBack={() => {
                     stopQrScanner();
                     setPickupValue('');
                     setActivePickupId('');
+                    setPickupSuccessDelivery(null);
                     setView('home');
                   }}
+                  onHome={finishPickupSuccessNow}
                   onModeChange={(nextMode) => {
                     stopQrScanner();
                     pickupAutoSubmitRef.current = '';
                     setPickupMode(nextMode);
                     setPickupValue('');
                     setActivePickupId('');
+                    setPickupSuccessDelivery(null);
                   }}
                   onDigit={handlePickupDigit}
                   onClear={handlePickupClear}
@@ -2707,194 +2459,62 @@ export default function App() {
             ) : null}
 
             {view === 'adminPickup' ? (
-              <section className={joinClasses('panel-card view-panel view-panel--pickup', view === 'resident' ? 'view-panel--public-pickup' : '')}>
-                {view === 'adminPickup' ? (
-                  <div className="panel-header">
-                    <div>
-                      <h2 className="panel-title">Fluxo de retirada</h2>
-                      <p className="panel-text">Valide o codigo ou QR e abra a porta correta.</p>
+              <section className="panel-card view-panel view-panel--pickup">
+                <div className="panel-header">
+                  <div>
+                    <h2 className="panel-title">Fluxo de retirada</h2>
+                    <p className="panel-text">Valide o codigo ou QR e abra a porta correta.</p>
+                  </div>
+                </div>
+
+                <div className="operation-grid operation-grid--split">
+                  <section className="panel-card inset-card">
+                    <div className="pickup-methods pickup-methods--compact">
+                      {pickupMethodsForView.map((method) => (
+                        <button key={method.id} type="button" className={joinClasses('method-button', pickupMode === method.id ? 'is-active' : '')} onClick={() => { pickupAutoSubmitRef.current = ''; setPickupMode(method.id); setPickupValue(''); setActivePickupId(''); }}>
+                          <span className="method-title">{method.title}</span>
+                          <span className="method-hint">{method.hint}</span>
+                        </button>
+                      ))}
                     </div>
-                  </div>
-                ) : null}
 
-                {view === 'resident' ? (
-                  <div className="resident-flow">
-                    <section className="panel-card inset-card resident-entry-card">
-                      <div className="public-flow-toolbar public-flow-toolbar--inside">
-                        <div>
-                          <p className="hero-kicker">{lockerState.tenant.siteName}</p>
-                          <h1 className="public-flow-title">Digite seu PIN</h1>
-                        </div>
-                        <button type="button" className="ghost-button back-button" onClick={() => { setPickupValue(''); setActivePickupId(''); setView('home'); }}>
-                          Voltar
-                        </button>
-                      </div>
-                      <div className="step-header step-header--large">
-                        <span className="step-number">1</span>
-                        <div>
-                          <h2 className="step-title">Abra sua encomenda</h2>
-                          <p className="step-text">Digite os 6 numeros recebidos. Se tiver QR, use a camera ao lado.</p>
-                        </div>
-                      </div>
-
-                      <div className="pickup-methods pickup-methods--public">
-                        {pickupMethodsForView.map((method) => (
-                          <button key={method.id} type="button" className={joinClasses('method-button', pickupMode === method.id ? 'is-active' : '')} onClick={() => { stopQrScanner(); pickupAutoSubmitRef.current = ''; setPickupMode(method.id); setPickupValue(''); setActivePickupId(''); }}>
-                            <span className="method-title">{method.title}</span>
-                            <span className="method-hint">{method.id === 'pin' ? 'Codigo numerico' : 'Leitura do QR PREDDITA'}</span>
-                          </button>
-                        ))}
-                      </div>
-
-                      <div className="pickup-code-panel pickup-code-panel--primary">
+                    <div className="config-grid config-grid--actions">
+                      <div className="field">
                         <label className="field-label" htmlFor="pickup-value">Codigo de retirada</label>
-                        <input
-                          id="pickup-value"
-                          className="text-input text-input--pickup"
-                          type="text"
-                          value={pickupValue}
-                          placeholder={pickupMode === 'pin' ? '------' : 'Leia ou cole o QR'}
-                          inputMode={pickupMode === 'pin' ? 'none' : 'text'}
-                          readOnly={pickupMode === 'pin'}
-                          onChange={handlePickupValueChange}
-                        />
-                        {pickupMode === 'pin' ? (
-                          <div className="pickup-pin-keypad" aria-label="Teclado de PIN">
-                            {PICKUP_PIN_KEYPAD_KEYS.map((key) => {
-                              if (key === 'clear') {
-                                return (
-                                  <button key={key} type="button" className="pickup-keypad-button is-muted" onClick={handlePickupClear}>
-                                    Limpar
-                                  </button>
-                                );
-                              }
-
-                              if (key === 'backspace') {
-                                return (
-                                  <button key={key} type="button" className="pickup-keypad-button is-muted" onClick={handlePickupBackspace}>
-                                    Apagar
-                                  </button>
-                                );
-                              }
-
-                              return (
-                                <button key={key} type="button" className="pickup-keypad-button" onClick={() => handlePickupDigit(key)}>
-                                  {key}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        ) : null}
-                        <button type="button" className="action-button action-button--huge" onClick={handleValidatePickup} disabled={isBusy || !isPickupCodeReady}>
-                          {isBusy ? 'Abrindo...' : 'Abrir minha porta'}
+                        <input id="pickup-value" className="text-input" type="text" value={pickupValue} placeholder={pickupMode === 'pin' ? 'PIN de 6 digitos' : pickupMode === 'predditaQr' ? 'Payload preddita://collect' : 'QR externo cadastrado'} onChange={handlePickupValueChange} />
+                      </div>
+                      <div className="action-row action-row--stretch">
+                        <button type="button" className="action-button" onClick={handleValidatePickup} disabled={isBusy || !isPickupCodeReady}>
+                          {isBusy ? 'Validando...' : 'Validar e abrir'}
                         </button>
                       </div>
-                    </section>
+                    </div>
 
-                    <section className="panel-card inset-card resident-status-card">
-                      {activePickup ? (
-                        <div className="pickup-success">
-                          <p className="info-kicker">Retirada liberada</p>
-                          <h2 className="result-title">Porta {activePickup.door}</h2>
-                          <p className="result-text">Retire a encomenda, feche a porta e toque para concluir.</p>
-                          <div className="summary-grid summary-grid--public">
-                            <div><span className="summary-label">Apartamento</span><p className="summary-value">{activePickup.recipientName}</p></div>
-                            <div><span className="summary-label">Unidade</span><p className="summary-value">{getDeliveryUnitLabel(activePickup)}</p></div>
-                          </div>
-                          <button type="button" className="action-button action-button--huge is-secondary" onClick={handleCompletePickup} disabled={isBusy}>
-                            {isBusy ? 'Verificando porta...' : 'Ja fechei a porta'}
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="resident-guide">
-                          <div className={joinClasses('qr-reader-panel', qrScannerState.active ? 'is-active' : '')}>
-                            <div className="qr-reader-header">
-                              <div>
-                                <p className="info-kicker">Leitura por camera</p>
-                                <h2 className="side-title">Aponte o QR</h2>
-                              </div>
-                              <button
-                                type="button"
-                                className={joinClasses('ghost-button', qrScannerState.active ? 'is-danger' : '')}
-                                onClick={qrScannerState.active ? stopQrScanner : startQrScanner}
-                              >
-                                {qrScannerState.active ? 'Parar' : 'Ler QR'}
-                              </button>
-                            </div>
-                            <div className="qr-camera-frame">
-                              <video ref={qrVideoRef} className="qr-video" muted playsInline />
-                              <span className="qr-scan-target" aria-hidden="true" />
-                              {!qrScannerState.active ? (
-                                <div className="qr-camera-placeholder">
-                                  <strong>Camera pronta</strong>
-                                  <span>Toque em Ler QR para iniciar</span>
-                                </div>
-                              ) : null}
-                            </div>
-                            <canvas ref={qrCanvasRef} className="qr-scan-canvas" aria-hidden="true" />
-                            <p className={joinClasses('qr-reader-status', qrScannerState.error ? 'is-danger' : '')}>
-                              {qrScannerState.error || (qrScannerState.active ? qrScannerState.status : 'Aponte o QR recebido para a camera.')}
-                            </p>
-                          </div>
-                          <div className="resident-help-card">
-                            <strong>Depois que a porta abrir</strong>
-                            <span>Retire a encomenda, feche a porta e confirme na tela.</span>
-                          </div>
-                        </div>
-                      )}
-                    </section>
-                  </div>
-                ) : (
-                  <div className="operation-grid operation-grid--split">
-                    <section className="panel-card inset-card">
-                      <div className="pickup-methods pickup-methods--compact">
-                        {pickupMethodsForView.map((method) => (
-                          <button key={method.id} type="button" className={joinClasses('method-button', pickupMode === method.id ? 'is-active' : '')} onClick={() => { pickupAutoSubmitRef.current = ''; setPickupMode(method.id); setPickupValue(''); setActivePickupId(''); }}>
-                            <span className="method-title">{method.title}</span>
-                            <span className="method-hint">{method.hint}</span>
-                          </button>
-                        ))}
-                      </div>
+                    {activePickup ? (
+                      <DeliveryCard
+                        delivery={activePickup}
+                        tone="warn"
+                        titleOverride="Retirada liberada"
+                        footer={<div className="action-row"><button type="button" className="action-button is-secondary" onClick={handleCompletePickup} disabled={isBusy}>{isBusy ? 'Verificando porta...' : 'Confirmar retirada'}</button></div>}
+                      />
+                    ) : (
+                      <div className="empty-state"><p className="empty-text">Quando o codigo for validado, a entrega ativa aparece aqui.</p></div>
+                    )}
+                  </section>
 
-                      <div className="config-grid config-grid--actions">
-                        <div className="field">
-                          <label className="field-label" htmlFor="pickup-value">Codigo de retirada</label>
-                          <input id="pickup-value" className="text-input" type="text" value={pickupValue} placeholder={pickupMode === 'pin' ? 'PIN de 6 digitos' : pickupMode === 'predditaQr' ? 'Payload preddita://collect' : 'QR externo cadastrado'} onChange={handlePickupValueChange} />
-                        </div>
-                        <div className="action-row action-row--stretch">
-                          <button type="button" className="action-button" onClick={handleValidatePickup} disabled={isBusy || !isPickupCodeReady}>
-                            {isBusy ? 'Validando...' : 'Validar e abrir'}
-                          </button>
-                        </div>
-                      </div>
-
-                      {activePickup ? (
-                        <DeliveryCard
-                          delivery={activePickup}
-                          tone="warn"
-                          titleOverride="Retirada liberada"
-                          footer={<div className="action-row"><button type="button" className="action-button is-secondary" onClick={handleCompletePickup} disabled={isBusy}>{isBusy ? 'Verificando porta...' : 'Confirmar retirada'}</button></div>}
-                        />
-                      ) : (
-                        <div className="empty-state"><p className="empty-text">Quando o codigo for validado, a entrega ativa aparece aqui.</p></div>
-                      )}
-                    </section>
-
-                    <section className="panel-card inset-card">
-                      <div className="side-header">
-                        <h2 className="side-title">Entregas prontas</h2>
-                        <span className="small-copy">{collectibleDeliveries.length} aguardando cliente</span>
-                      </div>
-
-                      <div className="delivery-list delivery-list--tall">
-                        {collectibleDeliveries.map((delivery) => (
-                          <DeliveryCard key={delivery.id} delivery={delivery} />
-                        ))}
-                        {collectibleDeliveries.length === 0 ? <div className="empty-state"><p className="empty-text">Nao ha encomendas aguardando retirada.</p></div> : null}
-                      </div>
-                    </section>
-                  </div>
-                )}
+                  <section className="panel-card inset-card">
+                    <div className="side-header">
+                      <h2 className="side-title">Entregas prontas</h2>
+                      <span className="small-copy">{collectibleDeliveries.length} aguardando cliente</span>
+                    </div>
+                    <div className="delivery-list delivery-list--tall">
+                      {collectibleDeliveries.map((delivery) => (
+                        <DeliveryCard key={delivery.id} delivery={delivery} />
+                      ))}
+                      {collectibleDeliveries.length === 0 ? <div className="empty-state"><p className="empty-text">Nao ha encomendas aguardando retirada.</p></div> : null}
+                    </div>
+                  </section>
+                </div>
               </section>
             ) : null}
           </div>
@@ -3026,19 +2646,28 @@ export default function App() {
           />
         ) : null}
         {showBannerPopup ? (
-          <section className="alert-popup-backdrop" role="presentation">
-            <div className={joinClasses('alert-popup', banner.tone ? `is-${banner.tone}` : '')} role="alertdialog" aria-modal="true" aria-labelledby="alert-popup-title">
-              <div className="alert-popup-mark" aria-hidden="true">!</div>
-              <div className="alert-popup-copy">
-                <p className="alert-popup-kicker">{banner.tone === 'danger' ? 'Atencao necessaria' : 'Aviso do armario'}</p>
-                <h2 id="alert-popup-title" className="alert-popup-title">{banner.title}</h2>
-                <p className="alert-popup-text">{banner.text}</p>
+          isPublicFlowView ? (
+            <KioskNoticeDialog
+              tone={banner.tone}
+              title={banner.title}
+              text={banner.text}
+              onClose={() => setDismissedBannerKey(bannerKey)}
+            />
+          ) : (
+            <section className="alert-popup-backdrop" role="presentation">
+              <div className={joinClasses('alert-popup', banner.tone ? `is-${banner.tone}` : '')} role="alertdialog" aria-modal="true" aria-labelledby="alert-popup-title">
+                <div className="alert-popup-mark" aria-hidden="true">!</div>
+                <div className="alert-popup-copy">
+                  <p className="alert-popup-kicker">{banner.tone === 'danger' ? 'Atencao necessaria' : 'Aviso do armario'}</p>
+                  <h2 id="alert-popup-title" className="alert-popup-title">{banner.title}</h2>
+                  <p className="alert-popup-text">{banner.text}</p>
+                </div>
+                <button type="button" className="alert-popup-button" onClick={() => setDismissedBannerKey(bannerKey)}>
+                  Entendi
+                </button>
               </div>
-              <button type="button" className="alert-popup-button" onClick={() => setDismissedBannerKey(bannerKey)}>
-                Entendi
-              </button>
-            </div>
-          </section>
+            </section>
+          )
         ) : null}
     </main>
   );

@@ -103,6 +103,16 @@ bundle e deve registrar zero erro de console. Os prototipos usam dados
 ficticios e nao inicializam o Edge Agent nem a ponte de hardware. Consulte
 `docs/KIOSK-V4-FUNDACAO-VISUAL.md` antes de aprovar ou substituir as imagens.
 
+Para gerar as 13 referencias das jornadas publicas V4 integradas:
+
+```powershell
+npm run capture:v4-journeys
+```
+
+O comando substitui `docs/assets/kiosk-v4-journeys`, percorre entrega pequena,
+fallback grande, retirada, erro e timeout com o bridge RS-485 de teste e grava
+as metricas do bundle. Consulte `docs/KIOSK-V4-JORNADAS-PUBLICAS.md`.
+
 O teste nativo `scripts\Rs485FrameParserTest.java` tambem roda dentro de
 `scripts\v2-verify.ps1` usando o JDK 17.
 

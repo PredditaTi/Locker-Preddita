@@ -8,6 +8,7 @@
     "build": "vite build",
     "capture:baseline": "vite build && node e2e/capture-kiosk-v3-baseline.mjs",
     "capture:v4-foundation": "vite build && node e2e/capture-kiosk-v4-foundation.mjs",
+    "capture:v4-journeys": "vite build && node e2e/capture-kiosk-v4-journeys.mjs",
     "preview": "vite preview",
     "test:e2e": "playwright test",
     "test:workflow": "node ../scripts/v2-workflow-test.mjs",

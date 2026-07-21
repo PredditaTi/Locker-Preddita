@@ -139,7 +139,7 @@ test('telas publicas permanecem legiveis e dentro do viewport', async ({ page },
   await recordLayout(page, findings, 'inicio');
 
   await page.getByRole('button', { name: /Entregar encomenda/i }).click();
-  await expect(page.getByRole('heading', { name: 'Digite o apartamento' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Qual e o apartamento?' })).toBeVisible();
   await recordLayout(page, findings, 'apartamento');
 
   const apartmentPad = page.locator('.public-apartment-input .public-number-pad');
@@ -153,7 +153,7 @@ test('telas publicas permanecem legiveis e dentro do viewport', async ({ page },
   await recordLayout(page, findings, 'confirmacao');
 
   await page.getByRole('button', { name: 'Corrigir', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Digite o apartamento' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Qual e o apartamento?' })).toBeVisible();
   await page.getByRole('button', { name: 'Apartamento 203', exact: true }).click();
   await page.getByRole('button', { name: 'Abrir porta', exact: true }).click();
 
@@ -166,11 +166,11 @@ test('telas publicas permanecem legiveis e dentro do viewport', async ({ page },
 
   await closeTestDoor(page, depositDoor);
   await storedButton.click();
-  await expect(page.getByRole('heading', { name: /Entrega salva|Entrega registrada/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Pronto', exact: true })).toBeVisible();
   await recordLayout(page, findings, 'sucesso');
 
   await page.getByRole('button', { name: 'Nova entrega', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Digite o apartamento' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Qual e o apartamento?' })).toBeVisible();
   await recordLayout(page, findings, 'nova-entrega');
   await page.getByRole('button', { name: 'Voltar', exact: true }).click();
 
@@ -178,10 +178,10 @@ test('telas publicas permanecem legiveis e dentro do viewport', async ({ page },
   await expect(page.getByRole('heading', { name: 'Digite seu PIN' })).toBeVisible();
   await recordLayout(page, findings, 'pin');
 
-  await page.getByRole('button', { name: 'Ler QR', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Usar PIN', exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: 'QR', exact: true }).click();
+  await expect(page.getByRole('tab', { name: 'PIN', exact: true })).toBeVisible();
   await recordLayout(page, findings, 'qr');
-  await page.getByRole('button', { name: 'Usar PIN', exact: true }).click();
+  await page.getByRole('tab', { name: 'PIN', exact: true }).click();
 
   const pinPad = page.locator('.public-number-pad--pin');
   for (const digit of '000000') {

@@ -6,7 +6,7 @@ export const PUBLIC_HOME_COPY = {
 };
 
 export const COURIER_COPY = {
-  apartmentTitle: 'Digite o apartamento',
+  apartmentTitle: 'Qual e o apartamento?',
   apartmentSubtitle: 'Toque no apartamento correto para continuar.',
   confirmTitle: 'Apartamento correto?',
   confirmText: 'Ao confirmar, uma porta pequena sera aberta.',

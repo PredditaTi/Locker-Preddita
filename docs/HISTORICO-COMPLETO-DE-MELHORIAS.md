@@ -34,7 +34,7 @@ commit `014709d`, publicado em 16 de julho de 2026.
 | Persistencia cloud | `state.json` monolitico | Postgres normalizado, transacoes e migracao automatica | Concorrencia, consulta e recuperacao confiaveis |
 | Observabilidade | Logs informais | Logs estruturados, correlacao, filtros, CSV e retencao | Diagnostico remoto e auditoria operacional |
 | Arquitetura do kiosk | UI ligada diretamente a serial e rede | Kiosk UI separada do contrato Edge Agent | Testabilidade e evolucao do edge |
-| Experiencia publica | Composicao V3 baseada em shell e cards | Home V4 full-screen e cinco prototipos de alto contraste | Leitura a distancia e operacao por toque |
+| Experiencia publica | Composicao V3 baseada em shell e cards | Jornadas V4 full-screen integradas, responsivas e cobertas por E2E | Leitura a distancia, toque e operacao fisica segura |
 | Atualizacao | ADB/manual | Manifesto remoto, rollout e validacao criptografica | Atualizar frota com controle e rastreabilidade |
 | Entrega de comandos | Polling frequente | Wake-up MQTT QoS 1 com fallback HTTP | Menor latencia sem perder a fonte de verdade |
 | Qualidade | Testes pontuais | Contratos reais, E2E Playwright, smokes e CI | Detectar regressao entre UI, API e Android |
@@ -605,6 +605,12 @@ processo de acesso e eliminacao do titular.
 - A Parte 2 do Kiosk V4 substituiu a home por uma composicao full-screen de
   alto contraste, adicionou fonte e icones offline e criou cinco prototipos
   sem side effects para aprovacao antes da integracao das jornadas reais.
+- A Parte 3 integrou apartamento, confirmacao, portas, espera, sucesso, PIN,
+  QR e excecoes ao fluxo real; removeu o JSX/CSS publico V3 e preservou o Admin.
+- Fallback grande e cancelamento passaram a aguardar a leitura individual de
+  fechamento da porta pequena; retirada por QR ganhou prova E2E pelo `jsQR`.
+- Treze capturas reais documentam a jornada V4, com bundle de `953.710 bytes`
+  (`319.470 bytes` gzip) e zero erro de console.
 - Esta consolidacao nao altera contrato de API, schema ou versao do produto.
 
 ## Evolucao de dados e compatibilidade
@@ -660,7 +666,8 @@ O projeto passou a verificar, em camadas:
 6. Logs, MQTT, atualizador e ciclo de retencao.
 7. Contrato real entre `remoteBridge` e Admin Online.
 8. Jornada Playwright do bundle Android.
-9. Build web, build Android, auditoria de dependencias e release assinado no CI.
+9. Regressao visual das jornadas V4 em quatro viewports e captura de 13 estados.
+10. Build web, build Android, auditoria de dependencias e release assinado no CI.
 
 O release `v2.0.25-lab` teve APK e checksum publicados, e o checksum baixado foi
 comparado com o artefato da release.
@@ -745,6 +752,7 @@ comparado com o artefato da release.
 - [Contratos de API e E2E](API-CONTRACTS-E2E.md)
 - [Baseline visual do Kiosk V3](KIOSK-V3-BASELINE.md)
 - [Fundacao visual do Kiosk V4](KIOSK-V4-FUNDACAO-VISUAL.md)
+- [Jornadas publicas do Kiosk V4](KIOSK-V4-JORNADAS-PUBLICAS.md)
 - [Privacidade e ciclo de vida](PRIVACY-DATA-LIFECYCLE.md)
 - [Revisao e plano executado](REVISAO-PLANO-MELHORIA-2026-07-08.md)
 - [Direcao tecnica v2](V2-ROADMAP.md)

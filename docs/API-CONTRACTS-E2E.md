@@ -49,12 +49,16 @@ A jornada coberta confirma:
 5. morador informa o PIN e abre a mesma porta;
 6. retirada so conclui depois de nova leitura de fechamento;
 7. estado `collected` sobrevive ao reload do kiosk;
-8. PIN, token, QR e codigo externo nao reaparecem depois do reload.
+8. PIN, token, QR e codigo externo nao reaparecem depois do reload;
+9. fallback para porta grande espera a prova de fechamento da pequena;
+10. cancelamento solicitado com porta aberta preserva a reserva ate fechar;
+11. retirada por QR passa pelo decodificador real com camera simulada.
 
 A protecao de regressao tambem inclui:
 
 - `kiosk-layout.spec.js`: geometria, foco, nomes acessiveis e erros do console;
-- `kiosk-interactions.spec.js`: teclado, retorno, cancelamento e timeout;
+- `kiosk-interactions.spec.js`: teclado, retorno, cancelamento seguro, timeout e
+  fallback para porta grande;
 - `kiosk-v4-home.spec.js`: marca, ajuda, alvo de toque e contraste WCAG AA;
 - `kiosk-v4-prototype.spec.js`: navegacao local pelas cinco referencias V4,
   alvo minimo e ausencia de scroll;
@@ -84,8 +88,15 @@ Para regenerar a home responsiva e os prototipos da fundacao V4:
 npm run capture:v4-foundation
 ```
 
-As referencias e os limites do modo isolado estao em
-`docs/KIOSK-V4-FUNDACAO-VISUAL.md`.
+Para regenerar as 13 referencias das jornadas reais V4:
+
+```powershell
+npm run capture:v4-journeys
+```
+
+As referencias da fundacao e das jornadas reais estao em
+`docs/KIOSK-V4-FUNDACAO-VISUAL.md` e
+`docs/KIOSK-V4-JORNADAS-PUBLICAS.md`.
 
 Em falhas, screenshot, video, trace e arvore acessivel ficam em
 `web/test-results`. O CI envia esses arquivos como artifact por sete dias.
