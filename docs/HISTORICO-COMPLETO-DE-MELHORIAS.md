@@ -626,6 +626,14 @@ processo de acesso e eliminacao do titular.
   entre reinicios.
 - Fila, espera, timeout, ruido, falha de I/O e reabertura passaram a ter
   metricas sanitizadas no Edge Agent e no console tecnico.
+- A Parte 7 separou APK instalado de versao saudavel com estados persistentes,
+  timeout de startup, janela de health e classificacao de serial.
+- O Edge Agent passou a preservar e validar um backup somente da configuracao
+  tecnica; moradores, entregas e credenciais de retirada ficam fora.
+- O Admin mostra sinais, causa e acao recomendada, deduplica uma amostra por
+  locker e pausa automaticamente a release pelo limite configurado.
+- Recuperacao permanece criptograficamente fechada: versao superior assinada,
+  ADB ou MDM controlado, sem downgrade ou shell remoto.
 - Esta consolidacao nao altera contrato de API, schema ou versao do produto.
 
 ## Evolucao de dados e compatibilidade

@@ -64,13 +64,13 @@ fornece callbacks das transicoes de negocio. Assim, transporte e recuperacao
 offline podem evoluir sem acoplar telas publicas a Android, HTTP ou
 `localStorage`.
 
-O contrato atual tem versao `2` e permite injetar hardware, rede, relogio,
-atualizador e
-storage em testes. O agente serializa cada ciclo remoto, persiste um comando
-antes do acionamento e bloqueia reexecucao automatica quando um restart deixa o
-resultado fisico desconhecido. A implementacao continua no mesmo APK para
-preservar o deploy atual; transformar o agente em um Android Service separado
-nao exige mudar os fluxos da Kiosk UI.
+O contrato atual tem versao `3` e permite injetar hardware, rede, relogio,
+atualizador e storage em testes. A versao 3 adiciona backup tecnico anterior ao
+update e reporte de saude do primeiro boot. O agente serializa cada ciclo
+remoto, persiste um comando antes do acionamento e bloqueia reexecucao
+automatica quando um restart deixa o resultado fisico desconhecido. A
+implementacao continua no mesmo APK para preservar o deploy atual; transformar
+o agente em um Android Service separado nao exige mudar os fluxos da Kiosk UI.
 
 ### Coordenacao RS-485
 
@@ -158,6 +158,19 @@ O instalador do sistema continua sendo a autoridade final. A primeira
 atualizacao pode exigir autorizacao da fonte; ao retornar, hash, pacote, versao
 e assinatura sao verificados novamente. Downgrade remoto e recusado: uma
 recuperacao deve usar novo `versionCode` e a mesma chave de assinatura.
+
+Antes do handoff, o Edge Agent preserva um backup apenas da configuracao
+tecnica. No primeiro boot, o Android inicia em `installed-pending-health` e
+espera app, WebView, Edge Agent, estado, backup, credencial e classificacao da
+serial. Startup tem 45 segundos e a janela completa, 3 minutos. O resultado e
+`healthy`, `degraded` ou `failed-health`.
+
+O heartbeat leva sinais e causas sanitizadas. O Admin deduplica uma amostra por
+locker e release e pode pausar novas ofertas quando `failed-health` atinge o
+limite configurado. Como a politica e por locker, a amostra minima e um.
+Lockers saudaveis permanecem validos e um locker falho nao recebe a mesma
+release novamente. O fluxo completo e o runbook estao em
+[KIOSK-V4-SAUDE-UPDATE.md](KIOSK-V4-SAUDE-UPDATE.md).
 
 ## Persistencia e sincronizacao offline
 

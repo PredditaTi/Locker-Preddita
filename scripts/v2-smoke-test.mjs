@@ -331,6 +331,9 @@ try {
       enabled: true,
       channel: 'lab',
       rolloutPercentage: 100,
+      automaticPauseEnabled: true,
+      failureThresholdPercentage: 50,
+      minimumHealthSamples: 1,
       releaseId: 'v2.0.22-lab',
       versionCode: 22,
       versionName: '2.0.22-lab',
@@ -367,6 +370,9 @@ try {
       enabled: true,
       channel: 'lab',
       rolloutPercentage: 100,
+      automaticPauseEnabled: true,
+      failureThresholdPercentage: 50,
+      minimumHealthSamples: 1,
       releaseId: 'v2.0.22-lab',
       versionCode: 22,
       versionName: '2.0.22-lab',
@@ -659,6 +665,116 @@ try {
     || updateAdminState.state.runtime?.deviceCommandWakeupState !== 'disabled'
   ) {
     throw new Error('Painel deveria receber a telemetria do atualizador e do transporte de comandos.');
+  }
+
+  await requestOk('/api/device/status', {
+    method: 'POST',
+    deviceAuth: true,
+    body: JSON.stringify({
+      device: {
+        appUpdater: {
+          available: true,
+          currentVersionCode: 22,
+          currentVersionName: '2.0.22-lab',
+          status: 'degraded',
+          releaseId: 'v2.0.22-lab',
+          targetVersionCode: 22,
+          targetVersionName: '2.0.22-lab',
+          healthFailureCode: 'SERIAL_IO_FAILURE',
+          health: {
+            appStarted: true,
+            webViewReady: true,
+            edgeAgentReady: true,
+            stateLoaded: true,
+            configurationBackupChecked: true,
+            configurationBackupValid: true,
+            credentialAvailable: true,
+            serialClassified: true,
+            serialHealthy: false,
+            serialErrorCode: 'SERIAL_IO_FAILURE',
+            checkedAt: new Date().toISOString(),
+          },
+        },
+      },
+    }),
+  });
+  await requestOk('/api/device/status', {
+    method: 'POST',
+    deviceAuth: true,
+    body: JSON.stringify({
+      device: {
+        appUpdater: {
+          available: true,
+          currentVersionCode: 22,
+          currentVersionName: '2.0.22-lab',
+          status: 'healthy',
+          releaseId: 'v2.0.22-lab',
+          targetVersionCode: 22,
+          targetVersionName: '2.0.22-lab',
+          healthFailureCode: '',
+          health: {
+            serialClassified: true,
+            serialHealthy: true,
+            serialErrorCode: '',
+            checkedAt: new Date().toISOString(),
+          },
+        },
+      },
+    }),
+  });
+  const healthyUpdateState = await requestOk('/api/admin/state', { headers: superAdminHeaders });
+  if (
+    !healthyUpdateState.state.appUpdate?.enabled
+    || healthyUpdateState.state.appUpdate?.healthSummary?.healthyCount !== 1
+    || healthyUpdateState.state.device?.appUpdater?.healthFailureCode
+    || healthyUpdateState.state.device?.appUpdater?.health?.serialErrorCode
+  ) {
+    throw new Error('Locker saudavel deveria limpar a causa sem pausar a distribuicao.');
+  }
+
+  await requestOk('/api/device/status', {
+    method: 'POST',
+    deviceAuth: true,
+    body: JSON.stringify({
+      device: {
+        appUpdater: {
+          available: true,
+          currentVersionCode: 21,
+          currentVersionName: '2.0.21-lab',
+          status: 'failed-health',
+          releaseId: 'v2.0.22-lab',
+          targetVersionCode: 22,
+          targetVersionName: '2.0.22-lab',
+          progressPercentage: 100,
+          healthFailureCode: 'WEBVIEW_START_TIMEOUT',
+          health: {
+            appStarted: true,
+            webViewReady: false,
+            edgeAgentReady: false,
+            stateLoaded: false,
+            configurationBackupChecked: true,
+            configurationBackupValid: true,
+            credentialAvailable: true,
+            serialClassified: true,
+            serialHealthy: true,
+            checkedAt: new Date().toISOString(),
+          },
+        },
+      },
+    }),
+  });
+  const pausedUpdateState = await requestOk('/api/admin/state', { headers: superAdminHeaders });
+  if (
+    pausedUpdateState.state.appUpdate?.enabled
+    || !pausedUpdateState.state.appUpdate?.autoPausedAt
+    || pausedUpdateState.state.appUpdate?.healthSummary?.failureCount !== 1
+    || pausedUpdateState.state.device?.appUpdater?.recommendedAction?.includes('versao superior assinada') !== true
+  ) {
+    throw new Error('Health check falho deveria pausar o rollout e orientar recuperacao segura.');
+  }
+  const pausedUpdateSnapshot = await requestOk('/api/device/snapshot', { deviceAuth: true });
+  if (pausedUpdateSnapshot.appUpdate !== null) {
+    throw new Error('Locker com health check falho nao deveria receber novamente a mesma release.');
   }
 
   const residentExportResponse = await fetch(

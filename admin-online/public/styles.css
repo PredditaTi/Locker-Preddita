@@ -525,10 +525,19 @@ input:focus {
 }
 
 .health-panel.is-warning,
+.panel.is-warning,
 .command-tracker.is-danger {
   border-color: rgba(189, 69, 69, 0.28);
   background:
     linear-gradient(135deg, rgba(255, 240, 240, 0.95), rgba(255, 255, 255, 0.98));
+}
+
+.panel-note {
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .health-grid {

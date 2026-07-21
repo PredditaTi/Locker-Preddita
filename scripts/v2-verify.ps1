@@ -58,6 +58,9 @@ Write-Host "[PREDDITA v2] Teste de correlacao do protocolo RS-485..."
 Write-Host "[PREDDITA v2] Teste do contrato da bridge serial coordenada..."
 & $node (Join-Path $root "scripts\serial-native-bridge-test.mjs")
 
+Write-Host "[PREDDITA v2] Teste do health check de atualizacao..."
+& $node (Join-Path $root "scripts\app-update-health-test.mjs")
+
 Write-Host "[PREDDITA v2] Teste de confirmacao fisica das portas..."
 & $node (Join-Path $root "scripts\v2-door-safety-test.mjs")
 
@@ -99,8 +102,11 @@ New-Item $javaUpdateTestOutput -ItemType Directory | Out-Null
 try {
   & $javac -d $javaUpdateTestOutput `
     (Join-Path $root "android\app\src\main\java\com\preddita\entregaslocker\AppUpdateContract.java") `
+    (Join-Path $root "android\app\src\main\java\com\preddita\entregaslocker\AppUpdateHealthContract.java") `
+    (Join-Path $root "scripts\AppUpdateHealthContractTest.java") `
     (Join-Path $root "scripts\AppUpdateContractTest.java")
   & $java -cp $javaUpdateTestOutput AppUpdateContractTest
+  & $java -cp $javaUpdateTestOutput AppUpdateHealthContractTest
 } finally {
   Remove-Item $javaUpdateTestOutput -Recurse -Force -ErrorAction SilentlyContinue
 }

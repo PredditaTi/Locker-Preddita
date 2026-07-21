@@ -470,22 +470,22 @@ recuperacao sem aceitar scripts remotos ou downgrade inseguro.
 
 Tarefas:
 
-- [ ] Adicionar estados `installed-pending-health`, `healthy`, `degraded` e
+- [x] Adicionar estados `installed-pending-health`, `healthy`, `degraded` e
   `failed-health` ao contrato de telemetria.
-- [ ] Confirmar depois do install: app iniciado, WebView pronta, Edge Agent
+- [x] Confirmar depois do install: app iniciado, WebView pronta, Edge Agent
   ativo, estado carregado, credencial disponivel e serial classificada.
-- [ ] Definir janela de health check e timeout de startup.
-- [ ] Preservar backup da configuracao antes do update e validar sua leitura
+- [x] Definir janela de health check e timeout de startup.
+- [x] Preservar backup da configuracao antes do update e validar sua leitura
   depois do primeiro boot.
-- [ ] Pausar automaticamente o rollout quando a taxa de falha ultrapassar o
+- [x] Pausar automaticamente o rollout quando a taxa de falha ultrapassar o
   limite aprovado.
-- [ ] Mostrar versao, health check, causa e acao recomendada no Admin Online.
-- [ ] Manter hash, certificado, pacote, `versionCode`, HTTPS e idle gate como
+- [x] Mostrar versao, health check, causa e acao recomendada no Admin Online.
+- [x] Manter hash, certificado, pacote, `versionCode`, HTTPS e idle gate como
   requisitos inegociaveis.
-- [ ] Documentar recuperacao por nova versao superior assinada, ADB ou MDM.
-- [ ] Nao prometer downgrade automatico: Android pode bloquea-lo por
+- [x] Documentar recuperacao por nova versao superior assinada, ADB ou MDM.
+- [x] Nao prometer downgrade automatico: Android pode bloquea-lo por
   `versionCode` e politica de assinatura.
-- [ ] Testar install concluido, app que nao sobe, estado incompativel, serial
+- [x] Testar install concluido, app que nao sobe, estado incompativel, serial
   degradada, timeout e pausa de rollout.
 
 Criterios de aceite:
@@ -497,6 +497,14 @@ Criterios de aceite:
 - Nenhum plano remoto executa shell ou altera caminhos arbitrarios.
 
 **Esforco relativo:** medio a grande.
+
+**Status em 21/07/2026:** implementacao de laboratorio concluida. O Android
+persiste os sinais do primeiro boot, o Edge Agent preserva somente configuracao
+tecnica, e o Admin deduplica health checks e pausa uma release pelo limite
+configurado. Contratos Java/JavaScript, smoke e build passaram. Arquitetura,
+recuperacao e gate fisico estao em
+[KIOSK-V4-SAUDE-UPDATE.md](KIOSK-V4-SAUDE-UPDATE.md). Install assinado,
+queda de energia e recuperacao no KS1062 permanecem na Parte 8.
 
 ## Parte 8 - Piloto, rollout e recursos condicionais
 

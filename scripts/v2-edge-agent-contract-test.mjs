@@ -332,6 +332,43 @@ async function testCommandWakeupContract() {
   assert.equal(JSON.stringify(publishedStatuses[0]).includes('url'), false);
 }
 
+async function testPostInstallHealthReport() {
+  const healthReports = [];
+  let updaterStatus = { available: true, status: 'idle' };
+  const agent = new EdgeAgentRuntime({
+    storage: new MemoryStorage(),
+    hardware: createHardware(),
+    remote: createRemote({
+      getNativeDeviceAuthStatus: () => ({ available: true, provisioned: true }),
+    }),
+    appUpdater: {
+      getStatus: () => updaterStatus,
+      requestUpdate: (manifest) => {
+        updaterStatus = {
+          available: true,
+          status: 'installed-pending-health',
+          releaseId: manifest.releaseId,
+          targetVersionCode: manifest.versionCode,
+        };
+        return true;
+      },
+      reportHealth: (health) => {
+        healthReports.push(health);
+        return true;
+      },
+    },
+  });
+  const manifest = { releaseId: 'v2.0.26-lab', versionCode: 26 };
+  assert.equal(agent.requestAppUpdate(manifest), true);
+  assert.equal(agent.reportAppUpdateHealth(agent.loadLockerState()), true);
+  assert.equal(healthReports.length, 1);
+  assert.equal(healthReports[0].edgeAgentReady, true);
+  assert.equal(healthReports[0].stateLoaded, true);
+  assert.equal(healthReports[0].configurationBackupValid, true);
+  assert.equal(healthReports[0].credentialAvailable, true);
+  assert.equal(healthReports[0].fatalErrorCode, '');
+}
+
 async function testUpdateWaitsForRemoteCommand() {
   let updateRequests = 0;
   const agent = new EdgeAgentRuntime({
@@ -370,7 +407,7 @@ async function testKioskBoundary() {
   }
 }
 
-assert.equal(EDGE_AGENT_CONTRACT_VERSION, 2);
+assert.equal(EDGE_AGENT_CONTRACT_VERSION, 3);
 await testOfflineEventRecovery();
 await testOperationalStateStorage();
 await testSanitizedRemoteMetrics();
@@ -379,6 +416,7 @@ await testUnknownExecutionAfterRestart();
 await testConcurrentCycles();
 await testSafeAppUpdateHandoff();
 await testCommandWakeupContract();
+await testPostInstallHealthReport();
 await testUpdateWaitsForRemoteCommand();
 await testKioskBoundary();
 

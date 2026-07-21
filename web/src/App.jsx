@@ -392,6 +392,10 @@ export default function App() {
   }, [doorStates]);
 
   useEffect(() => {
+    edgeAgent.reportAppUpdateHealth(lockerStateRef.current);
+  }, []);
+
+  useEffect(() => {
     setDismissedBannerKey('');
   }, [bannerKey]);
 
