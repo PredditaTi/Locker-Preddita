@@ -154,7 +154,10 @@ export default function DiagnosticsView({
     MAX_SESSION_DISPLAY_MS,
     Math.max(0, (Number(expiresAt) || 0) - now),
   );
-  const overallTone = technicalStatus.authorized && technicalStatus.serial.open ? 'success' : 'warn';
+  const serialCoordinator = technicalStatus.serial.coordinator || { state: 'UNAVAILABLE' };
+  const serialHealthy = technicalStatus.serial.open
+    && !['DEGRADED', 'STOPPED', 'UNAVAILABLE'].includes(serialCoordinator.state);
+  const overallTone = technicalStatus.authorized && serialHealthy ? 'success' : 'warn';
   const updateStatus = operationalInfo.appUpdater || {};
   const wakeupStatus = operationalInfo.commandWakeup || {};
 
@@ -424,7 +427,11 @@ export default function DiagnosticsView({
                   {overallTone === 'success' ? 'Console autenticado e hardware acessivel' : 'Atencao tecnica necessaria'}
                 </strong>
                 <span className="diagnostic-summary-detail">
-                  {technicalStatus.serial.open ? 'Serial conectada' : safeErrorLabel(technicalStatus.serial.errorCode)} · {deviceAuth.provisioned ? 'Admin provisionado' : 'Admin pendente'}
+                  {serialHealthy
+                    ? 'Serial coordenada'
+                    : serialCoordinator.state === 'DEGRADED'
+                      ? 'Coordenador serial degradado'
+                      : safeErrorLabel(technicalStatus.serial.errorCode)} · {deviceAuth.provisioned ? 'Admin provisionado' : 'Admin pendente'}
                 </span>
               </div>
               <span className={`diagnostic-state-badge is-${overallTone}`}>{overallTone === 'success' ? 'Operacional' : 'Atencao'}</span>
@@ -432,7 +439,7 @@ export default function DiagnosticsView({
 
             <div className="diagnostic-overview-grid">
               <DiagnosticStatusRow label="Bridge" value={edgeAgent.getHardwareInfo().bridgeVersion} detail={technicalStatus.available ? 'Android nativo' : 'Simulacao web'} />
-              <DiagnosticStatusRow label="Serial" value={technicalStatus.serial.open ? 'Conectada' : 'Indisponivel'} detail={`${technicalStatus.serial.path || '--'} · ${technicalStatus.serial.baudRate || '--'} bps`} tone={technicalStatus.serial.open ? 'success' : 'danger'} />
+              <DiagnosticStatusRow label="Serial" value={serialHealthy ? 'Coordenada' : 'Indisponivel'} detail={`${technicalStatus.serial.path || '--'} · ${technicalStatus.serial.baudRate || '--'} bps · ${serialCoordinator.state}`} tone={serialHealthy ? 'success' : 'danger'} />
               <DiagnosticStatusRow label="Admin Online" value={deviceAuth.provisioned ? 'Credencial protegida' : 'Nao provisionado'} detail={deviceAuth.lockerId || 'Sem identificador nativo'} tone={deviceAuth.provisioned ? 'success' : 'warn'} />
               <DiagnosticStatusRow label="Fila Edge" value={`${operationalInfo.pendingEvents} evento(s)`} detail={`${operationalInfo.pendingCompletions} conclusao(oes) pendente(s)`} tone={operationalInfo.pendingEvents ? 'warn' : 'success'} />
             </div>
@@ -488,6 +495,24 @@ export default function DiagnosticsView({
             <div className="diagnostic-status-list">
               <DiagnosticStatusRow label="RS-485" value={technicalStatus.serial.open ? 'Conectada' : safeErrorLabel(technicalStatus.serial.errorCode)} detail={`${technicalStatus.serial.path || '--'} · ${technicalStatus.serial.baudRate || '--'} bps · ${technicalStatus.serial.reconnectCount} reconexao(oes)`} tone={technicalStatus.serial.open ? 'success' : 'danger'} />
               <DiagnosticStatusRow label="Ultimo frame valido" value={formatMoment(technicalStatus.serial.lastFrameAt)} detail="Somente horario; payload nao e exibido." />
+              <DiagnosticStatusRow
+                label="Fila serial"
+                value={`${serialCoordinator.queueDepth} aguardando${serialCoordinator.inFlight ? ' · 1 em voo' : ''}`}
+                detail={`Pico ${serialCoordinator.maxQueueDepth} · espera ${serialCoordinator.lastQueueWaitMs}ms · max ${serialCoordinator.maxQueueWaitMs}ms`}
+                tone={serialCoordinator.state === 'DEGRADED' || serialCoordinator.blockedActuations ? 'warn' : 'success'}
+              />
+              <DiagnosticStatusRow
+                label="Resiliencia serial"
+                value={`${serialCoordinator.readRetries} retry(s) · ${serialCoordinator.timeouts} timeout(s)`}
+                detail={`${serialCoordinator.reconnections} reabertura(s) · ${serialCoordinator.ioFailures} falha(s) I/O · ${serialCoordinator.blockedActuations} atuacao(oes) bloqueada(s)`}
+                tone={serialCoordinator.ioFailures || serialCoordinator.blockedActuations ? 'warn' : 'success'}
+              />
+              <DiagnosticStatusRow
+                label="Integridade de frames"
+                value={`${serialCoordinator.invalidFrames} invalido(s)`}
+                detail={`${serialCoordinator.mismatchedFrames} nao correlacionado(s) · ${serialCoordinator.discardedBytes} byte(s) descartado(s)`}
+                tone={serialCoordinator.invalidFrames || serialCoordinator.mismatchedFrames ? 'warn' : 'success'}
+              />
               <DiagnosticStatusRow label="Rede" value={technicalStatus.network.online ? 'Online' : 'Offline'} detail={technicalStatus.network.transport} tone={technicalStatus.network.online ? 'success' : 'warn'} />
               <DiagnosticStatusRow
                 label="Admin Online"

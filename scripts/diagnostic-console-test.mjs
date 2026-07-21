@@ -24,7 +24,22 @@ globalThis.window = {
     getStatus() {
       return JSON.stringify({
         authorized,
-        serial: { open: true, path: '/dev/ttyS5', baudRate: 9600, errorCode: 'OK' },
+        serial: {
+          open: true,
+          path: '/dev/ttyS5',
+          baudRate: 9600,
+          errorCode: 'OK',
+          coordinator: {
+            state: 'READY',
+            queueDepth: 2,
+            maxQueueDepth: 5,
+            readRetries: 3,
+            invalidFrames: 4,
+            blockedActuations: 1,
+            lastValidResponseAt: '2026-07-21T12:00:00.000Z',
+            rawFrame: '8A 01 04 33 BC',
+          },
+        },
         network: { online: true, transport: 'ethernet' },
         camera: { available: true, permission: 'granted' },
         display: { brightnessPercent: 70, mediaVolumePercent: 45, keepScreenOn: true },
@@ -67,6 +82,10 @@ assert.equal(diagnostics.verifyDiagnosticCredential('86420975'), true);
 const status = diagnostics.getTechnicalStatus();
 assert.equal(status.authorized, true);
 assert.equal(status.serial.path, '/dev/ttyS5');
+assert.equal(status.serial.coordinator.state, 'READY');
+assert.equal(status.serial.coordinator.queueDepth, 2);
+assert.equal(status.serial.coordinator.invalidFrames, 4);
+assert.equal(Object.hasOwn(status.serial.coordinator, 'rawFrame'), false, 'Raw frames must not cross diagnostics');
 assert.equal(status.network.transport, 'ethernet');
 
 assert.equal(diagnostics.setDiagnosticBrightness(10), true);

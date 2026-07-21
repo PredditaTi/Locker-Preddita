@@ -55,6 +55,9 @@ Write-Host "[PREDDITA v2] Teste das transicoes transacionais de comandos..."
 Write-Host "[PREDDITA v2] Teste de correlacao do protocolo RS-485..."
 & $node (Join-Path $root "scripts\v2-serial-protocol-test.mjs")
 
+Write-Host "[PREDDITA v2] Teste do contrato da bridge serial coordenada..."
+& $node (Join-Path $root "scripts\serial-native-bridge-test.mjs")
+
 Write-Host "[PREDDITA v2] Teste de confirmacao fisica das portas..."
 & $node (Join-Path $root "scripts\v2-door-safety-test.mjs")
 
@@ -74,6 +77,19 @@ try {
   & $java -cp $javaTestOutput Rs485FrameParserTest
 } finally {
   Remove-Item $javaTestOutput -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+Write-Host "[PREDDITA v2] Teste do coordenador nativo de comandos RS-485..."
+$javaCoordinatorTestOutput = Join-Path ([System.IO.Path]::GetTempPath()) "preddita-serial-coordinator-test"
+Remove-Item $javaCoordinatorTestOutput -Recurse -Force -ErrorAction SilentlyContinue
+New-Item $javaCoordinatorTestOutput -ItemType Directory | Out-Null
+try {
+  & $javac -d $javaCoordinatorTestOutput `
+    (Join-Path $root "android\app\src\main\java\com\preddita\entregaslocker\SerialCommandCoordinator.java") `
+    (Join-Path $root "scripts\SerialCommandCoordinatorTest.java")
+  & $java -cp $javaCoordinatorTestOutput SerialCommandCoordinatorTest
+} finally {
+  Remove-Item $javaCoordinatorTestOutput -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 Write-Host "[PREDDITA v2] Teste do contrato nativo de atualizacao do APK..."

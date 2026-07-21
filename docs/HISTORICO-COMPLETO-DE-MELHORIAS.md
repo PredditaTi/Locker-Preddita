@@ -617,6 +617,15 @@ processo de acesso e eliminacao do titular.
   bloco, porta, PIN, QR ou numeros literais nas transcricoes.
 - Duas capturas documentam o dialogo responsivo; os audios atuais sao assets de
   laboratorio e exigem confirmacao de direito de distribuicao antes de producao.
+- A Parte 5 criou o console tecnico autenticado com allowlist nativa, seis abas,
+  controles limitados, auditoria e teste de porta com prova fisica.
+- A Parte 6 moveu a autoridade da UART para uma fila Java unica, correlacionou
+  cada resposta por `executionId` e restringiu retry a leitura.
+- Atuacao sem resposta nao e repetida: o canal fica bloqueado ate leitura de
+  sensor, enquanto o diario persistente continua protegendo comandos remotos
+  entre reinicios.
+- Fila, espera, timeout, ruido, falha de I/O e reabertura passaram a ter
+  metricas sanitizadas no Edge Agent e no console tecnico.
 - Esta consolidacao nao altera contrato de API, schema ou versao do produto.
 
 ## Evolucao de dados e compatibilidade
@@ -779,6 +788,7 @@ comparado com o artefato da release.
 - [Jornadas publicas do Kiosk V4](KIOSK-V4-JORNADAS-PUBLICAS.md)
 - [Audio acessivel do Kiosk V4](KIOSK-V4-AUDIO-ACESSIVEL.md)
 - [Console tecnico do Kiosk V4](KIOSK-V4-CONSOLE-TECNICO.md)
+- [Resiliencia serial do Kiosk V4](KIOSK-V4-RESILIENCIA-SERIAL.md)
 - [Privacidade e ciclo de vida](PRIVACY-DATA-LIFECYCLE.md)
 - [Revisao e plano executado](REVISAO-PLANO-MELHORIA-2026-07-08.md)
 - [Direcao tecnica v2](V2-ROADMAP.md)

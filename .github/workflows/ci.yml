@@ -94,6 +94,7 @@ jobs:
           node scripts/v2-qr-scanner-test.mjs
           node scripts/audio-guidance-test.mjs
           node scripts/v2-serial-protocol-test.mjs
+          node scripts/serial-native-bridge-test.mjs
           node scripts/v2-door-safety-test.mjs
           node scripts/v2-commissioning-test.mjs
           node scripts/v2-state-recovery-test.mjs
@@ -127,6 +128,15 @@ jobs:
             android/app/src/main/java/com/preddita/entregaslocker/Rs485FrameParser.java \
             scripts/Rs485FrameParserTest.java
           java -cp "$output_dir" Rs485FrameParserTest
+
+      - name: Test native serial command coordinator
+        run: |
+          output_dir="$(mktemp -d)"
+          trap 'rm -rf "$output_dir"' EXIT
+          javac -d "$output_dir" \
+            android/app/src/main/java/com/preddita/entregaslocker/SerialCommandCoordinator.java \
+            scripts/SerialCommandCoordinatorTest.java
+          java -cp "$output_dir" SerialCommandCoordinatorTest
 
       - name: Test native device auth contract
         run: |

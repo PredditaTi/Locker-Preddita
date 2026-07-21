@@ -71,7 +71,7 @@ repetir o provisionamento completo do locker.
 | --- | --- |
 | Status | Bridge, serial, provisionamento HMAC, filas e bateria segura sem abertura |
 | Portas | Board, mapa fisico, polaridade, tempo e teste individual com prova fechada-aberta-fechada |
-| Conectividade | Serial, ultimo frame, reconexoes, rede, ultimo sync/latencia, MQTT, filas, provisionamento e retry |
+| Conectividade | Serial, fila nativa, retries, timeouts, frames invalidos, reconexoes, rede, ultimo sync/latencia, MQTT e filas Edge |
 | Camera | Disponibilidade, permissao e preview local temporario sem captura ou envio |
 | Tela | Brilho entre 10% e 100%, volume entre 0% e 65% e opcao de manter tela ligada |
 | Update | Versao, alvo, progresso, falha sanitizada, armazenamento livre e tamanho dos diarios web |

@@ -33,6 +33,34 @@ function inRange(value, minimum, maximum) {
   return Number.isInteger(value) && value >= minimum && value <= maximum;
 }
 
+function normalizeSerialCoordinator(value = {}) {
+  const number = (field) => Number.isFinite(Number(value?.[field]))
+    ? Math.max(0, Number(value[field]))
+    : 0;
+  return {
+    state: String(value?.state ?? 'UNAVAILABLE'),
+    queueDepth: number('queueDepth'),
+    maxQueueDepth: number('maxQueueDepth'),
+    inFlight: Boolean(value?.inFlight),
+    blockedActuations: number('blockedActuations'),
+    submitted: number('submitted'),
+    completed: number('completed'),
+    rejected: number('rejected'),
+    writes: number('writes'),
+    readRetries: number('readRetries'),
+    timeouts: number('timeouts'),
+    invalidFrames: number('invalidFrames'),
+    discardedBytes: number('discardedBytes'),
+    mismatchedFrames: number('mismatchedFrames'),
+    reconnections: number('reconnections'),
+    ioFailures: number('ioFailures'),
+    unknownActuations: number('unknownActuations'),
+    lastQueueWaitMs: number('lastQueueWaitMs'),
+    maxQueueWaitMs: number('maxQueueWaitMs'),
+    lastValidResponseAt: String(value?.lastValidResponseAt ?? ''),
+  };
+}
+
 function getBrowserStorageMetrics() {
   if (typeof window === 'undefined' || !window.localStorage) return { journalBytes: 0 };
   let journalBytes = 0;
@@ -121,6 +149,7 @@ export function getTechnicalStatus() {
         reconnectCount: Number(parsed.serial?.reconnectCount) || 0,
         lastFrameAt: String(parsed.serial?.lastFrameAt ?? ''),
         errorCode: String(parsed.serial?.errorCode ?? ''),
+        coordinator: normalizeSerialCoordinator(parsed.serial?.coordinator),
       },
       network: {
         online: Boolean(parsed.network?.online),
@@ -160,6 +189,7 @@ export function getTechnicalStatus() {
       reconnectCount: 0,
       lastFrameAt: '',
       errorCode: 'SIMULATED',
+      coordinator: normalizeSerialCoordinator({ state: 'READY' }),
     },
     network: {
       online: typeof navigator !== 'undefined' ? navigator.onLine : true,

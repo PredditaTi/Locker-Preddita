@@ -59,6 +59,67 @@ para a mais antiga:
 
 ## Registro
 
+### 2026-07-21 - Parte 6 do Kiosk V4 concluida em laboratorio
+
+**Base:** produto `2.0.25-lab`, `versionCode 25`, `schemaVersion 12`, branch
+`codex/kiosk-v4-serial-resilience`
+
+**O que mudou**
+
+- O Android passou a ter uma fila nativa unica e limitada para o barramento,
+  com no maximo uma escrita fisica em voo.
+- Pedidos e respostas agora sao correlacionados por `executionId`, comando,
+  board, canal, tipo e BCC.
+- Somente leitura admite uma segunda tentativa; atuacao incerta nao e repetida
+  e bloqueia o canal ate reconciliacao pelo sensor.
+- Falha de I/O tenta uma reabertura com backoff e deixa driver e fila
+  degradados quando nao recupera.
+- Edge Agent e console receberam somente metricas sanitizadas de fila, espera,
+  timeout, ruido, falhas e reconexoes.
+- Uma pagina especializada registra arquitetura, politica, testes, limites e o
+  checklist fisico da Parte 6.
+
+**Por que**
+
+- A fila JavaScript protegia o fluxo atual, mas chamadas nativas concorrentes
+  ainda podiam criar varias threads, sobrepor escritas e substituir a unica
+  expectativa do parser.
+- Repetir uma abertura depois de timeout poderia acionar a mesma trava duas
+  vezes; o sensor e o diario precisam resolver essa incerteza.
+
+**Impacto**
+
+- Toda escrita da bridge, inclusive a API legada, atravessa o mesmo worker.
+- Leituras toleram uma perda transitoria sem aplicar retry a atuacoes.
+- Suporte consegue observar degradacao sem receber payload bruto, identificador
+  de execucao ou detalhe interno do Android.
+- A implementacao esta concluida em laboratorio; a aprovacao para piloto ainda
+  depende do gate no KS1062 e das duas polaridades de sensor.
+
+**Arquivos**
+
+- `docs/KIOSK-V4-RESILIENCIA-SERIAL.md`
+- `docs/PLANO-IMPLEMENTACAO-MELHORIAS-REDESIGN-2026-07-20.md`
+- `docs/ARCHITECTURE.md`
+- `android/app/src/main/java/com/preddita/entregaslocker/SerialCommandCoordinator.java`
+- `android/app/src/main/java/com/preddita/entregaslocker/MainActivity.java`
+- `web/src/serial.js`
+- `web/src/edgeAgent.js`
+- `web/src/DiagnosticsView.jsx`
+- `scripts/SerialCommandCoordinatorTest.java`
+
+**Validacao**
+
+- Contratos Java provaram exclusao mutua, fila limitada, correlacao, timeout,
+  retry de leitura, uma reabertura, degradacao e atuacao desconhecida.
+- Parser nativo cobriu fragmentacao, eco, frames colados, ruido, BCC e metricas
+  de descarte.
+- Contratos JavaScript validaram callback por `executionId`, propagacao do
+  resultado desconhecido e sanitizacao da telemetria.
+- Build web e provas fechada-aberta-fechada existentes permaneceram verdes.
+
+**Referencia:** Parte 6 do plano Kiosk V4; PR sera associado apos publicacao.
+
 ### 2026-07-21 - Parte 5 do Kiosk V4 concluida
 
 **Base:** produto `2.0.25-lab`, `versionCode 25`, `schemaVersion 12`, branch

@@ -281,6 +281,7 @@ export class EdgeAgentRuntime {
   }
 
   getOperationalInfo() {
+    const serialCoordinator = this.getHardwareInfo()?.serialCoordinator ?? { state: 'UNAVAILABLE' };
     return {
       contractVersion: this.contractVersion,
       pendingEvents: this.pendingEvents.length,
@@ -293,6 +294,7 @@ export class EdgeAgentRuntime {
       lastRemoteSyncAt: this.lastRemoteSyncAt,
       lastRemoteLatencyMs: this.lastRemoteLatencyMs,
       lastRemoteOutcome: this.lastRemoteOutcome,
+      serialCoordinator,
     };
   }
 

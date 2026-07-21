@@ -64,6 +64,12 @@ public final class Rs485FrameParserTest {
         List<byte[]> resynced = resync.append(noisy, noisy.length);
         assertCount(resynced, 1, "ruido e BCC invalido devem ser descartados");
         assertFrame(resynced.get(0), firmware, "parser nao resincronizou no frame valido");
+        if (resync.invalidFrameCount() < 1) {
+            throw new AssertionError("BCC invalido deve alimentar metrica do parser");
+        }
+        if (resync.discardedByteCount() < 4) {
+            throw new AssertionError("ruido descartado deve alimentar metrica do parser");
+        }
 
         byte[] readAllRequest = frame(0x80, 0x01, 0x00, 0x33);
         byte[] readAllResponse = frame(0x80, 0x01, 0xFF, 0xFF, 0xFF, 0x33);
