@@ -60,6 +60,8 @@ A protecao de regressao tambem inclui:
 - `kiosk-interactions.spec.js`: teclado, retorno, cancelamento seguro, timeout e
   fallback para porta grande;
 - `kiosk-v4-home.spec.js`: marca, ajuda, alvo de toque e contraste WCAG AA;
+- `kiosk-audio.spec.js`: estado mudo, reproducao unica, interrupcao, volume e
+  preferencia minima nos quatro viewports;
 - `kiosk-v4-prototype.spec.js`: navegacao local pelas cinco referencias V4,
   alvo minimo e ausencia de scroll;
 - projetos `1024x600`, `1280x800`, `800x480` e `390x844`;
@@ -94,9 +96,17 @@ Para regenerar as 13 referencias das jornadas reais V4:
 npm run capture:v4-journeys
 ```
 
+Para validar os prompts e capturar o dialogo de orientacao sonora:
+
+```powershell
+npm run test:audio
+npm run capture:v4-audio
+```
+
 As referencias da fundacao e das jornadas reais estao em
 `docs/KIOSK-V4-FUNDACAO-VISUAL.md` e
-`docs/KIOSK-V4-JORNADAS-PUBLICAS.md`.
+`docs/KIOSK-V4-JORNADAS-PUBLICAS.md`. A politica e as evidencias de audio ficam
+em `docs/KIOSK-V4-AUDIO-ACESSIVEL.md`.
 
 Em falhas, screenshot, video, trace e arvore acessivel ficam em
 `web/test-results`. O CI envia esses arquivos como artifact por sete dias.

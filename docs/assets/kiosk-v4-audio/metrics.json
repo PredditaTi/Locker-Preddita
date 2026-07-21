@@ -1,0 +1,41 @@
+{
+  "capturedAt": "2026-07-21T01:10:58.799Z",
+  "results": [
+    {
+      "viewport": {
+        "name": "01-audio-1024x600",
+        "width": 1024,
+        "height": 600
+      },
+      "geometry": {
+        "top": 96,
+        "right": 832,
+        "bottom": 504,
+        "left": 192,
+        "width": 640,
+        "height": 408,
+        "scrollHeight": 404,
+        "clientHeight": 404
+      },
+      "browserErrors": []
+    },
+    {
+      "viewport": {
+        "name": "02-audio-390x844",
+        "width": 390,
+        "height": 844
+      },
+      "geometry": {
+        "top": 175,
+        "right": 376,
+        "bottom": 669,
+        "left": 14,
+        "width": 362,
+        "height": 494,
+        "scrollHeight": 490,
+        "clientHeight": 490
+      },
+      "browserErrors": []
+    }
+  ]
+}

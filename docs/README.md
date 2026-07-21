@@ -22,7 +22,7 @@ instalar um locker, operar o Admin Online ou publicar uma nova versao.
 | Serial prioritaria | `/dev/ttyS5` |
 | Frontend | React 18, Vite 8, Node.js 20.19+ |
 | Backend | Node.js, armazenamento JSON para laboratorio ou Postgres 16 |
-| Status | Kiosk V4 integrado em laboratorio, aguardando piloto controlado |
+| Status | Kiosk V4 com jornadas e audio opcional integrados em laboratorio, aguardando piloto controlado |
 
 O estado acima descreve a base funcional. Mudancas apenas documentais feitas
 depois da tag permanecem registradas em [UPDATES.md](UPDATES.md).
@@ -100,6 +100,7 @@ flowchart LR
 | [Baseline visual e funcional V3](KIOSK-V3-BASELINE.md) | Screenshots, metricas, matriz Playwright e rollback anteriores ao Kiosk V4 | A referencia visual mudar intencionalmente |
 | [Fundacao visual do Kiosk V4](KIOSK-V4-FUNDACAO-VISUAL.md) | Tokens, home responsiva, prototipos, licencas e gate visual da Parte 3 | A linguagem visual ou uma referencia V4 mudar |
 | [Jornadas publicas do Kiosk V4](KIOSK-V4-JORNADAS-PUBLICAS.md) | Fluxos reais, contratos fisicos, screenshots, metricas e testes da Parte 3 | Uma jornada publica, regra de porta ou referencia visual mudar |
+| [Audio acessivel do Kiosk V4](KIOSK-V4-AUDIO-ACESSIVEL.md) | Politica sem PII, assets, controles, testes e evidencias da Parte 4 | Prompt, volume, reproducao ou politica de audio mudar |
 | [Redesign publico](PASSO-A-PASSO-REDESIGN-PUBLICO.md) | Orientacoes da interface do kiosk | Experiencia publica mudar |
 | [Plano original do redesign](superpowers/plans/2026-07-09-public-kiosk-redesign.md) | Plano historico que orientou a implementacao publica | Nao usar como runbook atual; preservar como decisao historica |
 | [Notas do KS1062](../NOTES-KS1062.md) | Pesquisa do hardware e protocolo da placa | Nova evidencia de campo ou manual for validada |

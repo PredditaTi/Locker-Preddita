@@ -71,12 +71,40 @@ export function installRs485Bridge() {
   };
 }
 
+export function installAudioProbe() {
+  window.__predditaAudioEvents = [];
+
+  window.Audio = class AudioProbe {
+    constructor(source) {
+      this.source = source;
+      this.currentTime = 0;
+      this.volume = 1;
+      this.listeners = new Map();
+      window.__predditaAudioEvents.push({ type: 'create', source });
+    }
+
+    addEventListener(event, listener) {
+      this.listeners.set(event, listener);
+    }
+
+    pause() {
+      window.__predditaAudioEvents.push({ type: 'pause', source: this.source });
+    }
+
+    play() {
+      window.__predditaAudioEvents.push({ type: 'play', source: this.source, volume: this.volume });
+      return Promise.resolve();
+    }
+  };
+}
+
 export async function bootKiosk(page, options = {}) {
   const browserErrors = [];
   page.on('pageerror', (error) => browserErrors.push(error.message));
   page.on('console', (message) => {
     if (message.type() === 'error') browserErrors.push(message.text());
   });
+  if (options.audioProbe) await page.addInitScript(installAudioProbe);
   await page.addInitScript(installRs485Bridge);
   await page.goto(options.url || '/');
   return browserErrors;

@@ -59,6 +59,53 @@ para a mais antiga:
 
 ## Registro
 
+### 2026-07-20 - Parte 4 do Kiosk V4 concluida
+
+**Base:** produto `2.0.25-lab`, `versionCode 25`, `schemaVersion 12`, branch
+`codex/kiosk-v4-audio`
+
+**O que mudou**
+
+- Foram integrados 12 prompts fixos locais, controle mudo/volume/repeticao e
+  selecao por prioridade nas jornadas publicas.
+- Lista fechada, hashes e testes impedem TTS dinamico, repeticao por rerender e
+  fala de dados pessoais.
+- Duas capturas e uma pagina especializada registram interface, origem,
+  limites e reproducao da Parte 4.
+
+**Por que**
+
+- A orientacao precisava ser opcional, offline e segura para uma area comum,
+  sem ampliar o bridge Android nem transformar credenciais em fala.
+
+**Impacto**
+
+- O kiosk inicia mudo e continua totalmente operavel sem som.
+- O bundle recebe `450.550 bytes` de audio; versao, schema, API e regras de
+  porta nao mudam.
+- Os arquivos atuais permanecem restritos a laboratorio ate confirmar direito
+  de distribuicao da voz usada ou substitui-los por gravacoes liberadas.
+
+**Arquivos**
+
+- `docs/KIOSK-V4-AUDIO-ACESSIVEL.md`
+- `docs/assets/kiosk-v4-audio/`
+- `web/src/audioGuidance.js`
+- `web/src/assets/audio/`
+- `web/src/publicKioskUi.jsx`
+- `web/src/kioskTheme.css`
+- `web/e2e/kiosk-audio.spec.js`
+- `scripts/audio-guidance-test.mjs`
+
+**Validacao**
+
+- Politica, privacidade e SHA-256 dos 12 prompts aprovados.
+- Oito cenarios dedicados passaram nos quatro viewports Playwright.
+- Duas capturas inspecionadas com zero erro de console e sem overflow.
+- Build Vite de producao concluido com todos os audios no pacote Android.
+
+**Referencia:** documentacao da Parte 4 na branch `codex/kiosk-v4-audio`.
+
 ### 2026-07-20 - Parte 3 do Kiosk V4 concluida
 
 **Base:** produto `2.0.25-lab`, `versionCode 25`, `schemaVersion 12`, branch

@@ -113,6 +113,18 @@ O comando substitui `docs/assets/kiosk-v4-journeys`, percorre entrega pequena,
 fallback grande, retirada, erro e timeout com o bridge RS-485 de teste e grava
 as metricas do bundle. Consulte `docs/KIOSK-V4-JORNADAS-PUBLICAS.md`.
 
+Para validar a politica de audio e regenerar as referencias do dialogo:
+
+```powershell
+npm run test:audio
+npm run capture:v4-audio
+```
+
+O primeiro comando confere allowlist, privacidade e integridade dos 12 prompts.
+O segundo substitui `docs/assets/kiosk-v4-audio` com capturas em `1024x600` e
+`390x844`. Consulte `docs/KIOSK-V4-AUDIO-ACESSIVEL.md`. Nao publique os audios
+atuais em producao antes de confirmar o direito de distribuicao da voz usada.
+
 O teste nativo `scripts\Rs485FrameParserTest.java` tambem roda dentro de
 `scripts\v2-verify.ps1` usando o JDK 17.
 

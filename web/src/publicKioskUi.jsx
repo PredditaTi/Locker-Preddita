@@ -1,10 +1,113 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { AUDIO_PROMPTS, AUDIO_VOLUME_MAX, AUDIO_VOLUME_MIN, createAudioGuidanceController } from './audioGuidance.js';
 import { formatRecipientApartment } from './lockerWorkflow.js';
 import { joinClasses } from './appUi.jsx';
 import { KioskIcon, KioskIcons } from './kioskIcons.jsx';
 import { COURIER_COPY, PICKUP_COPY, PUBLIC_HOME_COPY } from './publicKioskCopy.js';
 
 const NUMBER_PAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'backspace'];
+const KioskAudioContext = createContext(null);
+
+export function KioskAudioProvider({ active, children }) {
+  const controllerRef = useRef(null);
+  const entriesRef = useRef(new Map());
+  const sequenceRef = useRef(0);
+  const selectedPromptRef = useRef(null);
+  const activeRef = useRef(active);
+  activeRef.current = active;
+
+  if (!controllerRef.current) {
+    controllerRef.current = createAudioGuidanceController();
+  }
+
+  const [preferences, setPreferences] = useState(() => controllerRef.current.getPreferences());
+
+  const syncSelection = useCallback(() => {
+    const controller = controllerRef.current;
+    if (!activeRef.current) {
+      selectedPromptRef.current = null;
+      controller.stop({ clearTransition: true });
+      return;
+    }
+
+    const selected = [...entriesRef.current.values()].sort((left, right) => (
+      AUDIO_PROMPTS[right.promptId].priority - AUDIO_PROMPTS[left.promptId].priority
+      || right.sequence - left.sequence
+    ))[0];
+
+    if (!selected) {
+      selectedPromptRef.current = null;
+      controller.stop();
+      return;
+    }
+    if (selected.promptId === selectedPromptRef.current) return;
+
+    controller.stop();
+    selectedPromptRef.current = selected.promptId;
+    controller.play(selected.promptId, { transitionKey: selected.promptId });
+  }, []);
+
+  const registerPrompt = useCallback((promptId) => {
+    if (!AUDIO_PROMPTS[promptId]) return () => {};
+    const token = Symbol(promptId);
+    entriesRef.current.set(token, { promptId, sequence: sequenceRef.current += 1 });
+    syncSelection();
+    return () => {
+      entriesRef.current.delete(token);
+      syncSelection();
+    };
+  }, [syncSelection]);
+
+  const toggleMuted = useCallback(() => {
+    const controller = controllerRef.current;
+    const next = controller.setMuted(!controller.getPreferences().muted);
+    setPreferences(next);
+    if (!next.muted && selectedPromptRef.current) {
+      controller.play(selectedPromptRef.current, {
+        transitionKey: selectedPromptRef.current,
+        force: true,
+      });
+    }
+  }, []);
+
+  const setVolume = useCallback((volume) => {
+    setPreferences(controllerRef.current.setVolume(volume));
+  }, []);
+
+  const replay = useCallback(() => {
+    if (!selectedPromptRef.current) return false;
+    return controllerRef.current.play(selectedPromptRef.current, {
+      transitionKey: selectedPromptRef.current,
+      force: true,
+    });
+  }, []);
+
+  useEffect(() => {
+    syncSelection();
+  }, [active, syncSelection]);
+
+  useEffect(() => () => controllerRef.current.destroy(), []);
+
+  const value = useMemo(() => ({
+    preferences,
+    registerPrompt,
+    replay,
+    setVolume,
+    toggleMuted,
+  }), [preferences, registerPrompt, replay, setVolume, toggleMuted]);
+
+  return <KioskAudioContext.Provider value={value}>{children}</KioskAudioContext.Provider>;
+}
+
+function useKioskAudioPrompt(promptId) {
+  const audio = useContext(KioskAudioContext);
+  const registerPrompt = audio?.registerPrompt;
+
+  useEffect(() => {
+    if (!registerPrompt || !promptId) return undefined;
+    return registerPrompt(promptId);
+  }, [promptId, registerPrompt]);
+}
 
 function NumberPad({ onKey, onBackspace, onClear, className = '' }) {
   return (
@@ -80,31 +183,137 @@ export function KioskAction({
 }
 
 export function KioskTopBar({ siteName, stepLabel = 'Inicio', onHelp }) {
+  const audio = useContext(KioskAudioContext);
+  const [isAudioOpen, setIsAudioOpen] = useState(false);
+  const audioLabel = audio
+    ? `Configurar audio. ${audio.preferences.muted ? 'Desativado' : 'Ativado'}`
+    : 'Audio indisponivel nesta versao';
+
   return (
-    <header className="kiosk-v4-topbar">
-      <KioskBrand siteName={siteName} />
-      <span className="kiosk-v4-step-label">{stepLabel}</span>
-      <div className="kiosk-v4-topbar-actions">
+    <>
+      <header className="kiosk-v4-topbar">
+        <KioskBrand siteName={siteName} />
+        <span className="kiosk-v4-step-label">{stepLabel}</span>
+        <div className="kiosk-v4-topbar-actions">
+          <button
+            type="button"
+            className={joinClasses('kiosk-v4-icon-button', audio ? '' : 'is-unavailable')}
+            aria-label={audioLabel}
+            title={audioLabel}
+            disabled={!audio}
+            onClick={() => setIsAudioOpen(true)}
+          >
+            <KioskIcon icon={audio?.preferences.muted ? KioskIcons.volumeMuted : KioskIcons.volume} />
+          </button>
+          <button
+            type="button"
+            className="kiosk-v4-icon-button"
+            aria-label="Ajuda"
+            title="Ajuda"
+            onClick={onHelp}
+          >
+            <KioskIcon icon={KioskIcons.help} />
+          </button>
+        </div>
+      </header>
+      {isAudioOpen && audio ? (
+        <KioskAudioDialog audio={audio} onClose={() => setIsAudioOpen(false)} />
+      ) : null}
+    </>
+  );
+}
+
+export function KioskAudioDialog({ audio, onClose }) {
+  const dialogRef = useRef(null);
+
+  useEffect(() => {
+    const previousFocus = document.activeElement;
+    const getFocusable = () => [...dialogRef.current.querySelectorAll('button:not(:disabled), input:not(:disabled)')];
+    getFocusable()[0]?.focus();
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      const focusable = getFocusable();
+      if (event.key !== 'Tab' || focusable.length === 0) return;
+
+      const activeIndex = focusable.indexOf(document.activeElement);
+      const nextIndex = event.shiftKey
+        ? (activeIndex <= 0 ? focusable.length - 1 : activeIndex - 1)
+        : (activeIndex + 1) % focusable.length;
+      event.preventDefault();
+      focusable[nextIndex].focus();
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      previousFocus?.focus();
+    };
+  }, [onClose]);
+
+  const volumePercent = Math.round(audio.preferences.volume * 100);
+
+  return (
+    <div className="kiosk-v4-audio-backdrop" role="presentation">
+      <section
+        ref={dialogRef}
+        className="kiosk-v4-audio-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="kiosk-v4-audio-title"
+      >
+        <div>
+          <h2 id="kiosk-v4-audio-title" className="kiosk-v4-audio-title">Orientacao sonora</h2>
+          <p className="kiosk-v4-audio-copy">Instrucoes curtas acompanham cada etapa.</p>
+        </div>
+        <button type="button" className="kiosk-v4-audio-close" onClick={onClose} aria-label="Fechar audio" title="Fechar audio">
+          <KioskIcon icon={KioskIcons.close} />
+        </button>
+
+        <label className="kiosk-v4-audio-toggle">
+          <span>
+            <strong>Orientacao sonora</strong>
+            <small>{audio.preferences.muted ? 'Desativada' : 'Ativada'}</small>
+          </span>
+          <input
+            type="checkbox"
+            role="switch"
+            checked={!audio.preferences.muted}
+            onChange={audio.toggleMuted}
+          />
+        </label>
+
+        <label className="kiosk-v4-audio-volume">
+          <span>Volume</span>
+          <output>{volumePercent}%</output>
+          <input
+            type="range"
+            min={AUDIO_VOLUME_MIN * 100}
+            max={AUDIO_VOLUME_MAX * 100}
+            step="5"
+            value={volumePercent}
+            disabled={audio.preferences.muted}
+            aria-label="Volume da orientacao sonora"
+            onChange={(event) => audio.setVolume(Number(event.target.value) / 100)}
+          />
+        </label>
+
         <button
           type="button"
-          className="kiosk-v4-icon-button is-unavailable"
-          aria-label="Audio indisponivel nesta versao"
-          title="Audio disponivel em uma proxima etapa"
-          disabled
+          className="kiosk-v4-audio-replay"
+          onClick={audio.replay}
+          disabled={audio.preferences.muted}
         >
           <KioskIcon icon={KioskIcons.volume} />
+          Ouvir novamente
         </button>
-        <button
-          type="button"
-          className="kiosk-v4-icon-button"
-          aria-label="Ajuda"
-          title="Ajuda"
-          onClick={onHelp}
-        >
-          <KioskIcon icon={KioskIcons.help} />
-        </button>
-      </div>
-    </header>
+        <button type="button" className="kiosk-v4-audio-confirm" onClick={onClose}>Concluir</button>
+      </section>
+    </div>
   );
 }
 
@@ -163,6 +372,7 @@ export function KioskHelpDialog({ onClose }) {
 
 export function KioskNoticeDialog({ tone = 'warn', title, text, onClose }) {
   const dialogRef = useRef(null);
+  useKioskAudioPrompt(title.toLowerCase().includes('cancel') ? 'cancel' : 'error');
 
   useEffect(() => {
     const previousFocus = document.activeElement;
@@ -220,6 +430,7 @@ export function KioskFlowFrame({ siteName, stepLabel, className = '', children }
 
 export function PublicHome({ siteName, onCourier, onResident }) {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+  useKioskAudioPrompt('home');
 
   return (
     <section className="kiosk-v4-home" aria-label="Menu principal">
@@ -275,6 +486,8 @@ export function CourierApartmentStep({
   onSelectRecipient,
   onBack,
 }) {
+  useKioskAudioPrompt('courier-choice');
+
   return (
     <KioskFlowFrame
       siteName={tenantName}
@@ -322,6 +535,8 @@ export function CourierApartmentStep({
 }
 
 export function CourierConfirmStep({ tenantName, recipient, isBusy, onBack, onConfirm }) {
+  useKioskAudioPrompt('courier-confirm');
+
   return (
     <KioskFlowFrame
       siteName={tenantName}
@@ -366,6 +581,7 @@ export function CourierDoorStep({
   const isWaiting = stage === 'waiting-small-close' || isCancelling;
   const isLarge = stage === 'large';
   const isConfirming = stage.includes('confirming');
+  useKioskAudioPrompt(isCancelling ? 'cancel' : (isWaiting || isConfirming ? 'courier-close' : 'courier-dropoff'));
   const title = isCancelling
     ? 'Feche a porta para cancelar'
     : isWaiting
@@ -424,6 +640,8 @@ export function CourierDoorStep({
 }
 
 export function CourierSuccessStep({ tenantName, presentation, delivery, qrImage, onNewDelivery, onHome }) {
+  useKioskAudioPrompt('courier-success');
+
   return (
     <KioskFlowFrame
       siteName={tenantName}
@@ -477,6 +695,15 @@ export function ResidentPickupStep({
   onStartQr,
   onStopQr,
 }) {
+  const audioPromptId = completedPickup
+    ? 'pickup-success'
+    : activePickup
+    ? 'pickup-open'
+    : mode === 'pin'
+    ? 'pickup-pin'
+    : 'pickup-qr';
+  useKioskAudioPrompt(audioPromptId);
+
   if (completedPickup) {
     return (
       <KioskFlowFrame

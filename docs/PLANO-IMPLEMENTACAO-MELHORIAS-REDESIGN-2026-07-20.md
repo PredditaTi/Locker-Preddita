@@ -343,17 +343,18 @@ primeiro ciclo para reduzir variacao, latencia e risco de falar dados pessoais.
 
 Tarefas:
 
-- [ ] Criar `audioGuidance.js` com estados permitidos e politica de prioridade.
-- [ ] Gravar ou gerar prompts PREDDITA originais para inicio, escolha,
+- [x] Criar `audioGuidance.js` com estados permitidos e politica de prioridade.
+- [x] Gravar ou gerar prompts PREDDITA originais para inicio, escolha,
   confirmacao, porta, fechamento, sucesso, cancelamento e erro.
-- [ ] Empacotar audios localmente com licenca e origem registradas.
-- [ ] Reproduzir cada prompt uma vez por transicao, nunca por rerender.
-- [ ] Adicionar botao de audio e estado mudo sem texto dentro do botao, com
+- [x] Empacotar audios localmente com origem e estado de distribuicao registrados.
+- [x] Reproduzir cada prompt uma vez por transicao, nunca por rerender.
+- [x] Adicionar botao de audio e estado mudo sem texto dentro do botao, com
   tooltip e nome acessivel.
-- [ ] Persistir somente preferencia de volume/mudo, sem identidade de usuario.
-- [ ] Interromper audio ao mudar de etapa, cancelar ou retornar ao inicio.
-- [ ] Nao falar nome, apartamento, bloco, porta, PIN ou QR em area comum.
-- [ ] Integrar volume permitido ao bridge Android apenas se o hardware exigir.
+- [x] Persistir somente preferencia de volume/mudo, sem identidade de usuario.
+- [x] Interromper audio ao mudar de etapa, cancelar ou retornar ao inicio.
+- [x] Nao falar nome, apartamento, bloco, porta, PIN ou QR em area comum.
+- [x] Avaliar integracao de volume ao bridge Android; o hardware atual nao a
+  exige e a superficie nativa permaneceu inalterada.
 
 Criterios de aceite:
 
@@ -365,6 +366,13 @@ Criterios de aceite:
 - Testes confirmam a lista fechada de prompts e a ausencia de dados pessoais.
 
 **Esforco relativo:** medio.
+
+**Status em 20/07/2026:** implementacao de laboratorio concluida. Doze prompts
+locais, politica fechada, controle acessivel, persistencia minima, quatro
+viewports e verificacao de privacidade estao cobertos. Evidencias e limites de
+distribuicao estao em
+[KIOSK-V4-AUDIO-ACESSIVEL.md](KIOSK-V4-AUDIO-ACESSIVEL.md). Inteligibilidade,
+volume e direitos dos arquivos atuais permanecem como gates do piloto.
 
 ## Parte 5 - Console tecnico e diagnostico de campo
 

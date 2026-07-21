@@ -34,6 +34,9 @@ Write-Host "[PREDDITA v2] Teste da politica e tickets do AWS IoT Core..."
 Write-Host "[PREDDITA v2] Teste de leitura QR do app do armario..."
 & $node (Join-Path $root "scripts\v2-qr-scanner-test.mjs")
 
+Write-Host "[PREDDITA v2] Teste de politica e integridade do audio..."
+& $node (Join-Path $root "scripts\audio-guidance-test.mjs")
+
 Write-Host "[PREDDITA v2] Teste de autenticacao e sessoes administrativas..."
 & $node (Join-Path $root "scripts\AdminAuthTest.mjs")
 
