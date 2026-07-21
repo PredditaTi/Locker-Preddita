@@ -104,11 +104,12 @@ para a mais antiga:
 **Validacao**
 
 - Testes de metricas, preflight, Edge Agent, smoke, build web e verificacoes
-  de documentacao executados.
+  de documentacao executados; o CI completo, incluindo `assembleDebug`, passou
+  em 3min41s.
 - Painel Piloto conferido em viewport desktop e movel.
 - Testes fisicos permanecem explicitamente pendentes no runbook.
 
-**Referencia:** PR da Parte 8 a publicar.
+**Referencia:** [PR #26](https://github.com/PredditaTi/Locker-Preddita/pull/26).
 
 ### 2026-07-21 - Parte 7 do Kiosk V4 concluida em laboratorio
 
