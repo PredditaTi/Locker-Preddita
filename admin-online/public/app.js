@@ -145,6 +145,10 @@ function appUpdateStatusLabel(status) {
     installing: 'Instalador aberto',
     failed: 'Falha',
     'up-to-date': 'Atualizado',
+    'installed-pending-health': 'Validando nova versao',
+    healthy: 'Saudavel',
+    degraded: 'Operacao degradada',
+    'failed-health': 'Falha no health check',
   }[status] || 'Sem telemetria';
 }
 
@@ -1239,6 +1243,19 @@ function renderUpdates() {
   const policy = state.data.appUpdate || {};
   const updater = state.data.device?.appUpdater || {};
   const status = updater.status || 'unknown';
+  const health = updater.health || {};
+  const healthSignals = [
+    health.appStarted,
+    health.webViewReady,
+    health.edgeAgentReady,
+    health.stateLoaded,
+    health.configurationBackupChecked && health.configurationBackupValid,
+    health.credentialAvailable,
+    health.serialClassified,
+  ];
+  const readyHealthSignals = healthSignals.filter(Boolean).length;
+  const healthSummary = policy.healthSummary || {};
+  const updateWarning = ['failed', 'degraded', 'failed-health'].includes(status);
   root.innerHTML = `
     <div class="grid">
       <div class="grid stats">
@@ -1248,7 +1265,7 @@ function renderUpdates() {
         <article class="stat-card"><span class="muted">Progresso</span><strong>${escapeHtml(updater.progressPercentage || 0)}%</strong></article>
       </div>
 
-      <section class="panel update-status-panel ${status === 'failed' ? 'is-warning' : ''}">
+      <section class="panel update-status-panel ${updateWarning ? 'is-warning' : ''}">
         <div class="panel-header">
           <div>
             <p class="eyebrow">Telemetria do dispositivo</p>
@@ -1261,7 +1278,29 @@ function renderUpdates() {
           <div><span class="muted">Destino</span><strong>${escapeHtml(updater.targetVersionName || '--')}</strong></div>
           <div><span class="muted">Atualizado em</span><strong>${escapeHtml(updater.updatedAt || '--')}</strong></div>
           <div><span class="muted">Ultimo erro</span><strong>${escapeHtml(updater.lastError || 'Nenhum')}</strong></div>
+          <div><span class="muted">Sinais de saude</span><strong>${escapeHtml(readyHealthSignals)}/7 prontos</strong></div>
+          <div><span class="muted">Health check</span><strong>${escapeHtml(health.checkedAt || 'Ainda nao concluido')}</strong></div>
+          <div><span class="muted">Causa</span><strong>${escapeHtml(updater.healthFailureCode || health.serialErrorCode || 'Nenhuma')}</strong></div>
+          <div><span class="muted">Prazo</span><strong>${escapeHtml(health.deadlineAt || '--')}</strong></div>
         </div>
+        ${updater.recommendedAction ? `<p class="panel-note"><strong>Acao recomendada:</strong> ${escapeHtml(updater.recommendedAction)}</p>` : ''}
+      </section>
+
+      <section class="panel ${policy.autoPausedAt ? 'is-warning' : ''}">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Protecao do rollout</p>
+            <h3>${policy.autoPausedAt ? 'Rollout pausado automaticamente' : 'Monitoramento ativo'}</h3>
+          </div>
+          <span class="tag">${escapeHtml(healthSummary.sampleCount || 0)} amostra(s)</span>
+        </div>
+        <div class="health-grid">
+          <div><span class="muted">Saudaveis</span><strong>${escapeHtml(healthSummary.healthyCount || 0)}</strong></div>
+          <div><span class="muted">Degradados</span><strong>${escapeHtml(healthSummary.degradedCount || 0)}</strong></div>
+          <div><span class="muted">Falhas</span><strong>${escapeHtml(healthSummary.failureCount || 0)}</strong></div>
+          <div><span class="muted">Taxa de falha</span><strong>${escapeHtml(healthSummary.failurePercentage || 0)}%</strong></div>
+        </div>
+        ${policy.autoPauseReason ? `<p class="panel-note">${escapeHtml(policy.autoPauseReason)}</p>` : ''}
       </section>
 
       <form class="panel update-policy-form" id="update-policy-form">
@@ -1278,6 +1317,10 @@ function renderUpdates() {
             <input type="checkbox" name="enabled" ${policy.enabled ? 'checked' : ''}>
             <span>Distribuicao ativa</span>
           </label>
+          <label class="toggle-row">
+            <input type="checkbox" name="automaticPauseEnabled" ${policy.automaticPauseEnabled !== false ? 'checked' : ''}>
+            <span>Pausa automatica por falha</span>
+          </label>
         </div>
 
         <div class="form-grid update-form-grid">
@@ -1290,6 +1333,9 @@ function renderUpdates() {
           </label>
           <label>Rollout (%)
             <input name="rolloutPercentage" type="number" min="0" max="100" step="1" value="${escapeHtml(policy.rolloutPercentage ?? 0)}" required>
+          </label>
+          <label>Limite de falha (%)
+            <input name="failureThresholdPercentage" type="number" min="1" max="100" step="1" value="${escapeHtml(policy.failureThresholdPercentage ?? 25)}" required>
           </label>
           <label>Release
             <input name="releaseId" maxlength="120" value="${escapeHtml(policy.releaseId || '')}" placeholder="v2.0.25-lab">
@@ -1603,7 +1649,9 @@ document.addEventListener('submit', async (event) => {
         body: JSON.stringify({
           ...values,
           enabled: form.elements.enabled.checked,
+          automaticPauseEnabled: form.elements.automaticPauseEnabled.checked,
           rolloutPercentage: Number(values.rolloutPercentage),
+          failureThresholdPercentage: Number(values.failureThresholdPercentage),
           versionCode: Number(values.versionCode),
         }),
       });

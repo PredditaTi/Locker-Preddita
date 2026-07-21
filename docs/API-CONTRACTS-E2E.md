@@ -117,6 +117,19 @@ esta em `docs/KIOSK-V4-CONSOLE-TECNICO.md`.
 Em falhas, screenshot, video, trace e arvore acessivel ficam em
 `web/test-results`. O CI envia esses arquivos como artifact por sete dias.
 
+## Contrato de saude do update
+
+`device.appUpdater.status` aceita tambem `installed-pending-health`, `healthy`,
+`degraded` e `failed-health`. O objeto `health` informa apenas booleanos de
+prontidao, datas, codigo serial sanitizado e prazo; `healthFailureCode` e
+`recommendedAction` explicam o diagnostico sem URL do APK, segredo, caminho ou
+conteudo do estado local.
+
+O smoke publica um `failed-health`, confere a amostra deduplicada e prova que a
+politica e pausada e que `/api/device/snapshot` nao devolve novamente a mesma
+release. Os contratos Java cobrem startup e timeout; os contratos JavaScript
+cobrem backup sem dados pessoais e o handoff do Edge Agent.
+
 ## Limites
 
 O E2E valida UI, persistencia e contrato da ponte serial, mas nao substitui o

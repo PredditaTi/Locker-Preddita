@@ -18,7 +18,8 @@
     "test:event-journal": "node ../scripts/v2-device-event-journal-test.mjs",
     "test:edge-agent": "node ../scripts/v2-edge-agent-contract-test.mjs",
     "test:audio": "node ../scripts/audio-guidance-test.mjs",
-    "test:diagnostics": "node ../scripts/diagnostic-console-test.mjs"
+    "test:diagnostics": "node ../scripts/diagnostic-console-test.mjs",
+    "test:update-health": "node ../scripts/app-update-health-test.mjs"
   },
   "dependencies": {
     "@fontsource-variable/atkinson-hyperlegible-next": "^5.3.0",

@@ -130,6 +130,7 @@ public class MainActivity extends Activity {
         diagnosticCredentialStore = new DiagnosticCredentialStore(getApplicationContext());
         technicalPreferences = getSharedPreferences(TECHNICAL_PREFERENCES, MODE_PRIVATE);
         appUpdateManager = new AppUpdateManager(this, this::dispatchAppUpdateStatus);
+        appUpdateManager.reportAppStarted(deviceCredentialStore.isProvisioned());
         serialCoordinator = createSerialCoordinator();
         applyPersistedTechnicalControls();
 
@@ -186,6 +187,12 @@ public class MainActivity extends Activity {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
                 return !isAllowedKioskUrl(url);
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                if (isAllowedKioskUrl(url)) appUpdateManager.reportWebViewReady();
             }
         });
 
@@ -306,6 +313,7 @@ public class MainActivity extends Activity {
                     deviceKeyInput.getText().toString(),
                     isDebuggableBuild()
                 );
+                appUpdateManager.reportAppStarted(true);
                 if (!rawDiagnosticPin.isEmpty()) {
                     diagnosticCredentialStore.provision(rawDiagnosticPin);
                 }
@@ -387,6 +395,7 @@ public class MainActivity extends Activity {
                 lastSerialError = "OK";
             }
             serialCoordinator.markDriverReady();
+            appUpdateManager.reportSerialHealth(true, true, "");
             Log.i(TAG, "Serial port opened on " + openedPort + " at " + BAUD_RATE + " bps");
 
             byte[] buffer = new byte[32];
@@ -415,6 +424,7 @@ public class MainActivity extends Activity {
                 lastSerialError = error.getMessage() != null ? error.getMessage() : "SERIAL_OPEN_FAILED";
                 Log.e(TAG, "Serial error: " + lastSerialError, error);
                 serialCoordinator.onDriverFailure("SERIAL_IO_FAILURE");
+                appUpdateManager.reportSerialHealth(true, false, "SERIAL_IO_FAILURE");
             }
         }
     }
@@ -1049,6 +1059,11 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public boolean requestUpdate(String manifestJson) {
             return appUpdateManager.requestUpdate(manifestJson);
+        }
+
+        @JavascriptInterface
+        public void reportHealth(String healthJson) {
+            appUpdateManager.reportRuntimeHealth(healthJson);
         }
     }
 

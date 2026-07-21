@@ -37,6 +37,10 @@ import {
   persistLockerState,
 } from './lockerWorkflow.js';
 import { createCommandWakeupRuntime } from './commandWakeup.js';
+import {
+  saveAppUpdateConfigurationBackup,
+  validateAppUpdateConfigurationBackup,
+} from './appUpdateHealth.js';
 
 export {
   SENSOR_POLARITY_OPTIONS,
@@ -49,7 +53,7 @@ export {
   validateFrame,
 };
 
-export const EDGE_AGENT_CONTRACT_VERSION = 2;
+export const EDGE_AGENT_CONTRACT_VERSION = 3;
 
 const REMOTE_COMPLETIONS_STORAGE_KEY = 'preddita_pending_remote_completions_v1';
 const MAX_PENDING_REMOTE_COMPLETIONS = 20;
@@ -160,6 +164,16 @@ function createNativeAppUpdater() {
         return false;
       }
     },
+    reportHealth(health) {
+      const bridge = getNativeAppUpdater();
+      if (!bridge?.reportHealth) return false;
+      try {
+        bridge.reportHealth(JSON.stringify(health));
+        return true;
+      } catch (_error) {
+        return false;
+      }
+    },
   };
 }
 
@@ -265,7 +279,33 @@ export class EdgeAgentRuntime {
 
   requestAppUpdate(manifest) {
     if (!manifest || typeof manifest !== 'object') return false;
+    const backup = saveAppUpdateConfigurationBackup({
+      storage: this.storage,
+      state: this.loadLockerState(),
+      manifest,
+      now: this.now,
+    });
+    if (!backup.ok) return false;
     return this.appUpdater.requestUpdate(manifest);
+  }
+
+  reportAppUpdateHealth(state = this.loadLockerState()) {
+    const updaterStatus = this.getAppUpdateStatus();
+    if (updaterStatus?.status !== 'installed-pending-health') return false;
+    const backup = validateAppUpdateConfigurationBackup({
+      storage: this.storage,
+      state,
+      updaterStatus,
+    });
+    const credential = this.getNativeDeviceAuthStatus();
+    return Boolean(this.appUpdater.reportHealth?.({
+      edgeAgentReady: true,
+      stateLoaded: Boolean(state?.deviceConfig),
+      configurationBackupChecked: backup.checked,
+      configurationBackupValid: backup.valid,
+      credentialAvailable: Boolean(credential?.provisioned),
+      fatalErrorCode: backup.valid ? '' : backup.errorCode,
+    }));
   }
 
   startCommandWakeup(options) {

@@ -89,6 +89,7 @@ jobs:
           node scripts/v2-device-event-journal-test.mjs
           node scripts/v2-remote-command-journal-test.mjs
           node scripts/v2-edge-agent-contract-test.mjs
+          node scripts/app-update-health-test.mjs
           node scripts/CommandWakeupTest.mjs
           node scripts/IotCommandBusTest.mjs
           node scripts/v2-qr-scanner-test.mjs
@@ -153,8 +154,11 @@ jobs:
           trap 'rm -rf "$output_dir"' EXIT
           javac -d "$output_dir" \
             android/app/src/main/java/com/preddita/entregaslocker/AppUpdateContract.java \
+            android/app/src/main/java/com/preddita/entregaslocker/AppUpdateHealthContract.java \
+            scripts/AppUpdateHealthContractTest.java \
             scripts/AppUpdateContractTest.java
           java -cp "$output_dir" AppUpdateContractTest
+          java -cp "$output_dir" AppUpdateHealthContractTest
 
       - name: Test technical diagnostics contracts
         run: |

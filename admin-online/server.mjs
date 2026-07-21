@@ -87,8 +87,10 @@ const MAX_DELIVERY_EVIDENCE_DATA_URL = 900_000;
 const APP_UPDATE_CHANNELS = new Set(['lab', 'pilot', 'production']);
 const APP_UPDATE_STATUS_VALUES = new Set([
   'idle', 'offered', 'downloading', 'downloaded', 'awaiting-permission',
-  'installing', 'failed', 'up-to-date',
+  'installing', 'failed', 'up-to-date', 'installed-pending-health',
+  'healthy', 'degraded', 'failed-health',
 ]);
+const APP_UPDATE_HEALTH_STATUS_VALUES = new Set(['healthy', 'degraded', 'failed-health']);
 const DELIVERY_REMINDER_THRESHOLDS = [
   { level: 1, hours: 24, reason: 'delivery-reminder-24h' },
   { level: 2, hours: 48, reason: 'delivery-reminder-48h' },
@@ -581,11 +583,47 @@ function createDefaultAppUpdatePolicy() {
     notes: '',
     publishedAt: '',
     publishedBy: '',
+    automaticPauseEnabled: true,
+    failureThresholdPercentage: 25,
+    minimumHealthSamples: 1,
+    healthReports: {},
+    autoPausedAt: '',
+    autoPauseReason: '',
+  };
+}
+
+function normalizeAppUpdateHealthReports(reports = {}) {
+  if (!reports || typeof reports !== 'object' || Array.isArray(reports)) return {};
+  return Object.fromEntries(Object.entries(reports).slice(-250).map(([lockerId, report]) => [
+    cleanText(lockerId).slice(0, 120),
+    {
+      status: APP_UPDATE_HEALTH_STATUS_VALUES.has(cleanText(report?.status).toLowerCase())
+        ? cleanText(report.status).toLowerCase()
+        : 'failed-health',
+      releaseId: cleanText(report?.releaseId).slice(0, 120),
+      versionCode: Math.max(0, Number.parseInt(report?.versionCode, 10) || 0),
+      failureCode: cleanText(report?.failureCode).slice(0, 80),
+      checkedAt: cleanText(report?.checkedAt).slice(0, 40),
+    },
+  ]).filter(([lockerId]) => lockerId));
+}
+
+function summarizeAppUpdateHealth(reports = {}) {
+  const values = Object.values(reports);
+  const failures = values.filter((report) => report.status === 'failed-health').length;
+  const degraded = values.filter((report) => report.status === 'degraded').length;
+  return {
+    sampleCount: values.length,
+    healthyCount: values.filter((report) => report.status === 'healthy').length,
+    degradedCount: degraded,
+    failureCount: failures,
+    failurePercentage: values.length > 0 ? Math.round((failures / values.length) * 1000) / 10 : 0,
   };
 }
 
 function normalizeAppUpdatePolicy(policy = {}) {
   const channel = cleanText(policy.channel).toLowerCase();
+  const healthReports = normalizeAppUpdateHealthReports(policy.healthReports);
   return {
     ...createDefaultAppUpdatePolicy(),
     enabled: Boolean(policy.enabled),
@@ -599,6 +637,18 @@ function normalizeAppUpdatePolicy(policy = {}) {
     notes: cleanText(policy.notes).slice(0, 500),
     publishedAt: cleanText(policy.publishedAt),
     publishedBy: cleanText(policy.publishedBy).slice(0, 120),
+    automaticPauseEnabled: policy.automaticPauseEnabled === undefined
+      ? true
+      : Boolean(policy.automaticPauseEnabled),
+    failureThresholdPercentage: Math.max(
+      1,
+      Math.min(100, Number.parseInt(policy.failureThresholdPercentage, 10) || 25),
+    ),
+    minimumHealthSamples: 1,
+    healthReports,
+    healthSummary: summarizeAppUpdateHealth(healthReports),
+    autoPausedAt: cleanText(policy.autoPausedAt).slice(0, 40),
+    autoPauseReason: cleanText(policy.autoPauseReason).slice(0, 300),
   };
 }
 
@@ -616,6 +666,14 @@ function validateAppUpdatePolicy(body = {}, currentPolicy = {}) {
   const rollout = Number(body.rolloutPercentage ?? merged.rolloutPercentage);
   if (!Number.isInteger(rollout) || rollout < 0 || rollout > 100) {
     return { ok: false, error: 'O rollout deve ser um numero inteiro entre 0 e 100.' };
+  }
+  const failureThreshold = Number(body.failureThresholdPercentage ?? merged.failureThresholdPercentage);
+  if (!Number.isInteger(failureThreshold) || failureThreshold < 1 || failureThreshold > 100) {
+    return { ok: false, error: 'O limite de falha deve ser um numero inteiro entre 1 e 100.' };
+  }
+  const minimumHealthSamples = Number(body.minimumHealthSamples ?? merged.minimumHealthSamples);
+  if (minimumHealthSamples !== 1) {
+    return { ok: false, error: 'A politica atual e por locker e aceita uma amostra por release.' };
   }
   if (!merged.enabled) return { ok: true, policy: merged };
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/.test(merged.releaseId)) {
@@ -652,6 +710,13 @@ function validateAppUpdatePolicy(body = {}, currentPolicy = {}) {
 function normalizeAppUpdaterStatus(status = {}, current = {}) {
   const incomingStatus = cleanText(status.status).toLowerCase();
   const incomingProgress = Number.parseInt(status.progressPercentage, 10);
+  const healthSource = status.health && typeof status.health === 'object' ? status.health : {};
+  const currentHealth = current.health && typeof current.health === 'object' ? current.health : {};
+  const healthFailureCode = cleanText(
+    status.healthFailureCode === undefined
+      ? current.healthFailureCode
+      : status.healthFailureCode
+  ).slice(0, 80);
   return {
     available: status.available === undefined ? Boolean(current.available) : Boolean(status.available),
     currentVersionCode: Math.max(0, Number.parseInt(status.currentVersionCode, 10) || Number.parseInt(current.currentVersionCode, 10) || 0),
@@ -667,6 +732,100 @@ function normalizeAppUpdaterStatus(status = {}, current = {}) {
       ? cleanText(current.lastError).slice(0, 300)
       : cleanText(status.lastError).slice(0, 300),
     updatedAt: cleanText(status.updatedAt) || nowIso(),
+    healthFailureCode,
+    recommendedAction: appUpdateRecommendedAction(healthFailureCode),
+    health: {
+      appStarted: Boolean(healthSource.appStarted ?? currentHealth.appStarted),
+      webViewReady: Boolean(healthSource.webViewReady ?? currentHealth.webViewReady),
+      edgeAgentReady: Boolean(healthSource.edgeAgentReady ?? currentHealth.edgeAgentReady),
+      stateLoaded: Boolean(healthSource.stateLoaded ?? currentHealth.stateLoaded),
+      configurationBackupChecked: Boolean(
+        healthSource.configurationBackupChecked ?? currentHealth.configurationBackupChecked
+      ),
+      configurationBackupValid: Boolean(
+        healthSource.configurationBackupValid ?? currentHealth.configurationBackupValid
+      ),
+      credentialAvailable: Boolean(
+        healthSource.credentialAvailable ?? currentHealth.credentialAvailable
+      ),
+      serialClassified: Boolean(healthSource.serialClassified ?? currentHealth.serialClassified),
+      serialHealthy: Boolean(healthSource.serialHealthy ?? currentHealth.serialHealthy),
+      serialErrorCode: cleanText(
+        healthSource.serialErrorCode === undefined
+          ? currentHealth.serialErrorCode
+          : healthSource.serialErrorCode
+      ).slice(0, 80),
+      startedAt: cleanText(healthSource.startedAt || currentHealth.startedAt).slice(0, 40),
+      startupDeadlineAt: cleanText(
+        healthSource.startupDeadlineAt || currentHealth.startupDeadlineAt
+      ).slice(0, 40),
+      deadlineAt: cleanText(healthSource.deadlineAt || currentHealth.deadlineAt).slice(0, 40),
+      checkedAt: cleanText(healthSource.checkedAt || currentHealth.checkedAt).slice(0, 40),
+    },
+  };
+}
+
+function appUpdateRecommendedAction(errorCode) {
+  const code = cleanText(errorCode).toUpperCase();
+  if (!code) return '';
+  if (code.startsWith('SERIAL_')) {
+    return 'Verifique UART, chicote, alimentacao e controladora no locker.';
+  }
+  if (code.startsWith('CONFIGURATION_') || code === 'STATE_LOAD_FAILED') {
+    return 'Preserve o estado e restaure a configuracao validada por ADB ou MDM.';
+  }
+  if (code.includes('CREDENTIAL')) {
+    return 'Reprovisione a credencial HMAC pelo fluxo local autenticado.';
+  }
+  return 'Mantenha o rollout pausado e publique uma versao superior assinada ou recupere por ADB ou MDM.';
+}
+
+function recordAppUpdateHealth(policySource, lockerId, updaterSource) {
+  const policy = normalizeAppUpdatePolicy(policySource);
+  const updater = normalizeAppUpdaterStatus(updaterSource, updaterSource);
+  if (
+    !APP_UPDATE_HEALTH_STATUS_VALUES.has(updater.status)
+    || updater.releaseId !== policy.releaseId
+    || updater.targetVersionCode !== policy.versionCode
+  ) {
+    return { policy, recorded: false, autoPaused: false };
+  }
+
+  const reportKey = cleanText(lockerId).slice(0, 120);
+  if (!reportKey) return { policy, recorded: false, autoPaused: false };
+  const report = {
+    status: updater.status,
+    releaseId: updater.releaseId,
+    versionCode: updater.currentVersionCode || updater.targetVersionCode,
+    failureCode: updater.healthFailureCode,
+    checkedAt: updater.health?.checkedAt || updater.updatedAt || nowIso(),
+  };
+  const previous = policy.healthReports[reportKey];
+  if (previous && JSON.stringify(previous) === JSON.stringify(report)) {
+    return { policy, recorded: false, autoPaused: false };
+  }
+
+  const healthReports = { ...policy.healthReports, [reportKey]: report };
+  const healthSummary = summarizeAppUpdateHealth(healthReports);
+  const shouldPause = policy.enabled
+    && policy.automaticPauseEnabled
+    && healthSummary.sampleCount >= policy.minimumHealthSamples
+    && healthSummary.failureCount > 0
+    && healthSummary.failurePercentage >= policy.failureThresholdPercentage;
+  const pausedAt = shouldPause ? nowIso() : policy.autoPausedAt;
+  return {
+    policy: {
+      ...policy,
+      enabled: shouldPause ? false : policy.enabled,
+      healthReports,
+      healthSummary,
+      autoPausedAt: pausedAt,
+      autoPauseReason: shouldPause
+        ? `Release pausada: ${healthSummary.failureCount} falha(s) em ${healthSummary.sampleCount} health check(s) (${healthSummary.failurePercentage}%).`
+        : policy.autoPauseReason,
+    },
+    recorded: true,
+    autoPaused: shouldPause,
   };
 }
 
@@ -702,6 +861,10 @@ function resolveDeviceAppUpdate(state) {
   const lockerId = cleanText(state.tenant?.lockerId || state.device?.lockerId || DEFAULT_LOCKER_ID);
   if (policy.rolloutPercentage < 100 && appUpdateRolloutBucket(lockerId, policy.releaseId) >= policy.rolloutPercentage) return null;
   const currentVersionCode = Math.max(0, Number.parseInt(state.device?.appUpdater?.currentVersionCode, 10) || 0);
+  if (
+    cleanText(state.device?.appUpdater?.releaseId) === policy.releaseId
+    && cleanText(state.device?.appUpdater?.status) === 'failed-health'
+  ) return null;
   if (currentVersionCode >= policy.versionCode) return null;
   return {
     releaseId: policy.releaseId,
@@ -3891,10 +4054,19 @@ async function handleApi(request, response) {
     }
     const actor = adminActor(adminAuth);
     const publishedAt = validation.policy.enabled ? nowIso() : cleanText(state.appUpdate?.publishedAt);
+    const previousPolicy = normalizeAppUpdatePolicy(state.appUpdate);
+    const releaseChanged = validation.policy.releaseId !== previousPolicy.releaseId
+      || validation.policy.versionCode !== previousPolicy.versionCode;
     const policy = {
       ...validation.policy,
       publishedAt,
       publishedBy: validation.policy.enabled ? actor : cleanText(state.appUpdate?.publishedBy),
+      healthReports: releaseChanged ? {} : validation.policy.healthReports,
+      healthSummary: releaseChanged
+        ? summarizeAppUpdateHealth({})
+        : validation.policy.healthSummary,
+      autoPausedAt: releaseChanged ? '' : validation.policy.autoPausedAt,
+      autoPauseReason: releaseChanged ? '' : validation.policy.autoPauseReason,
     };
     const next = withAudit(
       { ...state, appUpdate: policy },
@@ -4291,7 +4463,7 @@ async function handleApi(request, response) {
       };
     }) : state.doors;
 
-    const next = {
+    let next = {
       ...state,
       doors: nextDoors,
       deliveries: Array.isArray(body.deliveries) ? mergeDeviceDeliveries(state.deliveries, body.deliveries) : state.deliveries,
@@ -4314,6 +4486,26 @@ async function handleApi(request, response) {
         lastSeenAt: nowIso(),
       },
     };
+    const healthResult = recordAppUpdateHealth(
+      next.appUpdate,
+      next.device.lockerId,
+      next.device.appUpdater,
+    );
+    if (healthResult.recorded) {
+      next = { ...next, appUpdate: healthResult.policy };
+    }
+    if (healthResult.autoPaused) {
+      next = withAudit(
+        next,
+        'app-update-auto-paused',
+        healthResult.policy.autoPauseReason,
+        {
+          releaseId: healthResult.policy.releaseId,
+          versionCode: healthResult.policy.versionCode,
+          failurePercentage: healthResult.policy.healthSummary.failurePercentage,
+        },
+      );
+    }
     await writeState(next, requestLockerId);
     sendJson(response, 200, { ok: true });
     return;

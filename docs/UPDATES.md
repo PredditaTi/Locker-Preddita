@@ -59,6 +59,61 @@ para a mais antiga:
 
 ## Registro
 
+### 2026-07-21 - Parte 7 do Kiosk V4 concluida em laboratorio
+
+**Base:** produto `2.0.25-lab`, `versionCode 25`, `schemaVersion 12`, branch
+`codex/kiosk-v4-update-health`
+
+**O que mudou**
+
+- O atualizador Android passou a distinguir APK instalado de versao saudavel
+  com quatro estados posteriores ao install.
+- Startup, WebView, Edge Agent, estado, backup, credencial e serial ganharam
+  sinais persistentes, timeout de 45 segundos e janela total de 3 minutos.
+- O Edge Agent grava antes do handoff um backup estritamente tecnico e o valida
+  no primeiro boot sem incluir moradores, entregas ou credenciais de retirada;
+  o contrato do agente passou da versao 2 para 3.
+- O Admin mostra sinais, causa, prazo e acao recomendada e pausa novas ofertas
+  quando `failed-health` atinge o limite configurado no escopo do locker.
+- Recuperacao por versao superior assinada, ADB ou MDM foi documentada sem
+  prometer downgrade automatico ou permitir shell remoto.
+
+**Por que**
+
+- A versao anterior marcava `up-to-date` apenas pelo `versionCode`, mesmo sem
+  provar que a WebView, o estado e o hardware estavam operacionais.
+- Uma release defeituosa precisava deixar de avancar sem remover as validacoes
+  criptograficas ou invalidar lockers ja saudaveis.
+
+**Impacto**
+
+- Download, instalacao e saude real agora aparecem como fases distintas.
+- Falhas sao deduplicadas por locker/release e podem interromper o rollout.
+- O backup de recuperacao nao amplia a superficie de dados pessoais.
+- A validacao fisica do APK assinado permanece obrigatoria na Parte 8.
+
+**Arquivos**
+
+- `docs/KIOSK-V4-SAUDE-UPDATE.md`
+- `docs/PLANO-IMPLEMENTACAO-MELHORIAS-REDESIGN-2026-07-20.md`
+- `docs/ARCHITECTURE.md`
+- `docs/API-CONTRACTS-E2E.md`
+- `docs/HISTORICO-COMPLETO-DE-MELHORIAS.md`
+- `docs/README.md`
+- `docs/UPDATES.md`
+
+**Validacao**
+
+- Contratos Java de update e health check passaram.
+- Contratos JavaScript de backup e Edge Agent passaram.
+- Smoke do Admin validou telemetria, causa, pausa e bloqueio da mesma release.
+- Build Vite passou; Gradle local ficou bloqueado apenas pela ausencia do
+  Android SDK nesta maquina e permanece coberto pelo CI.
+- `git diff --check` e o verificador documental foram executados.
+
+**Referencia:** implementacao de laboratorio da Parte 7; PR sera vinculado apos
+publicacao.
+
 ### 2026-07-21 - Parte 6 do Kiosk V4 concluida em laboratorio
 
 **Base:** produto `2.0.25-lab`, `versionCode 25`, `schemaVersion 12`, branch

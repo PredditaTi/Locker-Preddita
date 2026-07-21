@@ -42,24 +42,38 @@ public final class AppUpdateManager {
     private static final int CONNECT_TIMEOUT_MS = 20_000;
     private static final int READ_TIMEOUT_MS = 30_000;
     private static final long FAILURE_RETRY_COOLDOWN_MS = 15L * 60L * 1000L;
+    private static final long INSTALL_COMPLETION_TIMEOUT_MS = 10L * 60L * 1000L;
+    private static final long STARTUP_HEALTH_TIMEOUT_MS = 45L * 1000L;
+    private static final long HEALTH_WINDOW_MS = 3L * 60L * 1000L;
 
     private final Activity activity;
     private final SharedPreferences preferences;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final AtomicBoolean updateInFlight = new AtomicBoolean(false);
+    private final AtomicBoolean healthEvaluationScheduled = new AtomicBoolean(false);
     private final StatusListener listener;
 
     public AppUpdateManager(Activity activity, StatusListener listener) {
         this.activity = activity;
         this.listener = listener;
         this.preferences = activity.getSharedPreferences(PREFERENCES, Activity.MODE_PRIVATE);
+        reconcileInstalledVersion();
+        resetProcessHealthSignals();
     }
 
     public String getStatusJson() {
         long currentVersionCode = getCurrentVersionCode();
         long targetVersionCode = preferences.getLong("targetVersionCode", 0);
+        reconcileInstalledVersion();
+        evaluateHealth(false);
         String status = preferences.getString("status", "idle");
-        if (targetVersionCode > 0 && currentVersionCode >= targetVersionCode && !"up-to-date".equals(status)) {
+        long healthRequiredVersionCode = preferences.getLong("healthRequiredVersionCode", 0);
+        if (
+            targetVersionCode > 0
+            && currentVersionCode >= targetVersionCode
+            && healthRequiredVersionCode != targetVersionCode
+            && !"up-to-date".equals(status)
+        ) {
             status = "up-to-date";
             preferences.edit()
                 .putString("status", status)
@@ -69,6 +83,7 @@ public final class AppUpdateManager {
                 .apply();
         }
         try {
+            String healthFailureCode = preferences.getString("healthFailureCode", "");
             return new JSONObject()
                 .put("available", true)
                 .put("currentVersionCode", currentVersionCode)
@@ -80,6 +95,14 @@ public final class AppUpdateManager {
                 .put("progressPercentage", preferences.getInt("progressPercentage", 0))
                 .put("lastError", preferences.getString("lastError", ""))
                 .put("updatedAt", preferences.getString("updatedAt", ""))
+                .put("healthFailureCode", healthFailureCode)
+                .put(
+                    "recommendedAction",
+                    healthFailureCode.isEmpty()
+                        ? ""
+                        : AppUpdateHealthContract.recommendedAction(healthFailureCode)
+                )
+                .put("health", buildHealthJson())
                 .toString();
         } catch (JSONException impossible) {
             return "{\"available\":true,\"status\":\"failed\",\"lastError\":\"STATUS_ENCODING_FAILED\"}";
@@ -148,9 +171,15 @@ public final class AppUpdateManager {
     }
 
     public void resumePendingInstall() {
+        reconcileInstalledVersion();
         String status = preferences.getString("status", "");
         if ("installing".equals(status)) {
-            if (getCurrentVersionCode() < preferences.getLong("targetVersionCode", 0)) {
+            long requestedAt = preferences.getLong("installRequestedAtMs", 0);
+            if (
+                getCurrentVersionCode() < preferences.getLong("targetVersionCode", 0)
+                && requestedAt > 0
+                && System.currentTimeMillis() - requestedAt >= INSTALL_COMPLETION_TIMEOUT_MS
+            ) {
                 fail("INSTALL_NOT_COMPLETED");
             }
             return;
@@ -166,6 +195,67 @@ public final class AppUpdateManager {
             requestInstall(apk);
         } catch (Exception error) {
             fail("REVALIDATION_FAILED: " + safeMessage(error));
+        }
+    }
+
+    public void reportAppStarted(boolean credentialAvailable) {
+        reconcileInstalledVersion();
+        if (!isHealthTracked()) return;
+        preferences.edit()
+            .putBoolean("healthAppStarted", true)
+            .putBoolean("healthCredentialAvailable", credentialAvailable)
+            .apply();
+        evaluateHealth(true);
+    }
+
+    public void reportWebViewReady() {
+        reconcileInstalledVersion();
+        if (!isHealthTracked()) return;
+        preferences.edit().putBoolean("healthWebViewReady", true).apply();
+        evaluateHealth(true);
+    }
+
+    public void reportSerialHealth(boolean classified, boolean healthy, String errorCode) {
+        reconcileInstalledVersion();
+        if (!isHealthTracked()) return;
+        preferences.edit()
+            .putBoolean("healthSerialClassified", classified)
+            .putBoolean("healthSerialHealthy", classified && healthy)
+            .putString("healthSerialErrorCode", safeErrorCode(errorCode))
+            .apply();
+        evaluateHealth(true);
+    }
+
+    public void reportRuntimeHealth(String healthJson) {
+        reconcileInstalledVersion();
+        if (!isHealthTracked()) return;
+        try {
+            JSONObject source = new JSONObject(healthJson == null ? "" : healthJson);
+            SharedPreferences.Editor editor = preferences.edit()
+                .putBoolean("healthEdgeAgentReady", source.optBoolean("edgeAgentReady", false))
+                .putBoolean("healthStateLoaded", source.optBoolean("stateLoaded", false))
+                .putBoolean(
+                    "healthConfigurationBackupChecked",
+                    source.optBoolean("configurationBackupChecked", false)
+                )
+                .putBoolean(
+                    "healthConfigurationBackupValid",
+                    source.optBoolean("configurationBackupValid", false)
+                )
+                .putBoolean(
+                    "healthCredentialAvailable",
+                    source.optBoolean(
+                        "credentialAvailable",
+                        preferences.getBoolean("healthCredentialAvailable", false)
+                    )
+                );
+            String fatalErrorCode = safeErrorCode(source.optString("fatalErrorCode", ""));
+            if (!fatalErrorCode.isEmpty()) editor.putString("healthFatalErrorCode", fatalErrorCode);
+            editor.apply();
+            evaluateHealth(true);
+        } catch (JSONException error) {
+            preferences.edit().putString("healthFatalErrorCode", "HEALTH_REPORT_INVALID").apply();
+            evaluateHealth(true);
         }
     }
 
@@ -297,6 +387,16 @@ public final class AppUpdateManager {
         Intent installIntent = new Intent(Intent.ACTION_VIEW)
             .setDataAndType(apkUri, "application/vnd.android.package-archive")
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        preferences.edit()
+            .putLong("healthRequiredVersionCode", preferences.getLong("targetVersionCode", 0))
+            .putLong("previousVersionCode", getCurrentVersionCode())
+            .putLong("installRequestedAtMs", System.currentTimeMillis())
+            .remove("healthStartedAtMs")
+            .remove("healthStartupDeadlineMs")
+            .remove("healthDeadlineMs")
+            .remove("healthCheckedAt")
+            .remove("healthFailureCode")
+            .apply();
         saveStatus("installing", 100, "");
         activity.startActivity(installIntent);
     }
@@ -346,6 +446,186 @@ public final class AppUpdateManager {
 
     private void notifyStatusChanged() {
         if (listener != null) listener.onStatusChanged(getStatusJson());
+    }
+
+    private void reconcileInstalledVersion() {
+        long currentVersionCode = getCurrentVersionCode();
+        long targetVersionCode = preferences.getLong("targetVersionCode", 0);
+        long requiredVersionCode = preferences.getLong("healthRequiredVersionCode", 0);
+        String status = preferences.getString("status", "idle");
+        if (
+            requiredVersionCode == currentVersionCode
+            && (AppUpdateHealthContract.PENDING.equals(status) || AppUpdateHealthContract.DEGRADED.equals(status))
+        ) {
+            scheduleHealthEvaluations();
+            return;
+        }
+        if (
+            targetVersionCode <= 0
+            || currentVersionCode < targetVersionCode
+            || requiredVersionCode != targetVersionCode
+            || isHealthStatus(status)
+        ) {
+            return;
+        }
+
+        long now = System.currentTimeMillis();
+        preferences.edit()
+            .putString("status", AppUpdateHealthContract.PENDING)
+            .putInt("progressPercentage", 100)
+            .putString("lastError", "")
+            .putString("updatedAt", java.time.Instant.ofEpochMilli(now).toString())
+            .putLong("healthStartedAtMs", now)
+            .putLong("healthStartupDeadlineMs", now + STARTUP_HEALTH_TIMEOUT_MS)
+            .putLong("healthDeadlineMs", now + HEALTH_WINDOW_MS)
+            .putBoolean("healthAppStarted", true)
+            .putBoolean("healthWebViewReady", false)
+            .putBoolean("healthEdgeAgentReady", false)
+            .putBoolean("healthStateLoaded", false)
+            .putBoolean("healthConfigurationBackupChecked", false)
+            .putBoolean("healthConfigurationBackupValid", false)
+            .putBoolean("healthCredentialAvailable", false)
+            .putBoolean("healthSerialClassified", false)
+            .putBoolean("healthSerialHealthy", false)
+            .putString("healthSerialErrorCode", "")
+            .putString("healthFatalErrorCode", "")
+            .putString("healthFailureCode", "")
+            .putString("healthCheckedAt", "")
+            .apply();
+        scheduleHealthEvaluations();
+    }
+
+    private boolean isHealthTracked() {
+        return preferences.getLong("healthRequiredVersionCode", 0) == getCurrentVersionCode()
+            && isHealthStatus(preferences.getString("status", ""));
+    }
+
+    private void resetProcessHealthSignals() {
+        if (!AppUpdateHealthContract.PENDING.equals(preferences.getString("status", ""))) return;
+        preferences.edit()
+            .putBoolean("healthAppStarted", true)
+            .putBoolean("healthWebViewReady", false)
+            .putBoolean("healthEdgeAgentReady", false)
+            .putBoolean("healthStateLoaded", false)
+            .putBoolean("healthConfigurationBackupChecked", false)
+            .putBoolean("healthConfigurationBackupValid", false)
+            .putBoolean("healthCredentialAvailable", false)
+            .putBoolean("healthSerialClassified", false)
+            .putBoolean("healthSerialHealthy", false)
+            .putString("healthSerialErrorCode", "")
+            .putString("healthFatalErrorCode", "")
+            .apply();
+    }
+
+    private static boolean isHealthStatus(String status) {
+        return AppUpdateHealthContract.PENDING.equals(status)
+            || AppUpdateHealthContract.HEALTHY.equals(status)
+            || AppUpdateHealthContract.DEGRADED.equals(status)
+            || AppUpdateHealthContract.FAILED.equals(status);
+    }
+
+    private void evaluateHealth(boolean notify) {
+        String currentStatus = preferences.getString("status", "");
+        if (!isHealthTracked() || AppUpdateHealthContract.FAILED.equals(currentStatus)) return;
+
+        AppUpdateHealthContract.Signals signals = new AppUpdateHealthContract.Signals();
+        signals.appStarted = preferences.getBoolean("healthAppStarted", false);
+        signals.webViewReady = preferences.getBoolean("healthWebViewReady", false);
+        signals.edgeAgentReady = preferences.getBoolean("healthEdgeAgentReady", false);
+        signals.stateLoaded = preferences.getBoolean("healthStateLoaded", false);
+        signals.configurationBackupChecked = preferences.getBoolean(
+            "healthConfigurationBackupChecked",
+            false
+        );
+        signals.configurationBackupValid = preferences.getBoolean(
+            "healthConfigurationBackupValid",
+            false
+        );
+        signals.credentialAvailable = preferences.getBoolean("healthCredentialAvailable", false);
+        signals.serialClassified = preferences.getBoolean("healthSerialClassified", false);
+        signals.serialHealthy = preferences.getBoolean("healthSerialHealthy", false);
+        signals.serialErrorCode = preferences.getString("healthSerialErrorCode", "");
+        signals.fatalErrorCode = preferences.getString("healthFatalErrorCode", "");
+
+        AppUpdateHealthContract.Evaluation evaluation = AppUpdateHealthContract.evaluate(
+            System.currentTimeMillis(),
+            preferences.getLong("healthStartupDeadlineMs", 0),
+            preferences.getLong("healthDeadlineMs", 0),
+            signals
+        );
+        String previousFailureCode = preferences.getString("healthFailureCode", "");
+        if (
+            evaluation.status.equals(currentStatus)
+            && evaluation.errorCode.equals(previousFailureCode)
+        ) {
+            return;
+        }
+
+        String checkedAt = java.time.Instant.now().toString();
+        preferences.edit()
+            .putString("status", evaluation.status)
+            .putString("healthFailureCode", evaluation.errorCode)
+            .putString(
+                "lastError",
+                AppUpdateHealthContract.HEALTHY.equals(evaluation.status) ? "" : evaluation.errorCode
+            )
+            .putString("healthCheckedAt", checkedAt)
+            .putString("updatedAt", checkedAt)
+            .apply();
+        if (notify) notifyStatusChanged();
+    }
+
+    private void scheduleHealthEvaluations() {
+        if (!healthEvaluationScheduled.compareAndSet(false, true)) return;
+        executor.execute(() -> {
+            try {
+                waitUntil(preferences.getLong("healthStartupDeadlineMs", 0));
+                evaluateHealth(true);
+                waitUntil(preferences.getLong("healthDeadlineMs", 0));
+                evaluateHealth(true);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+        });
+    }
+
+    private static void waitUntil(long deadlineMs) throws InterruptedException {
+        long remaining = deadlineMs - System.currentTimeMillis();
+        if (remaining > 0) Thread.sleep(remaining);
+    }
+
+    private JSONObject buildHealthJson() throws JSONException {
+        return new JSONObject()
+            .put("appStarted", preferences.getBoolean("healthAppStarted", false))
+            .put("webViewReady", preferences.getBoolean("healthWebViewReady", false))
+            .put("edgeAgentReady", preferences.getBoolean("healthEdgeAgentReady", false))
+            .put("stateLoaded", preferences.getBoolean("healthStateLoaded", false))
+            .put(
+                "configurationBackupChecked",
+                preferences.getBoolean("healthConfigurationBackupChecked", false)
+            )
+            .put(
+                "configurationBackupValid",
+                preferences.getBoolean("healthConfigurationBackupValid", false)
+            )
+            .put("credentialAvailable", preferences.getBoolean("healthCredentialAvailable", false))
+            .put("serialClassified", preferences.getBoolean("healthSerialClassified", false))
+            .put("serialHealthy", preferences.getBoolean("healthSerialHealthy", false))
+            .put("serialErrorCode", preferences.getString("healthSerialErrorCode", ""))
+            .put("startedAt", instantFromPreference("healthStartedAtMs"))
+            .put("startupDeadlineAt", instantFromPreference("healthStartupDeadlineMs"))
+            .put("deadlineAt", instantFromPreference("healthDeadlineMs"))
+            .put("checkedAt", preferences.getString("healthCheckedAt", ""));
+    }
+
+    private String instantFromPreference(String key) {
+        long value = preferences.getLong(key, 0);
+        return value > 0 ? java.time.Instant.ofEpochMilli(value).toString() : "";
+    }
+
+    private static String safeErrorCode(String value) {
+        String normalized = value == null ? "" : value.trim().toUpperCase();
+        return normalized.matches("^[A-Z0-9_]{1,80}$") ? normalized : "";
     }
 
     private long getCurrentVersionCode() {
