@@ -59,6 +59,51 @@ para a mais antiga:
 
 ## Registro
 
+### 2026-07-21 - APK 2.0.31-lab instalado no KS1062
+
+**Base:** release `v2.0.31-lab`, `versionCode 31`, commit de produto
+`cb2fc2b16ced77f3f63136e3686ce8e050f48926`
+
+**O que mudou**
+
+- A instalacao antiga `2.0.8-lab`, assinada com chave debug, foi preservada em
+  backup e substituida pelo APK lab assinado.
+- O estado local foi migrado da origem WebView antiga para a origem segura do
+  novo app, sem carregar URL HTTP ou chave de dispositivo no frontend.
+- A home do Kiosk V4 foi aberta e os gates locais de versao, processo, camera,
+  serial e persistencia foram verificados.
+
+**Por que**
+
+- Assinaturas diferentes impediam atualizacao direta e uma reinstalacao vazia
+  perderia o contexto operacional do equipamento.
+
+**Impacto**
+
+- O armario agora executa `2.0.31-lab` e preserva tres destinatarios, 38
+  entregas e 18 entradas de auditoria.
+- O modo local esta disponivel, mas sincronizacao remota, health check e rollout
+  permanecem bloqueados ate o backend HTTPS e o HMAC serem provisionados.
+
+**Arquivos**
+
+- `docs/RELATORIO-CONSOLIDADO-IMPLEMENTACAO-DEPLOY-2026-07-21.md`
+- `docs/KIOSK-V4-PILOTO-CONTROLADO.md`
+- `docs/PLANO-IMPLEMENTACAO-MELHORIAS-REDESIGN-2026-07-20.md`
+- `docs/HISTORICO-COMPLETO-DE-MELHORIAS.md`
+- `docs/README.md`
+- `docs/UPDATES.md`
+
+**Validacao**
+
+- APK e checksum conferidos antes da instalacao.
+- LevelDB relido depois da migracao com as contagens esperadas.
+- `pilot-check` confirmou `2.0.31-lab`, processo ativo e serial presente.
+- Home V4 conferida visualmente; nenhuma porta foi acionada.
+
+**Referencia:** [release `v2.0.31-lab`](https://github.com/PredditaTi/Locker-Preddita/releases/tag/v2.0.31-lab)
+e [PR #26](https://github.com/PredditaTi/Locker-Preddita/pull/26).
+
 ### 2026-07-21 - Relatorio consolidado e deploy controlado iniciados
 
 **Base:** produto `2.0.31-lab`, release `v2.0.31-lab`, branch

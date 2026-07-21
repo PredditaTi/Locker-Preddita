@@ -644,6 +644,10 @@ processo de acesso e eliminacao do titular.
   assinado foi publicado na prerelease imutavel `v2.0.31-lab`, com assinatura
   v2 e checksum conferidos. KS1062 e observacao autorizada continuam como gates
   externos.
+- O APK foi instalado em um KS1062 piloto depois de backup integral e troca da
+  assinatura debug pela chave lab. O estado local foi migrado para a origem
+  WebView segura e o `pilot-check` confirmou versao, processo e serial sem
+  acionar portas. Backend HTTPS, HMAC e matriz fisica continuam pendentes.
 
 ## Evolucao de dados e compatibilidade
 

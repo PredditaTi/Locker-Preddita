@@ -515,8 +515,9 @@ que aumentam escopo, dados pessoais ou superficie de ataque.
 `2.0.31-lab`, `versionCode 31`, schema `13`. Metricas sem PII, agregacao no
 Admin, preflight bloqueante, verificacao ADB somente leitura e runbook do
 piloto estao implementados. O APK assinado foi publicado na prerelease
-`v2.0.31-lab` e seu checksum foi conferido. A matriz abaixo continua pendente
-porque exige instalacao em KS1062 comissionado e usuarios autorizados. Consulte
+`v2.0.31-lab`, seu checksum foi conferido e ele foi instalado em um KS1062 com
+o estado local migrado. O `pilot-check` passou sem atuacao. Backend HTTPS, HMAC
+no Keystore e a matriz abaixo continuam pendentes. Consulte
 [KIOSK-V4-PILOTO-CONTROLADO.md](KIOSK-V4-PILOTO-CONTROLADO.md).
 
 ### Piloto obrigatorio
@@ -640,6 +641,6 @@ As partes 1 a 7 estarao concluidas quando:
 
 ## Proxima acao recomendada
 
-Instalar o APK assinado `2.0.31-lab` em um unico KS1062 comissionado e executar
-o preflight e a matriz da **Parte 8**. Nenhum recurso condicional deve entrar
-antes dessa evidencia.
+Publicar o Admin Online `2.0.31-lab` com HTTPS, provisionar HMAC no Android
+Keystore e executar o preflight do servidor e a matriz da **Parte 8**. Nenhum
+recurso condicional deve entrar antes dessa evidencia.

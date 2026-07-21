@@ -147,8 +147,19 @@ download independente do artefato.
   foram preservados fora do repositorio, com acesso restrito e checksums.
 - O snapshot remoto contem tres moradores e nenhum comando pendente. Nomes,
   unidades, credenciais e demais dados pessoais nao foram registrados aqui.
+- A pedido do responsavel presente no equipamento, a troca local foi executada
+  depois do backup, mesmo com o backend HTTPS ainda pendente.
+- O pacote antigo foi removido porque sua assinatura debug era incompativel com
+  a chave lab. O APK imutavel `2.0.31-lab`, `versionCode 31`, foi instalado.
+- O estado foi migrado da origem WebView legada `file://` para a origem segura
+  `https://appassets.androidplatform.net`, sem copiar URL HTTP ou chave para o
+  frontend.
+- A leitura posterior confirmou tres destinatarios, 38 entregas e 18 entradas
+  de auditoria no novo LevelDB.
+- A home do Kiosk V4 foi conferida no painel; processo, camera, serial e app em
+  primeiro plano foram confirmados. O `pilot-check` terminou com sucesso.
 
-Nenhuma porta foi acionada durante o diagnostico ou o backup.
+Nenhuma porta foi acionada durante diagnostico, backup, migracao ou validacao.
 
 ## Ordem segura do deploy
 
@@ -177,6 +188,12 @@ Nenhuma porta foi acionada durante o diagnostico ou o backup.
 7. Executar a matriz fisica somente com responsavel presente e criterios de
    parada do runbook.
 
+Os passos 1, 2, 4 e 6 do armario foram concluidos em 21 de julho de 2026. A
+condicao do passo 3 foi excepcionalmente dispensada pelo responsavel presente
+para disponibilizar o novo modo local. O passo 5 permanece bloqueado ate
+existir backend HTTPS valido; portanto sincronizacao remota, update health e
+rollout ainda nao estao aprovados.
+
 ## Rollback
 
 Se o servidor falhar, o backend legado deve permanecer intacto ate a nova
@@ -200,10 +217,11 @@ atuacao para descobrir o estado.
 | Snapshot remoto sanitizado | Concluido |
 | Acesso administrativo ao host HTTPS | Bloqueado por autenticacao externa |
 | Backend `2.0.31-lab`, schema `13` | Pendente |
-| Instalacao do APK no KS1062 | Pendente do backend HTTPS |
+| Instalacao do APK no KS1062 | Concluido em modo local |
+| Migracao e leitura do estado local | Concluido |
+| `pilot-check` ADB sem atuacao | Concluido |
 | Provisionamento HMAC no Keystore | Pendente do backend HTTPS |
-| Preflight e matriz fisica | Pendente |
+| Preflight do servidor e matriz fisica | Pendente |
 
 Este quadro deve ser atualizado apos cada acao. Um gate pendente nao pode ser
 marcado como concluido apenas porque o codigo ou o build passou em laboratorio.
-

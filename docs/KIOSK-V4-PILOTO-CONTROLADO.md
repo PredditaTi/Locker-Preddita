@@ -35,6 +35,19 @@ em 21 de julho de 2026, a partir do commit
 - Conferencia independente: APK e arquivo `.sha256` baixados da release; o
   comando `shasum -a 256 -c` retornou `OK`.
 
+### Evidencia de instalacao concluida
+
+- [x] APK `2.0.31-lab`, `versionCode 31`, instalado em um KS1062 piloto.
+- [x] Backup do APK antigo e do estado criado e conferido antes da troca de
+  assinatura.
+- [x] Tres destinatarios, 38 entregas e 18 entradas de auditoria migrados da
+  origem `file://` para `https://appassets.androidplatform.net`.
+- [x] Home V4, processo, camera e serial `/dev/ttyS5` conferidos.
+- [x] `pilot-check` concluido sem acionar portas.
+
+O backend HTTPS e o HMAC no Android Keystore ainda nao estao provisionados. A
+instalacao local nao conclui health check, rollout nem a matriz fisica.
+
 ### Evidencia em equipamento ainda obrigatoria
 
 - [ ] Locker comissionado e autorizado para o piloto.
