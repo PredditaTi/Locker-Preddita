@@ -286,11 +286,10 @@ Criterios de aceite:
 
 **Esforco relativo:** medio.
 
-**Status em 20/07/2026:** implementacao tecnica concluida. A home V4 esta no
-fluxo real; as demais telas permanecem como prototipos locais sem side effects.
-Referencias, metricas, licencas e reproducao estao em
-[KIOSK-V4-FUNDACAO-VISUAL.md](KIOSK-V4-FUNDACAO-VISUAL.md). O inicio da Parte 3
-depende da aprovacao visual das cinco referencias pelo responsavel do produto.
+**Status em 20/07/2026:** concluida e aprovada pelo responsavel do produto. A
+home V4 entrou no fluxo real e as cinco referencias orientaram a integracao da
+Parte 3. Referencias, metricas, licencas e reproducao estao em
+[KIOSK-V4-FUNDACAO-VISUAL.md](KIOSK-V4-FUNDACAO-VISUAL.md).
 
 ## Parte 3 - Redesign completo das jornadas publicas
 
@@ -299,19 +298,19 @@ excepcionais, mantendo os contratos fisicos atuais.
 
 Tarefas:
 
-- [ ] Refatorar `publicKioskUi.jsx` em componentes de tela, teclado, barra de
+- [x] Refatorar `publicKioskUi.jsx` em componentes de tela, teclado, barra de
   acao e estado de porta reutilizaveis.
-- [ ] Remover JSX publico legado ainda duplicado em `App.jsx`.
-- [ ] Aplicar uma decisao por tela em apartamento, confirmacao, porta e sucesso.
-- [ ] Transformar PIN e QR em modos de um controle segmentado.
-- [ ] Criar tela de espera com mensagem contextual e sem mudanca de layout.
-- [ ] Criar componentes unicos para erro, timeout, indisponibilidade e
+- [x] Remover JSX publico legado ainda duplicado em `App.jsx`.
+- [x] Aplicar uma decisao por tela em apartamento, confirmacao, porta e sucesso.
+- [x] Transformar PIN e QR em modos de um controle segmentado.
+- [x] Criar tela de espera com mensagem contextual e sem mudanca de layout.
+- [x] Criar componentes unicos para erro, timeout, indisponibilidade e
   cancelamento seguro.
-- [ ] Implementar retorno automatico com limpeza de camera, timers e estado.
-- [ ] Proibir `window.location` e reload como mecanismo de navegacao.
-- [ ] Garantir que nomes, contatos e credenciais nao aparecam fora do momento
+- [x] Implementar retorno automatico com limpeza de camera, timers e estado.
+- [x] Proibir `window.location` e reload como mecanismo de navegacao.
+- [x] Garantir que nomes, contatos e credenciais nao aparecam fora do momento
   estritamente necessario.
-- [ ] Atualizar screenshots e E2E da jornada completa.
+- [x] Atualizar screenshots e E2E da jornada completa.
 
 Criterios de aceite:
 
@@ -326,6 +325,13 @@ Criterios de aceite:
 - Usuario consegue retornar ou cancelar sem deixar porta aberta sem orientacao.
 
 **Esforco relativo:** grande.
+
+**Status em 20/07/2026:** implementacao tecnica concluida. Entrega pequena,
+fallback grande, retirada por PIN/QR, cancelamento seguro, timeout, quatro
+viewports e limpeza de credenciais estao cobertos. Evidencias, metricas e
+reproducao estao em
+[KIOSK-V4-JORNADAS-PUBLICAS.md](KIOSK-V4-JORNADAS-PUBLICAS.md). A validacao em
+hardware real permanece como gate do piloto.
 
 ## Parte 4 - Orientacao sonora e acessibilidade
 

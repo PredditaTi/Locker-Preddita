@@ -22,6 +22,8 @@ Para entender a versao atual antes de alterar codigo, leia:
   modo legado.
 - `docs/API-CONTRACTS-E2E.md`: contrato consumidor-servidor e jornada completa
   do kiosk no Playwright.
+- `docs/KIOSK-V4-JORNADAS-PUBLICAS.md`: telas reais, contratos fisicos,
+  screenshots e metricas do fluxo publico V4.
 - `docs/PRIVACY-DATA-LIFECYCLE.md`: retencao, anonimização e controles do
   titular.
 

@@ -1,0 +1,51 @@
+{
+  "capturedAt": "2026-07-21T00:39:51.702Z",
+  "viewport": {
+    "width": 1024,
+    "height": 600,
+    "deviceScaleFactor": 1
+  },
+  "firstScreen": {
+    "readyMs": 293.4,
+    "domContentLoadedMs": 105.9,
+    "loadMs": 106,
+    "firstContentfulPaintMs": 200
+  },
+  "bundle": {
+    "totalBytes": 953710,
+    "totalGzipBytes": 319470,
+    "files": [
+      {
+        "path": "assets/atkinson-hyperlegible-next-latin-ext-wght-normal-C6vrW8VD.woff2",
+        "bytes": 19092,
+        "gzipBytes": 19120
+      },
+      {
+        "path": "assets/atkinson-hyperlegible-next-latin-wght-normal-BcXVPD7q.woff2",
+        "bytes": 33996,
+        "gzipBytes": 34029
+      },
+      {
+        "path": "assets/index-BBVQtOby.css",
+        "bytes": 78866,
+        "gzipBytes": 14378
+      },
+      {
+        "path": "assets/index-C9eAngGz.js",
+        "bytes": 462911,
+        "gzipBytes": 147737
+      },
+      {
+        "path": "assets/mqtt.esm-BJFWlyHA.js",
+        "bytes": 357726,
+        "gzipBytes": 103583
+      },
+      {
+        "path": "index.html",
+        "bytes": 1119,
+        "gzipBytes": 623
+      }
+    ]
+  },
+  "consoleErrors": []
+}

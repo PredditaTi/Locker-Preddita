@@ -12,8 +12,9 @@ a Parte 3.
 **Viewport de referencia:** `1024x600`, escala `1x`, Chromium headless e
 movimento reduzido.
 
-**Status:** implementacao tecnica concluida; as cinco referencias aguardam
-aprovacao visual do responsavel do produto antes da Parte 3.
+**Status:** concluida e aprovada pelo responsavel do produto em 20/07/2026. As
+jornadas reais integradas estao em
+[KIOSK-V4-JORNADAS-PUBLICAS.md](KIOSK-V4-JORNADAS-PUBLICAS.md).
 
 ## O que entrou no produto
 
@@ -63,9 +64,9 @@ transicao de 80 ms e e removido quando `prefers-reduced-motion` esta ativo.
 
 ## Gate visual da Parte 3
 
-As cinco telas abaixo sao prototipos de produto em `1024x600`. Aprovacao
-visual nao significa aprovacao de regra fisica; a integracao com os fluxos
-reais acontece na Parte 3 e continua sujeita as provas de porta.
+As cinco telas abaixo sao prototipos de produto em `1024x600`, aprovados em
+20/07/2026. A aprovacao visual orientou a Parte 3, sem substituir as provas de
+porta exigidas na integracao real.
 
 | Ordem | Tela | Referencia |
 | --- | --- | --- |
@@ -124,9 +125,8 @@ zero erro de console.
 
 ## Limites desta parte
 
-- somente a home substitui a composicao visual V3 no fluxo real;
-- apartamento, porta, PIN e sucesso ainda sao referencias sem side effects;
+- esta pagina preserva a decisao e os prototipos da fundacao; a referencia
+  operacional atual e a documentacao das jornadas publicas da Parte 3;
 - audio permanece desabilitado ate a Parte 4;
 - nenhum contrato, schema, versao, canal serial ou regra de porta mudou;
-- o aumento de bundle deve ser reavaliado quando os estilos publicos V3 forem
-  removidos na Parte 3.
+- os estilos e o JSX publicos V3 foram removidos na Parte 3.

@@ -8,19 +8,24 @@ const NUMBER_PAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '
 
 function NumberPad({ onKey, onBackspace, onClear, className = '' }) {
   return (
-    <div className={joinClasses('public-number-pad', className)} aria-label="Teclado numerico">
+    <div className={joinClasses('public-number-pad', 'kiosk-v4-keypad', className)} aria-label="Teclado numerico">
       {NUMBER_PAD_KEYS.map((key) => (
         <button
           key={key}
           type="button"
-          className={joinClasses('public-number-key', key === 'clear' || key === 'backspace' ? 'is-muted' : '')}
+          className={joinClasses('public-number-key', 'kiosk-v4-key', key === 'clear' || key === 'backspace' ? 'is-command' : '')}
+          aria-label={key === 'clear' ? 'Limpar' : key === 'backspace' ? 'Apagar' : key}
           onClick={() => {
             if (key === 'clear') onClear();
             else if (key === 'backspace') onBackspace();
             else onKey(key);
           }}
         >
-          {key === 'clear' ? 'Limpar' : key === 'backspace' ? 'Apagar' : key}
+          {key === 'clear'
+            ? 'Limpar'
+            : key === 'backspace'
+            ? <KioskIcon icon={KioskIcons.delete} />
+            : key}
         </button>
       ))}
     </div>
@@ -156,6 +161,63 @@ export function KioskHelpDialog({ onClose }) {
   );
 }
 
+export function KioskNoticeDialog({ tone = 'warn', title, text, onClose }) {
+  const dialogRef = useRef(null);
+
+  useEffect(() => {
+    const previousFocus = document.activeElement;
+    const closeButton = dialogRef.current.querySelector('button');
+    closeButton?.focus();
+
+    const handleKeyDown = (event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      onClose();
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      previousFocus?.focus();
+    };
+  }, [onClose]);
+
+  return (
+    <div className="kiosk-v4-notice-backdrop" role="presentation">
+      <section
+        ref={dialogRef}
+        className={joinClasses('kiosk-v4-notice', `is-${tone}`)}
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="kiosk-v4-notice-title"
+      >
+        <KioskIcon
+          icon={tone === 'danger' ? KioskIcons.warning : KioskIcons.shield}
+          className="kiosk-v4-notice-icon"
+        />
+        <div>
+          <p>{tone === 'danger' ? 'Nao foi possivel continuar' : 'Atencao necessaria'}</p>
+          <h2 id="kiosk-v4-notice-title">{title}</h2>
+          <strong>{text}</strong>
+        </div>
+        <button type="button" onClick={onClose}>Entendi</button>
+      </section>
+    </div>
+  );
+}
+
+export function KioskFlowFrame({ siteName, stepLabel, className = '', children }) {
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
+
+  return (
+    <section className={joinClasses('kiosk-v4-flow', className)}>
+      <KioskTopBar siteName={siteName} stepLabel={stepLabel} onHelp={() => setIsHelpOpen(true)} />
+      {children}
+      {isHelpOpen ? <KioskHelpDialog onClose={() => setIsHelpOpen(false)} /> : null}
+    </section>
+  );
+}
+
 export function PublicHome({ siteName, onCourier, onResident }) {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
 
@@ -195,7 +257,8 @@ export function PublicHome({ siteName, onCourier, onResident }) {
 
 export function PublicBackButton({ onClick }) {
   return (
-    <button type="button" className="public-back-button" onClick={onClick}>
+    <button type="button" className="public-back-button kiosk-v4-flow-back" onClick={onClick}>
+      <KioskIcon icon={KioskIcons.arrowLeft} />
       Voltar
     </button>
   );
@@ -213,73 +276,84 @@ export function CourierApartmentStep({
   onBack,
 }) {
   return (
-    <section className="public-kiosk-screen public-kiosk-screen--apartment">
-      <header className="public-kiosk-header">
-        <div>
-          <span className="public-kiosk-site">{tenantName}</span>
-          <h1>{COURIER_COPY.apartmentTitle}</h1>
-          <p>{COURIER_COPY.apartmentSubtitle}</p>
-        </div>
-        <PublicBackButton onClick={onBack} />
-      </header>
+    <KioskFlowFrame
+      siteName={tenantName}
+      stepLabel="Entrega · Apartamento"
+      className="public-kiosk-screen public-kiosk-screen--apartment kiosk-v4-flow--apartment"
+    >
+      <main className="kiosk-v4-flow-main kiosk-v4-flow-main--apartment">
+        <header className="kiosk-v4-flow-heading">
+          <div>
+            <p>Entrega</p>
+            <h1>{COURIER_COPY.apartmentTitle}</h1>
+          </div>
+          <PublicBackButton onClick={onBack} />
+        </header>
 
-      <div className="public-apartment-layout">
-        <section className="public-apartment-input">
+        <section className="public-apartment-input kiosk-v4-apartment-entry">
           <label htmlFor="public-apartment-search">Apartamento</label>
           <input
             id="public-apartment-search"
             value={search}
             inputMode="numeric"
-            placeholder="000"
-            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder="---"
+            onChange={(event) => onSearchChange(event.target.value.replace(/\D/g, '').slice(0, 8))}
           />
           <NumberPad onKey={onKey} onBackspace={onBackspace} onClear={onClear} />
         </section>
 
-        <section className="public-apartment-results" aria-label="Apartamentos encontrados">
-          <span className="public-result-count">{recipients.length} resultado{recipients.length === 1 ? '' : 's'}</span>
-          <div className="public-apartment-grid">
+        <section className="public-apartment-results kiosk-v4-apartment-results" aria-label="Apartamentos encontrados">
+          <p>{recipients.length} apartamento{recipients.length === 1 ? '' : 's'} encontrado{recipients.length === 1 ? '' : 's'}</p>
+          <div className="public-apartment-grid kiosk-v4-apartment-list">
             {recipients.map((recipient) => (
               <button key={recipient.id} type="button" className="public-apartment-card" onClick={() => onSelectRecipient(recipient.id)}>
                 {formatRecipientApartment(recipient)}
+                <KioskIcon icon={KioskIcons.arrowRight} />
               </button>
             ))}
             {recipients.length === 0 ? (
-              <div className="public-empty-message">Nenhum apartamento encontrado.</div>
+              <div className="public-empty-message kiosk-v4-empty-state">Nenhum apartamento encontrado.</div>
             ) : null}
           </div>
         </section>
-      </div>
-    </section>
+      </main>
+    </KioskFlowFrame>
   );
 }
 
 export function CourierConfirmStep({ tenantName, recipient, isBusy, onBack, onConfirm }) {
   return (
-    <section className="public-kiosk-screen public-kiosk-screen--confirm">
-      <header className="public-kiosk-header">
-        <div>
-          <span className="public-kiosk-site">{tenantName}</span>
-          <h1>{COURIER_COPY.confirmTitle}</h1>
-          <p>{COURIER_COPY.confirmText}</p>
+    <KioskFlowFrame
+      siteName={tenantName}
+      stepLabel="Entrega · Confirmacao"
+      className="public-kiosk-screen public-kiosk-screen--confirm kiosk-v4-flow--confirm"
+    >
+      <main className="kiosk-v4-flow-main kiosk-v4-flow-main--confirm">
+        <header className="kiosk-v4-flow-heading">
+          <div>
+            <p>Confirme o destino</p>
+            <h1>{COURIER_COPY.confirmTitle}</h1>
+          </div>
+          <PublicBackButton onClick={onBack} />
+        </header>
+        <div className="public-confirm-card kiosk-v4-confirm-value">
+          <span>Apartamento</span>
+          <strong>{recipient ? formatRecipientApartment(recipient) : 'Nao selecionado'}</strong>
         </div>
-        <PublicBackButton onClick={onBack} />
-      </header>
-      <div className="public-confirm-card">
-        <span>Apartamento</span>
-        <strong>{recipient ? formatRecipientApartment(recipient) : 'Nao selecionado'}</strong>
-      </div>
-      <div className="public-action-bar">
-        <button type="button" className="public-secondary-button" onClick={onBack}>Corrigir</button>
-        <button type="button" className="public-primary-button" onClick={onConfirm} disabled={isBusy || !recipient}>
-          {isBusy ? 'Abrindo...' : 'Abrir porta'}
-        </button>
-      </div>
-    </section>
+        <p className="kiosk-v4-confirm-help">{COURIER_COPY.confirmText}</p>
+        <div className="public-action-bar kiosk-v4-flow-actions">
+          <button type="button" className="public-secondary-button" onClick={onBack}>Corrigir</button>
+          <button type="button" className="public-primary-button is-primary" onClick={onConfirm} disabled={isBusy || !recipient} aria-busy={isBusy ? 'true' : undefined}>
+            {isBusy ? 'Abrindo porta...' : 'Abrir porta'}
+          </button>
+        </div>
+      </main>
+    </KioskFlowFrame>
   );
 }
 
 export function CourierDoorStep({
+  tenantName,
   delivery,
   stage,
   secondsLeft,
@@ -288,76 +362,97 @@ export function CourierDoorStep({
   onDoesNotFit,
   onCancel,
 }) {
-  const isWaiting = stage === 'waiting-small-close';
+  const isCancelling = stage === 'cancelling-small-close';
+  const isWaiting = stage === 'waiting-small-close' || isCancelling;
   const isLarge = stage === 'large';
   const isConfirming = stage.includes('confirming');
-  const title = isWaiting ? COURIER_COPY.waitSmallCloseTitle : isLarge ? COURIER_COPY.openLargeTitle : COURIER_COPY.openSmallTitle;
-  const text = isWaiting
+  const title = isCancelling
+    ? 'Feche a porta para cancelar'
+    : isWaiting
+    ? COURIER_COPY.waitSmallCloseTitle
+    : isLarge
+    ? COURIER_COPY.openLargeTitle
+    : COURIER_COPY.openSmallTitle;
+  const text = isCancelling
+    ? 'A reserva sera apagada somente depois da confirmacao fisica de fechamento.'
+    : isWaiting
     ? `${COURIER_COPY.waitSmallCloseText} Restam ${secondsLeft || 60} segundos.`
     : isLarge
     ? COURIER_COPY.openLargeText
     : COURIER_COPY.openSmallText;
 
   return (
-    <section className="public-kiosk-screen public-kiosk-screen--door">
-      <div className="public-door-hero">
-        <span>{title}</span>
-        <strong>Porta {delivery.door}</strong>
-        <p>{text}</p>
-      </div>
-      <div className="public-door-details">
-        <span>Apartamento</span>
-        <strong>{delivery.recipientName}</strong>
-      </div>
-      <div className="public-action-bar">
-        {isWaiting ? (
-          <>
-            <button type="button" className="public-primary-button" disabled>Aguardando fechar</button>
-            <button type="button" className="public-danger-button" onClick={onCancel}>Cancelar</button>
-          </>
-        ) : isConfirming ? (
-          <button type="button" className="public-primary-button" disabled>Verificando porta</button>
-        ) : (
-          <>
-            <button type="button" className="public-primary-button" onClick={onStored} disabled={isBusy}>Item guardado</button>
-            {!isLarge ? (
-              <button type="button" className="public-secondary-button" onClick={onDoesNotFit} disabled={isBusy}>Nao coube</button>
-            ) : null}
-          </>
-        )}
-      </div>
-    </section>
+    <KioskFlowFrame
+      siteName={tenantName}
+      stepLabel={isWaiting ? 'Entrega · Fechamento' : 'Entrega · Porta'}
+      className="public-kiosk-screen public-kiosk-screen--door kiosk-v4-flow--door"
+    >
+      <main className="kiosk-v4-flow-main kiosk-v4-flow-main--door">
+        <div className={joinClasses('kiosk-v4-door-icon', isWaiting || isConfirming ? 'is-waiting' : '')} aria-hidden="true">
+          <KioskIcon icon={isWaiting || isConfirming ? KioskIcons.clock : KioskIcons.door} />
+        </div>
+        <div className="public-door-hero kiosk-v4-door-copy">
+          <span>{title}</span>
+          <strong>Porta {delivery.door}</strong>
+          <p>{text}</p>
+          <small>Destino: {delivery.recipientName}</small>
+        </div>
+        <div className="public-action-bar kiosk-v4-flow-actions kiosk-v4-flow-actions--door">
+          {isWaiting ? (
+            <>
+              <button type="button" className="public-primary-button is-loading" disabled aria-busy="true">
+                {isCancelling ? 'Aguardando porta fechar' : `Aguardando ${secondsLeft || 60}s`}
+              </button>
+              {!isCancelling ? (
+                <button type="button" className="public-danger-button" onClick={onCancel}>Cancelar</button>
+              ) : null}
+            </>
+          ) : isConfirming ? (
+            <button type="button" className="public-primary-button is-loading" disabled aria-busy="true">Verificando fechamento</button>
+          ) : (
+            <>
+              <button type="button" className="public-primary-button is-primary" onClick={onStored} disabled={isBusy}>Item guardado</button>
+              {!isLarge ? (
+                <button type="button" className="public-secondary-button" onClick={onDoesNotFit} disabled={isBusy}>Nao coube</button>
+              ) : null}
+            </>
+          )}
+        </div>
+      </main>
+    </KioskFlowFrame>
   );
 }
 
-export function CourierSuccessStep({ presentation, delivery, qrImage, onNewDelivery, onHome }) {
+export function CourierSuccessStep({ tenantName, presentation, delivery, qrImage, onNewDelivery, onHome }) {
   return (
-    <section className="public-kiosk-screen public-kiosk-screen--success">
-      <div className="public-success-copy">
-        <span>Entrega registrada</span>
-        <h1>{presentation.title}</h1>
-        <p>{presentation.primaryText} {presentation.secondaryText}</p>
-      </div>
-      <div className="public-success-card">
+    <KioskFlowFrame
+      siteName={tenantName}
+      stepLabel="Entrega · Concluida"
+      className="public-kiosk-screen public-kiosk-screen--success kiosk-v4-flow--success"
+    >
+      <main className={joinClasses('kiosk-v4-flow-main kiosk-v4-flow-main--success', presentation.shouldShowCredential ? 'has-credential' : '')}>
+        <KioskIcon icon={KioskIcons.check} className="kiosk-v4-success-icon" />
+        <div className="public-success-copy kiosk-v4-success-copy">
+          <span>Entrega registrada</span>
+          <h1>{presentation.title}</h1>
+          <p>{presentation.primaryText} {presentation.secondaryText}</p>
+        </div>
         {presentation.shouldShowCredential ? (
-          <>
+          <div className="public-success-card kiosk-v4-credential">
             <span>PIN de retirada</span>
             <strong>{delivery.pin}</strong>
             {qrImage ? <img src={qrImage} alt="QR de retirada" /> : null}
-          </>
-        ) : (
-          <>
-            <span>Codigo protegido</span>
-            <strong>Morador avisado</strong>
-            <p>O PIN e o QR ficam salvos no painel e na fila de e-mail.</p>
-          </>
-        )}
-      </div>
-      <div className="public-action-bar">
-        <button type="button" className="public-primary-button" onClick={onNewDelivery}>Nova entrega</button>
-        <button type="button" className="public-secondary-button" onClick={onHome}>Inicio</button>
-      </div>
-    </section>
+          </div>
+        ) : null}
+        <div className="public-action-bar kiosk-v4-flow-actions kiosk-v4-flow-actions--success">
+          <button type="button" className="public-primary-button is-primary" onClick={onNewDelivery}>Nova entrega</button>
+          <button type="button" className="public-secondary-button" onClick={onHome}>
+            <KioskIcon icon={KioskIcons.home} />
+            Inicio
+          </button>
+        </div>
+      </main>
+    </KioskFlowFrame>
   );
 }
 
@@ -369,9 +464,11 @@ export function ResidentPickupStep({
   isBusy,
   qrScannerState,
   activePickup,
+  completedPickup,
   qrVideoRef,
   qrCanvasRef,
   onBack,
+  onHome,
   onModeChange,
   onDigit,
   onClear,
@@ -380,57 +477,116 @@ export function ResidentPickupStep({
   onStartQr,
   onStopQr,
 }) {
-  if (activePickup) {
+  if (completedPickup) {
     return (
-      <section className="public-kiosk-screen public-kiosk-screen--pickup-open">
-        <div className="public-door-hero">
-          <span>{PICKUP_COPY.doorOpenTitle}</span>
-          <strong>Porta {activePickup.door}</strong>
-          <p>{PICKUP_COPY.doorOpenText}</p>
-        </div>
-        <button type="button" className="public-primary-button" onClick={onCompletePickup} disabled={isBusy}>
-          {isBusy ? 'Verificando...' : 'Ja fechei a porta'}
-        </button>
-      </section>
+      <KioskFlowFrame
+        siteName={tenantName}
+        stepLabel="Retirada · Concluida"
+        className="public-kiosk-screen public-kiosk-screen--pickup-success kiosk-v4-flow--success"
+      >
+        <main className="kiosk-v4-flow-main kiosk-v4-flow-main--success">
+          <KioskIcon icon={KioskIcons.check} className="kiosk-v4-success-icon" />
+          <div className="public-success-copy kiosk-v4-success-copy">
+            <span>Porta fechada</span>
+            <h1>Retirada concluida</h1>
+            <p>A encomenda foi retirada e as credenciais temporarias foram apagadas.</p>
+          </div>
+          <div className="public-action-bar kiosk-v4-flow-actions kiosk-v4-flow-actions--success">
+            <button type="button" className="public-primary-button is-primary" onClick={onHome}>
+              <KioskIcon icon={KioskIcons.home} />
+              Inicio
+            </button>
+          </div>
+        </main>
+      </KioskFlowFrame>
     );
   }
 
-  return (
-    <section className="public-kiosk-screen public-kiosk-screen--pickup">
-      <header className="public-kiosk-header">
-        <div>
-          <span className="public-kiosk-site">{tenantName}</span>
-          <h1>{presentation.title}</h1>
-          <p>{presentation.helper}</p>
-        </div>
-        <PublicBackButton onClick={onBack} />
-      </header>
-      <div className="public-pickup-layout">
-        <section className="public-pin-panel">
-          <div className="public-pin-display">{value || '------'}</div>
-          <NumberPad onKey={onDigit} onBackspace={onBackspace} onClear={onClear} className="public-number-pad--pin" />
-          <p className="public-pin-hint" aria-live="polite">
-            {isBusy
-              ? 'Abrindo sua porta...'
-              : presentation.canSubmit
-              ? 'Conferindo o PIN automaticamente.'
-              : 'Digite 6 numeros. A porta abre sozinha.'}
-          </p>
-        </section>
-        <section className="public-qr-panel">
-          <button type="button" className="public-secondary-button" onClick={() => onModeChange(mode === 'pin' ? 'predditaQr' : 'pin')}>
-            {mode === 'pin' ? PICKUP_COPY.qrTitle : 'Usar PIN'}
-          </button>
-          <div className="public-qr-camera">
-            <video ref={qrVideoRef} muted playsInline />
-            <canvas ref={qrCanvasRef} aria-hidden="true" />
-            <p>{qrScannerState.error || qrScannerState.status || PICKUP_COPY.qrText}</p>
+  if (activePickup) {
+    return (
+      <KioskFlowFrame
+        siteName={tenantName}
+        stepLabel="Retirada · Porta"
+        className="public-kiosk-screen public-kiosk-screen--pickup-open kiosk-v4-flow--door"
+      >
+        <main className="kiosk-v4-flow-main kiosk-v4-flow-main--door">
+          <div className={joinClasses('kiosk-v4-door-icon', isBusy ? 'is-waiting' : '')} aria-hidden="true">
+            <KioskIcon icon={isBusy ? KioskIcons.clock : KioskIcons.door} />
           </div>
-          <button type="button" className="public-secondary-button" onClick={qrScannerState.active ? onStopQr : onStartQr}>
-            {qrScannerState.active ? 'Parar camera' : 'Abrir camera'}
+          <div className="public-door-hero kiosk-v4-door-copy">
+            <span>{isBusy ? 'Confirmando fechamento' : PICKUP_COPY.doorOpenTitle}</span>
+            <strong>Porta {activePickup.door}</strong>
+            <p>{PICKUP_COPY.doorOpenText}</p>
+          </div>
+          <div className="public-action-bar kiosk-v4-flow-actions kiosk-v4-flow-actions--door">
+            <button type="button" className={joinClasses('public-primary-button is-primary', isBusy ? 'is-loading' : '')} onClick={onCompletePickup} disabled={isBusy} aria-busy={isBusy ? 'true' : undefined}>
+              {isBusy ? 'Verificando fechamento' : 'Ja fechei a porta'}
+            </button>
+          </div>
+        </main>
+      </KioskFlowFrame>
+    );
+  }
+
+  const isPinMode = mode === 'pin';
+
+  return (
+    <KioskFlowFrame
+      siteName={tenantName}
+      stepLabel={isPinMode ? 'Retirada · PIN' : 'Retirada · QR'}
+      className={joinClasses('public-kiosk-screen public-kiosk-screen--pickup kiosk-v4-flow--pickup', isPinMode ? 'is-pin' : 'is-qr')}
+    >
+      <main className="kiosk-v4-flow-main kiosk-v4-flow-main--pickup">
+        <header className="kiosk-v4-flow-heading">
+          <div>
+            <p>Retirada</p>
+            <h1>{presentation.title}</h1>
+          </div>
+          <PublicBackButton onClick={onBack} />
+        </header>
+
+        <div className="kiosk-v4-mode-switch" role="tablist" aria-label="Modo de retirada">
+          <button type="button" role="tab" aria-selected={isPinMode} className={isPinMode ? 'is-active' : ''} onClick={() => onModeChange('pin')}>
+            PIN
           </button>
-        </section>
-      </div>
-    </section>
+          <button type="button" role="tab" aria-selected={!isPinMode} className={!isPinMode ? 'is-active' : ''} onClick={() => onModeChange('predditaQr')}>
+            QR
+          </button>
+        </div>
+
+        {isPinMode ? (
+          <section className="public-pin-panel kiosk-v4-pin-entry">
+            <output className="public-pin-display kiosk-v4-pin-display" aria-label="PIN informado">
+              {value.padEnd(6, '-').split('').map((digit, index) => (
+                <span key={`${digit}-${index}`}>{digit === '-' ? '-' : '•'}</span>
+              ))}
+            </output>
+            <NumberPad onKey={onDigit} onBackspace={onBackspace} onClear={onClear} className="public-number-pad--pin" />
+            <p className="public-pin-hint" aria-live="polite">
+              {isBusy
+                ? 'Abrindo sua porta...'
+                : presentation.canSubmit
+                ? 'Conferindo o PIN automaticamente.'
+                : 'Digite 6 numeros. A porta abre sozinha.'}
+            </p>
+          </section>
+        ) : (
+          <section className="public-qr-panel kiosk-v4-qr-entry">
+            <div className={joinClasses('public-qr-camera kiosk-v4-qr-camera', qrScannerState.active ? 'is-active' : '')}>
+              <video ref={qrVideoRef} muted playsInline />
+              <canvas ref={qrCanvasRef} aria-hidden="true" />
+              <KioskIcon icon={qrScannerState.active ? KioskIcons.camera : KioskIcons.qr} />
+            </div>
+            <p aria-live="polite">
+              {qrScannerState.error || (qrScannerState.status === 'idle' ? PICKUP_COPY.qrText : qrScannerState.status)}
+            </p>
+            <button type="button" className="public-primary-button is-primary" onClick={qrScannerState.active ? onStopQr : onStartQr}>
+              <KioskIcon icon={KioskIcons.camera} />
+              {qrScannerState.active ? 'Parar camera' : 'Abrir camera'}
+            </button>
+          </section>
+        )}
+      </main>
+    </KioskFlowFrame>
   );
 }

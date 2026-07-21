@@ -59,6 +59,58 @@ para a mais antiga:
 
 ## Registro
 
+### 2026-07-20 - Parte 3 do Kiosk V4 concluida
+
+**Base:** produto `2.0.25-lab`, `versionCode 25`, `schemaVersion 12`, branch
+`codex/kiosk-v4-journeys`
+
+**O que mudou**
+
+- As jornadas reais de entrega, retirada, espera, sucesso e excecao passaram
+  para a linguagem visual V4 aprovada.
+- PIN e QR foram unificados em um controle segmentado; o QR ganhou prova E2E
+  pelo decodificador real com camera simulada.
+- Fallback grande e cancelamento passaram a exigir fechamento comprovado da
+  porta pequena antes de liberar ou apagar a reserva.
+- JSX e CSS publicos V3 duplicados foram removidos.
+- Foram geradas 13 referencias reais em `1024x600`, com gerador e metricas.
+
+**Por que**
+
+- Era necessario concluir o redesign sem enfraquecer as garantias fisicas,
+  tornar erros recuperaveis e impedir cancelamento inseguro com porta aberta.
+
+**Impacto**
+
+- O fluxo publico inteiro usa agora o Kiosk V4; o Admin mantem a composicao
+  operacional existente.
+- O bundle ficou menor que na fundacao V4 apesar das novas jornadas.
+- Versao, schema, protocolo e modelo persistido nao mudaram.
+
+**Arquivos**
+
+- `docs/KIOSK-V4-JORNADAS-PUBLICAS.md`
+- `docs/assets/kiosk-v4-journeys/`
+- `web/src/publicKioskUi.jsx`
+- `web/src/kioskTheme.css`
+- `web/src/App.jsx`
+- `web/e2e/kiosk-flow.spec.js`
+- `web/e2e/kiosk-interactions.spec.js`
+- `web/e2e/capture-kiosk-v4-journeys.mjs`
+- `docs/PLANO-IMPLEMENTACAO-MELHORIAS-REDESIGN-2026-07-20.md`
+- `docs/API-CONTRACTS-E2E.md`
+- `docs/DEVELOPER-RUNBOOK.md`
+
+**Validacao**
+
+- Entrega pequena, porta grande, retirada por PIN e QR e limpeza de credenciais
+  cobertas no E2E.
+- Layout auditado em `1024x600`, `1280x800`, `800x480` e `390x844`.
+- Treze capturas inspecionadas e geradas com zero erro de console.
+- Bundle medido em `953.710 bytes`, ou `319.470 bytes` gzip.
+
+**Referencia:** documentacao da Parte 3 na branch `codex/kiosk-v4-journeys`.
+
 ### 2026-07-20 - Parte 2 do Kiosk V4 implementada
 
 **Base:** produto `2.0.25-lab`, `versionCode 25`, `schemaVersion 12`, branch
