@@ -512,18 +512,19 @@ queda de energia e recuperacao no KS1062 permanecem na Parte 8.
 que aumentam escopo, dados pessoais ou superficie de ataque.
 
 **Status em 22/07/2026:** preparacao de software concluida na release candidata
-`2.0.32-lab`, `versionCode 32`, schema `13`. Metricas sem PII, agregacao no
+`2.0.33-lab`, `versionCode 33`, schema `13`. Metricas sem PII, agregacao no
 Admin, preflight bloqueante, verificacao ADB somente leitura e runbook do
 piloto estao implementados. O APK assinado foi publicado na prerelease
-`v2.0.32-lab`, seu checksum foi conferido e ele foi instalado em um KS1062 com
+`v2.0.33-lab`, seu checksum foi conferido e ele foi instalado em um KS1062 com
 o estado local preservado. Backend HTTPS, Postgres e HMAC no Keystore estao
-operacionais. `pilot-check` passou sem atuacao e o preflight aprovou 9/10
-gates; somente o comissionamento e a matriz abaixo continuam pendentes. Consulte
+operacionais. Os dez canais passaram por prova fechada-aberta-fechada, o
+comissionamento foi salvo e o preflight aprovou 10/10 gates. A matriz de
+jornadas, falhas controladas e observacao abaixo continua pendente. Consulte
 [KIOSK-V4-PILOTO-CONTROLADO.md](KIOSK-V4-PILOTO-CONTROLADO.md).
 
 ### Piloto obrigatorio
 
-- [ ] Instalar em um locker comissionado usando rollout pequeno.
+- [x] Instalar em um locker comissionado usando rollout pequeno.
 - [ ] Executar entrega, fallback de tamanho, retirada PIN e QR.
 - [ ] Testar audio ligado, mudo e reinicio durante uma jornada.
 - [ ] Testar falta de internet, reconexao, queda de energia e restart do app.
@@ -642,6 +643,6 @@ As partes 1 a 7 estarao concluidas quando:
 
 ## Proxima acao recomendada
 
-Executar o comissionamento fisico supervisionado e a matriz da **Parte 8** no
-KS1062 ja provisionado. Nenhum recurso condicional ou ampliacao de rollout deve
+Executar a matriz de jornadas, falhas controladas e observacao da **Parte 8** no
+KS1062 comissionado. Nenhum recurso condicional ou ampliacao de rollout deve
 entrar antes dessa evidencia.

@@ -3,7 +3,7 @@
 ## Escopo deste documento
 
 Este relatorio consolida as alteracoes relevantes feitas no PREDDITA Locker
-desde a recuperacao do codigo ate a candidata atual `2.0.32-lab`. O objetivo e
+desde a recuperacao do codigo ate a candidata atual `2.0.33-lab`. O objetivo e
 permitir que outra pessoa entenda:
 
 - o que foi alterado;
@@ -17,14 +17,14 @@ O documento cobre comportamento, arquitetura, seguranca, dados, operacao,
 testes e entrega. Alteracoes mecanicas de arquivos gerados, lockfiles e bundles
 compilados sao citadas pelo efeito que produzem, sem listar cada linha gerada.
 
-**Estado de referencia:** candidata `2.0.32-lab`, `versionCode 32`,
+**Estado de referencia:** candidata `2.0.33-lab`, `versionCode 33`,
 `schemaVersion 13`, branch `codex/kiosk-v4-pilot-readiness`. O release
 `v2.0.25-lab`, publicado em 16 de julho de 2026, permanece como rollback
 funcional.
 
 ## Resumo executivo
 
-| Area | Situacao recuperada | Situacao na candidata `2.0.32-lab` | Motivo principal |
+| Area | Situacao recuperada | Situacao na candidata `2.0.33-lab` | Motivo principal |
 | --- | --- | --- | --- |
 | Codigo-fonte | Misturado com artefatos e dados da maquina anterior | Repositorio limpo, reproduzivel e versionado | Permitir continuidade e auditoria |
 | Operacao offline | Fila monolitica vulneravel a perda ou corrupcao | Diario duravel por evento e recuperacao idempotente | Nao perder entregas sem internet |
@@ -654,6 +654,13 @@ processo de acesso e eliminacao do titular.
   de health para instalacoes diretas. CI, release assinada, instalacao e
   `pilot-check` passaram; o preflight ficou em 9/10, pendente somente do
   comissionamento e da matriz fisica supervisionada.
+- O primeiro acionamento supervisionado identificou que a placa antiga nao
+  responde ao `0x7E`, embora aplique comandos de configuracao. A
+  `2.0.33-lab`, `versionCode 33`, aceita somente esse timeout como escrita sem
+  ACK; falha de I/O e qualquer comando de abertura continuam bloqueantes.
+- Dez portas passaram por prova fechada-aberta-fechada, o mapa sincronizou no
+  Postgres e o preflight terminou em 10/10. Jornadas e falhas controladas ainda
+  dependem da proxima janela do piloto.
 
 ## Evolucao de dados e compatibilidade
 

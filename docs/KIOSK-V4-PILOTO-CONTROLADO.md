@@ -1,7 +1,7 @@
 # Piloto controlado do Kiosk V4
 
 Este documento encerra a preparacao de laboratorio da Parte 8 e define como a
-equipe deve validar a release candidata `2.0.32-lab` em um KS1062 real. Ele nao
+equipe deve validar a release candidata `2.0.33-lab` em um KS1062 real. Ele nao
 substitui comissionamento, instalacao controlada nem consentimento do local.
 
 ## Estado em 22 de julho de 2026
@@ -14,21 +14,21 @@ substitui comissionamento, instalacao controlada nem consentimento do local.
 - [x] Preflight bloqueante para sinal, serial, comissionamento, HMAC, versao,
   update, rollout e mapa de portas.
 - [x] Verificacao ADB somente leitura, sem acionar portas.
-- [x] Release candidata `2.0.32-lab`, `versionCode 32`, schema `13` preparada.
+- [x] Release candidata `2.0.33-lab`, `versionCode 33`, schema `13` preparada.
 
 ### Evidencia de release concluida
 
 - [x] APK assinado gerado, publicado e checksum conferido.
 
 A prerelease imutavel
-[`v2.0.32-lab`](https://github.com/PredditaTi/Locker-Preddita/releases/tag/v2.0.32-lab)
+[`v2.0.33-lab`](https://github.com/PredditaTi/Locker-Preddita/releases/tag/v2.0.33-lab)
 foi gerada pelo
-[`Release APK` #29890993018](https://github.com/PredditaTi/Locker-Preddita/actions/runs/29890993018)
+[`Release APK` #29892345469](https://github.com/PredditaTi/Locker-Preddita/actions/runs/29892345469)
 em 22 de julho de 2026, a partir do commit
-`ed67288a59805babbc0bb3ff58b90a16bf3d44e2`.
+`7c522d393b404a2aeb41a9e909c756006625cf9e`.
 
-- APK: `PREDDITA-Locker-2.0.32-lab-release.apk`, 3.389.527 bytes.
-- SHA-256: `3189eb983021277af8f9f0170aee04ce5d0f70058b7e574cbbfd75d08cc4e39c`.
+- APK: `PREDDITA-Locker-2.0.33-lab-release.apk`, 3.389.659 bytes.
+- SHA-256: `aeccb866c19a2fb03e85c829d4412160945821ea616911db797bde648c3bdff7`.
 - Assinatura: APK Signature Scheme v2, um signatario, validada por `apksigner`.
 - Certificado SHA-256:
   `5E:D9:93:C1:04:91:D5:FF:58:0D:85:D3:BC:C4:5F:53:CE:21:3F:19:9A:F3:44:D3:79:56:A7:AA:F1:9D:59:2D`.
@@ -37,7 +37,7 @@ em 22 de julho de 2026, a partir do commit
 
 ### Evidencia de instalacao concluida
 
-- [x] APK `2.0.32-lab`, `versionCode 32`, instalado em um KS1062 piloto.
+- [x] APK `2.0.33-lab`, `versionCode 33`, instalado em um KS1062 piloto.
 - [x] Backup do APK antigo e do estado criado e conferido antes da troca de
   assinatura.
 - [x] Tres destinatarios, 38 entregas e 18 entradas de auditoria migrados da
@@ -48,13 +48,15 @@ em 22 de julho de 2026, a partir do commit
 - [x] Credencial HMAC importada no Android Keystore e sincronizacao confirmada.
 - [x] Health nativo confirmou app, WebView, credencial e serial saudaveis.
 
-O preflight do servidor aprovou nove dos dez gates. O unico bloqueio atual e o
-comissionamento fisico `pending`; por isso a matriz abaixo e o rollout para
-outros equipamentos continuam proibidos.
+O primeiro teste revelou que a placa aplica `0x7E` sem devolver ACK. A
+compatibilidade `write-only` foi limitada a esse comando de configuracao na
+`2.0.33-lab`; o teste foi repetido sem retry de abertura. As dez portas passaram
+por ciclos fechada-aberta-fechada, o mapa foi salvo e o preflight aprovou 10/10
+gates. A matriz abaixo e o rollout para outros equipamentos continuam pendentes.
 
 ### Evidencia em equipamento ainda obrigatoria
 
-- [ ] Locker comissionado e autorizado para o piloto.
+- [x] Locker comissionado e autorizado para o piloto.
 - [ ] Matriz de jornadas executada no KS1062.
 - [ ] Falhas de rede, energia, UART e porta reproduzidas com seguranca.
 - [ ] Health check e pausa de rollout observados no equipamento.
@@ -91,7 +93,7 @@ No servidor que possui o estado do locker:
 export PREDDITA_DEVICE_AUTH_MODE=hmac
 node scripts/pilot-preflight.mjs \
   --state admin-online/data/state.json \
-  --expected-version 2.0.32-lab
+  --expected-version 2.0.33-lab
 ```
 
 O comando termina com codigo `2` quando existe bloqueio. No computador ligado
@@ -114,7 +116,7 @@ instalacao e da janela de teste continua obrigatoria.
 ## Sequencia do piloto
 
 1. Publicar o APK pelo workflow `Release APK`, canal `lab`, e conferir
-   certificado e SHA-256 do artefato. Concluido na release `v2.0.32-lab`.
+   certificado e SHA-256 do artefato. Concluido na release `v2.0.33-lab`.
 2. Instalar em um unico locker comissionado. Nao habilitar rollout superior a
    10% nem canal `production`.
 3. Confirmar HMAC, sinal recente, serial aberta, mapa de portas e health check.

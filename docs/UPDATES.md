@@ -86,7 +86,9 @@ para a mais antiga:
 - A configuracao sem ACK pode prosseguir para a abertura fisicamente
   comprovada, sem repetir comandos e sem enfraquecer falhas de UART.
 - Nenhuma porta foi aberta no teste que revelou a incompatibilidade.
-- Release assinada, instalacao e novo teste da porta 1 permanecem como gates.
+- A release assinada foi instalada; dez portas passaram por prova
+  fechada-aberta-fechada e o preflight passou de 9/10 para 10/10.
+- A matriz de jornadas e falhas controladas permanece como proxima etapa.
 
 **Arquivos**
 
@@ -102,7 +104,17 @@ para a mais antiga:
   bloqueante.
 - Testes de protocolo, comissionamento, seguranca de porta, jornada e Edge
   Agent passaram.
-- Build Vite concluido; nova atuacao aguardando APK assinado no KS1062.
+- CI completo e release assinada passaram; APK e checksum foram conferidos.
+- `pilot-check` confirmou `2.0.33-lab`, processo e serial; o mapa sincronizado
+  confirmou board 1, dez canais, polaridade `zeroOpen` e comissionamento
+  `complete`.
+- Preflight do servidor concluiu 10/10 gates. Todos os acionamentos ocorreram
+  uma unica vez por canal, com responsavel presente.
+
+**Referencia:** [release `v2.0.33-lab`](https://github.com/PredditaTi/Locker-Preddita/releases/tag/v2.0.33-lab),
+[CI #29892154122](https://github.com/PredditaTi/Locker-Preddita/actions/runs/29892154122),
+[Release APK #29892345469](https://github.com/PredditaTi/Locker-Preddita/actions/runs/29892345469)
+e [PR #26](https://github.com/PredditaTi/Locker-Preddita/pull/26).
 
 ### 2026-07-22 - Backend HTTPS e candidata 2.0.32-lab provisionados
 

@@ -50,12 +50,12 @@ A versao `2.0.22-lab` e o bootstrap do atualizador e ainda precisa ser instalada
 por ADB nos lockers existentes. Depois dela, releases com `versionCode` maior
 podem usar o rollout do Admin Online.
 
-A candidata atual do Kiosk V4 e `2.0.32-lab`, `versionCode 32`. A prerelease
-imutavel [`v2.0.32-lab`](https://github.com/PredditaTi/Locker-Preddita/releases/tag/v2.0.32-lab)
+A candidata atual do Kiosk V4 e `2.0.33-lab`, `versionCode 33`. A prerelease
+imutavel [`v2.0.33-lab`](https://github.com/PredditaTi/Locker-Preddita/releases/tag/v2.0.33-lab)
 foi publicada em 22 de julho de 2026 pelo workflow
-[#29890993018](https://github.com/PredditaTi/Locker-Preddita/actions/runs/29890993018).
+[#29892345469](https://github.com/PredditaTi/Locker-Preddita/actions/runs/29892345469).
 O APK possui SHA-256
-`3189eb983021277af8f9f0170aee04ce5d0f70058b7e574cbbfd75d08cc4e39c` e a
+`aeccb866c19a2fb03e85c829d4412160945821ea616911db797bde648c3bdff7` e a
 assinatura v2 foi validada com o certificado lab registrado abaixo.
 
 Por manter o sufixo `-lab`, essa release nao pode ser promovida apenas por

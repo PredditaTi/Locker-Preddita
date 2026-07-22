@@ -14,15 +14,15 @@ instalar um locker, operar o Admin Online ou publicar uma nova versao.
 | Item | Valor |
 | --- | --- |
 | Produto | PREDDITA Entregas Locker |
-| Versao do produto | `2.0.32-lab` |
-| Android `versionCode` | `32` |
+| Versao do produto | `2.0.33-lab` |
+| Android `versionCode` | `33` |
 | API `schemaVersion` | `13` |
 | Pacote Android | `com.preddita.entregaslocker` |
 | Hardware validado | KS1062-N-ZY, RK3562, Android 11/13 |
 | Serial prioritaria | `/dev/ttyS5` |
 | Frontend | React 18, Vite 8, Node.js 20.19+ |
 | Backend | Node.js em HTTPS no Railway, Postgres 16; JSON somente para laboratorio |
-| Status | APK `2.0.32-lab` instalado, HMAC no Keystore e backend sincronizado; preflight 9/10, aguardando comissionamento fisico e matriz controlada |
+| Status | APK `2.0.33-lab` instalado, HMAC no Keystore, 10 portas comissionadas e preflight 10/10; matriz de jornadas e falhas controladas ainda pendente |
 
 O estado acima descreve a base funcional. Mudancas apenas documentais feitas
 depois da tag permanecem registradas em [UPDATES.md](UPDATES.md).
@@ -214,7 +214,7 @@ propria.
 
 ## Proximos marcos
 
-1. Comissionamento fisico supervisionado e matriz do piloto no KS1062.
+1. Matriz de jornadas do piloto no KS1062 com usuarios de teste.
 2. Testes controlados de falha de energia, rede, restart e restauracao.
 3. Validacao operacional de SMTP, MQTT e update remoto.
 4. Aprovacao dos prazos e processos de privacidade.

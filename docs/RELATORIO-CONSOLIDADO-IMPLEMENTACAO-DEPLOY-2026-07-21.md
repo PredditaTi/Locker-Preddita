@@ -110,13 +110,13 @@ PREDDITA Locker.
 
 | Item | Valor |
 | --- | --- |
-| Produto | `2.0.32-lab` |
-| Android `versionCode` | `32` |
+| Produto | `2.0.33-lab` |
+| Android `versionCode` | `33` |
 | API `schemaVersion` | `13` |
 | Contrato do Edge Agent | `4` |
-| Release | `v2.0.32-lab` |
-| APK | `PREDDITA-Locker-2.0.32-lab-release.apk` |
-| SHA-256 | `3189eb983021277af8f9f0170aee04ce5d0f70058b7e574cbbfd75d08cc4e39c` |
+| Release | `v2.0.33-lab` |
+| APK | `PREDDITA-Locker-2.0.33-lab-release.apk` |
+| SHA-256 | `aeccb866c19a2fb03e85c829d4412160945821ea616911db797bde648c3bdff7` |
 | Canal | Laboratorio; nao promovido para producao |
 
 A assinatura APK v2 e o certificado lab foram validados pelo workflow e por
@@ -163,6 +163,12 @@ download independente do artefato.
   preservando dados e assinatura.
 - O health nativo confirmou app, WebView, credencial e serial saudaveis. O
   preflight do servidor aprovou 9/10 gates e bloqueou somente o comissionamento.
+- O primeiro teste fisico parou antes da abertura porque a placa nao respondeu
+  ao `0x7E`. A `2.0.33-lab` adicionou compatibilidade restrita com configuracao
+  sem ACK; CI, release e instalacao passaram antes do novo teste.
+- Os dez canais foram abertos uma unica vez, fechados pelo responsavel presente
+  e confirmados individualmente pelo sensor. O mapa foi salvo com polaridade
+  `zeroOpen`, board 1, dez portas e timeout de tres segundos.
 
 Nenhuma porta foi acionada durante diagnostico, backup, migracao ou validacao.
 
@@ -184,7 +190,7 @@ Nenhuma porta foi acionada durante diagnostico, backup, migracao ou validacao.
 1. Confirmar novamente backup, checksum e ausencia de comando remoto pendente.
 2. Parar o app antigo e preservar o LevelDB antes da troca de assinatura.
 3. Desinstalar somente depois que o servidor HTTPS estiver saudavel.
-4. Instalar o APK imutavel `v2.0.32-lab` e restaurar apenas o estado local
+4. Instalar o APK imutavel `v2.0.33-lab` e restaurar apenas o estado local
    necessario, com proprietario e contexto corretos do novo UID.
 5. Provisionar URL HTTPS, `lockerId`, chave HMAC e PIN tecnico diretamente no
    Android; a chave deve ficar nao exportavel no Keystore.
@@ -221,13 +227,14 @@ atuacao para descobrir o estado.
 | Backup consistente do app antigo | Concluido |
 | Snapshot remoto sanitizado | Concluido |
 | Acesso administrativo ao host HTTPS | Concluido no projeto Railway do piloto |
-| Backend `2.0.32-lab`, schema `13` | Concluido com Postgres 16 |
-| Instalacao do APK no KS1062 | Concluido em `2.0.32-lab` |
+| Backend `2.0.33-lab`, schema `13` | Concluido com Postgres 16 |
+| Instalacao do APK no KS1062 | Concluido em `2.0.33-lab` |
 | Migracao e leitura do estado local | Concluido |
 | `pilot-check` ADB sem atuacao | Concluido |
 | Provisionamento HMAC no Keystore | Concluido |
-| Preflight do servidor | 9/10; bloqueio fisico identificado |
-| Comissionamento e matriz fisica | Pendente de acompanhamento presencial |
+| Preflight do servidor | 10/10; concluido apos sincronizacao |
+| Comissionamento fisico | Concluido em dez canais supervisionados |
+| Matriz de jornadas e falhas | Pendente de janela controlada |
 
 Este quadro deve ser atualizado apos cada acao. Um gate pendente nao pode ser
 marcado como concluido apenas porque o codigo ou o build passou em laboratorio.
