@@ -113,6 +113,7 @@ try {
 
 Write-Host "[PREDDITA v2] Teste dos contratos do console tecnico..."
 & $node (Join-Path $root "scripts\diagnostic-console-test.mjs")
+& $node (Join-Path $root "scripts\smart-delivery-telemetry-test.mjs")
 $javaDiagnosticTestOutput = Join-Path ([System.IO.Path]::GetTempPath()) "preddita-diagnostic-contract-test"
 Remove-Item $javaDiagnosticTestOutput -Recurse -Force -ErrorAction SilentlyContinue
 New-Item $javaDiagnosticTestOutput -ItemType Directory | Out-Null

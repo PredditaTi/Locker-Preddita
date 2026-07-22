@@ -16,7 +16,8 @@ diario do locker.
 - bloqueio nativo persistente por 60 segundos depois de cinco tentativas invalidas;
 - sessao web e nativa de cinco minutos, encerrada por inatividade, fechamento
   ou desmontagem do app;
-- seis abas: `Status`, `Portas`, `Conectividade`, `Camera`, `Tela` e `Update`;
+- sete abas: `Status`, `Portas`, `Conectividade`, `Camera`, `Inteligente`,
+  `Tela` e `Update`;
 - confirmacao explicita antes de cada teste fisico de porta;
 - ajustes de brilho, volume e tela ligada limitados no JavaScript e novamente
   no Android;
@@ -73,6 +74,7 @@ repetir o provisionamento completo do locker.
 | Portas | Board, mapa fisico, polaridade, tempo e teste individual com prova fechada-aberta-fechada |
 | Conectividade | Serial, fila nativa, retries, timeouts, frames invalidos, reconexoes, rede, ultimo sync/latencia, MQTT e filas Edge |
 | Camera | Disponibilidade, permissao e preview local temporario sem captura ou envio |
+| Inteligente | Modelo P/G local, metricas sanitizadas de sete dias e limpeza do diario |
 | Tela | Brilho entre 10% e 100%, volume entre 0% e 65% e opcao de manter tela ligada |
 | Update | Versao, alvo, progresso, falha sanitizada, armazenamento livre e tamanho dos diarios web |
 
@@ -166,7 +168,7 @@ Cobertura adicionada:
 - contrato JavaScript para tipos, limites e ausencia de APIs arbitrarias;
 - URL e falta de PIN bloqueadas;
 - PIN invalido recusado e auditado;
-- seis abas, controles e bridge nativa simulada;
+- sete abas, controles e bridge nativa simulada;
 - confirmacao, abertura, fechamento comprovado e auditoria da porta;
 - timeout de cinco minutos e retorno a tela inicial;
 - matriz `1024x600`, `1280x800`, `800x480` e `390x844`.

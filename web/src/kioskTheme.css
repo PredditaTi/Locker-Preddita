@@ -272,6 +272,15 @@
   transform: none;
 }
 
+.kiosk-v4-action.is-unavailable .kiosk-v4-action-icon {
+  color: #6c7882;
+  background: #b7c1c9;
+}
+
+.kiosk-v4-action.is-unavailable .kiosk-v4-action-arrow {
+  color: #6c7882;
+}
+
 .kiosk-v4-action-icon {
   width: 88px;
   height: 88px;
@@ -285,6 +294,15 @@
 .kiosk-v4-action--resident .kiosk-v4-action-icon {
   color: var(--kiosk-ink);
   background: var(--kiosk-warning);
+}
+
+.kiosk-v4-action--smart .kiosk-v4-action-icon {
+  color: var(--kiosk-ink);
+  background: var(--kiosk-warning);
+}
+
+.kiosk-v4-action--smart .kiosk-v4-action-arrow {
+  color: #805400;
 }
 
 .kiosk-v4-action-icon svg {
@@ -324,6 +342,20 @@
 
 .kiosk-v4-action.is-loading .kiosk-v4-action-icon svg {
   animation: kiosk-v4-spin 900ms linear infinite;
+}
+
+.kiosk-v4-flow-main--delivery-mode {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 18px;
+}
+
+.kiosk-v4-delivery-mode-actions {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 18px;
 }
 
 .kiosk-v4-home-status {
@@ -1349,6 +1381,10 @@
   letter-spacing: 0;
 }
 
+.public-kiosk-screen--smart-review .kiosk-v4-confirm-value strong {
+  font-size: 3.6rem;
+}
+
 .kiosk-v4-confirm-help {
   align-self: center;
   color: #c4d0da;
@@ -1375,6 +1411,174 @@
   align-items: center;
   justify-content: center;
   gap: 10px;
+}
+
+.kiosk-v4-flow-main--smart-capture {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 16px;
+}
+
+.kiosk-v4-smart-capture-body {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+  align-items: center;
+  gap: 28px;
+}
+
+.kiosk-v4-smart-preview {
+  position: relative;
+  width: 100%;
+  max-height: 100%;
+  aspect-ratio: 16 / 9;
+  border: 2px solid var(--kiosk-line-dark);
+  border-radius: var(--kiosk-radius);
+  overflow: hidden;
+  background: #05080b;
+}
+
+.kiosk-v4-smart-preview video,
+.kiosk-v4-smart-preview img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.kiosk-v4-smart-preview-placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #91a4b4;
+  background: #111820;
+}
+
+.kiosk-v4-smart-preview-placeholder svg {
+  width: 78px;
+  height: 78px;
+}
+
+.kiosk-v4-smart-guide {
+  position: absolute;
+  inset: 12%;
+  border: 3px solid var(--kiosk-brand);
+  border-radius: var(--kiosk-radius);
+  pointer-events: none;
+}
+
+.kiosk-v4-smart-guide span {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  padding: 7px 12px;
+  border-radius: var(--kiosk-radius);
+  color: #04111a;
+  background: var(--kiosk-brand);
+  font-size: 0.9rem;
+  font-weight: 800;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.kiosk-v4-smart-canvas {
+  display: none;
+}
+
+.kiosk-v4-smart-status {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 18px;
+}
+
+.kiosk-v4-smart-status-icon {
+  width: 76px;
+  height: 76px;
+  padding: 16px;
+  border: 2px solid var(--kiosk-line-dark);
+  border-radius: var(--kiosk-radius);
+  color: var(--kiosk-brand);
+}
+
+.kiosk-v4-smart-status-icon.is-success {
+  color: var(--kiosk-success);
+  border-color: var(--kiosk-success);
+}
+
+.kiosk-v4-smart-status-icon.is-warning {
+  color: var(--kiosk-warning);
+  border-color: var(--kiosk-warning);
+}
+
+.kiosk-v4-smart-status-icon.is-loading svg {
+  animation: kiosk-v4-spin 900ms linear infinite;
+}
+
+.kiosk-v4-smart-status-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.kiosk-v4-smart-status h2 {
+  margin: 0;
+  color: var(--kiosk-surface);
+  font-size: 1.8rem;
+  line-height: 1.05;
+}
+
+.kiosk-v4-smart-status p {
+  margin: 10px 0 0;
+  color: #b8c6d1;
+  font-size: 1.08rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.kiosk-v4-smart-status progress {
+  width: 100%;
+  height: 14px;
+  accent-color: var(--kiosk-brand);
+}
+
+.kiosk-v4-smart-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.kiosk-v4-smart-actions button {
+  width: 100%;
+  min-height: 64px;
+  padding: 12px 18px;
+  border: 2px solid var(--kiosk-line-dark);
+  border-radius: var(--kiosk-radius);
+  color: var(--kiosk-surface);
+  background: var(--kiosk-bg-raised);
+  font-size: 1.05rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.kiosk-v4-smart-actions button.is-primary {
+  border-color: var(--kiosk-brand-dark);
+  background: var(--kiosk-brand-dark);
+}
+
+.kiosk-v4-smart-actions button:disabled {
+  color: #71808d;
+  border-color: #2c353e;
+  background: #11171d;
+  cursor: wait;
+}
+
+.kiosk-v4-smart-actions button:hover {
+  border-color: var(--kiosk-brand);
+}
+
+.kiosk-v4-smart-actions button:focus-visible {
+  outline: 4px solid var(--kiosk-focus);
+  outline-offset: 3px;
 }
 
 .kiosk-v4-flow-main--door {
@@ -1890,6 +2094,14 @@
     display: none;
   }
 
+  .kiosk-v4-flow-main--delivery-mode {
+    gap: 10px;
+  }
+
+  .kiosk-v4-delivery-mode-actions {
+    gap: 12px;
+  }
+
   .kiosk-v4-flow-main--apartment {
     grid-template-columns: minmax(260px, 0.78fr) minmax(330px, 1.22fr);
     column-gap: 14px;
@@ -1936,8 +2148,45 @@
     font-size: 3.4rem;
   }
 
+  .public-kiosk-screen--smart-review .kiosk-v4-confirm-value strong {
+    font-size: 2.8rem;
+  }
+
   .kiosk-v4-flow-actions button {
     min-height: 64px;
+  }
+
+  .kiosk-v4-flow-main--smart-capture {
+    gap: 8px;
+  }
+
+  .kiosk-v4-smart-capture-body {
+    grid-template-columns: minmax(0, 1.45fr) minmax(250px, 0.55fr);
+    gap: 16px;
+  }
+
+  .kiosk-v4-smart-status {
+    gap: 10px;
+  }
+
+  .kiosk-v4-smart-status-icon {
+    width: 54px;
+    height: 54px;
+    padding: 10px;
+  }
+
+  .kiosk-v4-smart-status h2 {
+    font-size: 1.35rem;
+  }
+
+  .kiosk-v4-smart-status p {
+    margin-top: 5px;
+    font-size: 0.9rem;
+  }
+
+  .kiosk-v4-smart-actions button {
+    min-height: 52px;
+    font-size: 0.92rem;
   }
 
   .kiosk-v4-flow-main--door,
@@ -2068,6 +2317,17 @@
   }
 
   .kiosk-v4-home-actions {
+    grid-template-columns: 1fr;
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .kiosk-v4-flow-main--delivery-mode {
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .kiosk-v4-delivery-mode-actions {
     grid-template-columns: 1fr;
     grid-template-rows: repeat(2, minmax(0, 1fr));
     gap: 12px;
@@ -2224,6 +2484,10 @@
     font-size: 3.8rem;
   }
 
+  .public-kiosk-screen--smart-review .kiosk-v4-confirm-value strong {
+    font-size: 2.8rem;
+  }
+
   .kiosk-v4-confirm-help {
     font-size: 1.05rem;
   }
@@ -2235,6 +2499,52 @@
 
   .kiosk-v4-flow-actions button {
     min-height: 64px;
+  }
+
+  .kiosk-v4-flow-main--smart-capture {
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 10px;
+    overflow-y: auto;
+  }
+
+  .kiosk-v4-smart-capture-body {
+    grid-template-columns: 1fr;
+    align-content: start;
+    gap: 14px;
+  }
+
+  .kiosk-v4-smart-preview {
+    min-height: 190px;
+  }
+
+  .kiosk-v4-smart-status {
+    grid-template-columns: 58px minmax(0, 1fr);
+    align-content: start;
+    gap: 10px 14px;
+  }
+
+  .kiosk-v4-smart-status-icon {
+    width: 58px;
+    height: 58px;
+    padding: 11px;
+  }
+
+  .kiosk-v4-smart-status h2 {
+    font-size: 1.35rem;
+  }
+
+  .kiosk-v4-smart-status p {
+    margin-top: 5px;
+    font-size: 0.95rem;
+  }
+
+  .kiosk-v4-smart-status progress,
+  .kiosk-v4-smart-actions {
+    grid-column: 1 / -1;
+  }
+
+  .kiosk-v4-smart-actions button {
+    min-height: 58px;
   }
 
   .kiosk-v4-flow-main--door {
@@ -2408,7 +2718,8 @@
   }
 
   .kiosk-v4-flow-actions button.is-loading::before,
-  .kiosk-v4-door-icon.is-waiting svg {
+  .kiosk-v4-door-icon.is-waiting svg,
+  .kiosk-v4-smart-status-icon.is-loading svg {
     animation: none;
   }
 }

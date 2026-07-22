@@ -3,6 +3,7 @@ import {
   bootKiosk,
   closeTestDoor,
   readLockerState,
+  startManualDelivery,
 } from './support/kioskTestBridge.js';
 
 function onlyReferenceKiosk(testInfo) {
@@ -13,7 +14,7 @@ function onlyReferenceKiosk(testInfo) {
 }
 
 async function openSmallDepositDoor(page) {
-  await page.getByRole('button', { name: /Entregar encomenda/i }).click();
+  await startManualDelivery(page);
   await page.getByRole('textbox', { name: 'Apartamento', exact: true }).fill('203');
   await page.getByRole('button', { name: 'Apartamento 203', exact: true }).click();
   await page.getByRole('button', { name: 'Abrir porta', exact: true }).click();
@@ -26,13 +27,15 @@ test('teclado numerico permite apagar e retornar ao inicio', async ({ page }, te
   onlyReferenceKiosk(testInfo);
   const browserErrors = await bootKiosk(page);
 
-  await page.getByRole('button', { name: /Entregar encomenda/i }).click();
+  await startManualDelivery(page);
   const pad = page.locator('.public-apartment-input .public-number-pad');
   for (const key of ['2', '0', '4', 'Apagar', '3']) {
     await pad.getByRole('button', { name: key, exact: true }).click();
   }
 
   await expect(page.getByRole('textbox', { name: 'Apartamento', exact: true })).toHaveValue('203');
+  await page.getByRole('button', { name: 'Voltar', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Como deseja entregar?' })).toBeVisible();
   await page.getByRole('button', { name: 'Voltar', exact: true }).click();
   await expect(page.getByRole('button', { name: /Entregar encomenda/i })).toBeVisible();
   expect(browserErrors).toEqual([]);
@@ -56,7 +59,7 @@ test('cancelamento aguarda a porta fechar antes de limpar a reserva', async ({ p
   await closeTestDoor(page, depositDoor);
   await expect(dialog.getByRole('heading', { name: 'Operacao cancelada' })).toBeVisible();
   await dialog.getByRole('button', { name: 'Entendi', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Qual e o apartamento?' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Como deseja entregar?' })).toBeVisible();
 
   const state = await readLockerState(page);
   const cancelled = state.deliveries?.find((delivery) => delivery.status === 'cancelled');

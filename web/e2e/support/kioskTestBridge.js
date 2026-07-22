@@ -2,6 +2,7 @@ export const LOCKER_STORAGE_KEY = 'preddita_entregas_locker_state_v1';
 
 export function installRs485Bridge() {
   const doorStates = Array.from({ length: 24 }, () => 'closed');
+  const openCommands = [];
   const bcc = (bytes) => bytes.reduce((value, byte) => value ^ (byte & 0xff), 0) & 0xff;
   const toHex = (bytes) => bytes
     .map((byte) => (byte & 0xff).toString(16).toUpperCase().padStart(2, '0'))
@@ -22,8 +23,14 @@ export function installRs485Bridge() {
     closeDoor(channel) {
       doorStates[channel - 1] = 'closed';
     },
+    setDoorState(channel, state) {
+      doorStates[channel - 1] = state === 'open' ? 'open' : 'closed';
+    },
     getDoorState(channel) {
       return doorStates[channel - 1];
+    },
+    getOpenCommands() {
+      return [...openCommands];
     },
   };
 
@@ -41,6 +48,7 @@ export function installRs485Bridge() {
         response = frame([0x80, board, channel, doorStates[channel - 1] === 'open' ? 0x00 : 0x11]);
       } else if ([0x8a, 0x7a, 0x7c, 0x7f, 0x9a].includes(command)) {
         doorStates[channel - 1] = 'open';
+        openCommands.push(channel);
         response = command === 0x8a || command === 0x9a
           ? frame([command, board, channel, 0x00])
           : frame([command, board, channel, parameter]);
@@ -69,6 +77,106 @@ export function installRs485Bridge() {
       return '';
     },
   };
+}
+
+export async function installStablePackageCamera(page) {
+  await page.evaluate(() => {
+    const stream = new MediaStream();
+    const track = {
+      stop() {
+        window.__predditaPackageCamera.trackStopped = true;
+      },
+    };
+    Object.defineProperty(stream, 'getTracks', {
+      configurable: true,
+      value: () => [track],
+    });
+
+    window.__predditaPackageCamera = {
+      getUserMediaCalls: 0,
+      trackStopped: false,
+    };
+    Object.defineProperty(window.navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getUserMedia: async () => {
+          window.__predditaPackageCamera.getUserMediaCalls += 1;
+          return stream;
+        },
+      },
+    });
+    Object.defineProperties(window.HTMLMediaElement.prototype, {
+      readyState: { configurable: true, get: () => 4 },
+    });
+    Object.defineProperties(window.HTMLVideoElement.prototype, {
+      videoWidth: { configurable: true, get: () => 1280 },
+      videoHeight: { configurable: true, get: () => 720 },
+    });
+    window.HTMLMediaElement.prototype.play = async () => {};
+    window.CanvasRenderingContext2D.prototype.drawImage = () => {};
+    window.CanvasRenderingContext2D.prototype.getImageData = (_x, _y, width, height) => {
+      const pixels = new Uint8ClampedArray(width * height * 4);
+      for (let y = 0; y < height; y += 1) {
+        for (let x = 0; x < width; x += 1) {
+          const offset = ((y * width) + x) * 4;
+          const value = (x + y) % 2 ? 220 : 40;
+          pixels[offset] = value;
+          pixels[offset + 1] = value;
+          pixels[offset + 2] = value;
+          pixels[offset + 3] = 255;
+        }
+      }
+      return new ImageData(pixels, width, height);
+    };
+  });
+}
+
+export async function installPackageAnalyzerBridge(page, result = {}) {
+  await page.evaluate((configuredResult) => {
+    const approvedModelSha256 = /^[a-f0-9]{64}$/i.test(String(configuredResult.modelSha256 || ''))
+      ? String(configuredResult.modelSha256).toLowerCase()
+      : 'a'.repeat(64);
+    const modelReady = configuredResult.status === 'ready';
+    window.__predditaPackageAnalyzerRequests = [];
+    window.PredditaPackageAnalyzer = {
+      getBridgeVersion() {
+        return 'PREDDITA-PACKAGE-ANALYZER-E2E';
+      },
+      getInfo() {
+        return JSON.stringify({
+          schemaVersion: 1,
+          bridgeVersion: 'PREDDITA-PACKAGE-ANALYZER-E2E',
+          modelVersion: 'package-pg-v1',
+          modelAvailable: modelReady,
+          modelSha256: modelReady ? approvedModelSha256 : '',
+          reasonCode: modelReady ? '' : 'model-not-installed',
+        });
+      },
+      analyze(rawRequest) {
+        const request = JSON.parse(rawRequest);
+        window.__predditaPackageAnalyzerRequests.push(request);
+        window.setTimeout(() => window.dispatchEvent(new CustomEvent(
+          'preddita-package-analysis',
+          {
+            detail: {
+              schemaVersion: 1,
+              requestId: request.requestId,
+              status: 'uncertain',
+              suggestedSize: '',
+              confidence: null,
+              captureQuality: request.captureQuality,
+              modelVersion: 'package-pg-v1',
+              modelSha256: modelReady ? approvedModelSha256 : '',
+              inferenceMs: 25,
+              reasonCode: 'model-not-installed',
+              ...configuredResult,
+            },
+          }
+        )), 10);
+        return true;
+      },
+    };
+  }, result);
 }
 
 export function installAudioProbe() {
@@ -183,12 +291,21 @@ export async function bootKiosk(page, options = {}) {
   return browserErrors;
 }
 
+export async function startManualDelivery(page) {
+  await page.getByRole('button', { name: /Entregar encomenda/i }).click();
+  await page.getByRole('button', { name: /Entrega Manual/i }).click();
+}
+
 export async function closeTestDoor(page, channel) {
   await page.evaluate((door) => window.__predditaTestHardware.closeDoor(door), channel);
 }
 
 export async function getTestDoorState(page, channel) {
   return page.evaluate((door) => window.__predditaTestHardware.getDoorState(door), channel);
+}
+
+export async function getTestOpenCommands(page) {
+  return page.evaluate(() => window.__predditaTestHardware.getOpenCommands());
 }
 
 export async function readLockerState(page) {

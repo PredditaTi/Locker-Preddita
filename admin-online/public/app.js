@@ -1470,6 +1470,26 @@ function renderPilot() {
             <div><span class="muted">Falhas finais</span><strong>${escapeHtml(summary.failedCount || 0)}</strong></div>
           </div>
         </section>
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Entrega inteligente</p>
+              <h3>Analise e alocacao</h3>
+            </div>
+            <span class="tag">${escapeHtml(summary.retentionDays || 30)} dias</span>
+          </div>
+          <div class="health-grid">
+            <div><span class="muted">Tentativas</span><strong>${escapeHtml(summary.smartCourierCount || 0)}</strong></div>
+            <div><span class="muted">Modo manual</span><strong>${escapeHtml(summary.manualCourierCount || 0)}</strong></div>
+            <div><span class="muted">Recomendacao P</span><strong>${escapeHtml(summary.smartReadyPCount || 0)}</strong></div>
+            <div><span class="muted">Recomendacao G</span><strong>${escapeHtml(summary.smartReadyGCount || 0)}</strong></div>
+            <div><span class="muted">Inconclusivas</span><strong>${escapeHtml((summary.smartUncertainCount || 0) + (summary.smartFailedCount || 0))}</strong></div>
+            <div><span class="muted">Confirmadas</span><strong>${escapeHtml(summary.smartRecommendationConfirmedCount || 0)}</strong></div>
+            <div><span class="muted">Portas abertas</span><strong>${escapeHtml(summary.smartDoorOpenedCount || 0)}</strong></div>
+            <div><span class="muted">Indisponiveis/falhas</span><strong>${escapeHtml((summary.smartDoorUnavailableCount || 0) + (summary.smartDoorFailedCount || 0))}</strong></div>
+          </div>
+          <p class="panel-note">Somente resultados tecnicos sanitizados; imagens, unidade, PIN, QR, porta e textos livres nao sao enviados.</p>
+        </section>
       </div>
 
       <section class="panel">
@@ -1488,7 +1508,9 @@ function renderPilot() {
                 <span>${escapeHtml(pilotOutcomeLabel(metric.outcome))}</span>
               </div>
               <div><span>Duracao</span><strong>${escapeHtml(formatPilotDuration(metric.durationMs))}</strong></div>
-              <div><span>Modo</span><strong>${escapeHtml(metric.pickupMode === 'none' ? '--' : metric.pickupMode.toUpperCase())}</strong></div>
+              <div><span>Modo</span><strong>${escapeHtml(metric.journeyType === 'courier'
+                ? metric.deliveryMode === 'smart' ? 'INTELIGENTE' : metric.deliveryMode === 'manual' ? 'MANUAL' : '--'
+                : metric.pickupMode === 'none' ? '--' : metric.pickupMode.toUpperCase())}</strong></div>
               <div><span>Ajuda</span><strong>${metric.helpRequested ? 'Sim' : 'Nao'}</strong></div>
               <div><span>Erros</span><strong>${escapeHtml(metric.errorCount || 0)}</strong></div>
             </article>

@@ -92,6 +92,11 @@ jobs:
           node scripts/app-update-health-test.mjs
           node scripts/pilot-metrics-test.mjs
           node scripts/pilot-preflight-test.mjs
+          node scripts/smart-delivery-test.mjs
+          node scripts/package-capture-quality-test.mjs
+          node scripts/package-analyzer-bridge-test.mjs
+          node scripts/package-dataset-calibration-test.mjs
+          node scripts/smart-delivery-telemetry-test.mjs
           node scripts/CommandWakeupTest.mjs
           node scripts/IotCommandBusTest.mjs
           node scripts/v2-qr-scanner-test.mjs
@@ -172,6 +177,15 @@ jobs:
             android/app/src/main/java/com/preddita/entregaslocker/DiagnosticControlContract.java \
             scripts/DiagnosticControlContractTest.java
           java -cp "$output_dir" DiagnosticControlContractTest
+
+      - name: Test native package analysis contract
+        run: |
+          output_dir="$(mktemp -d)"
+          trap 'rm -rf "$output_dir"' EXIT
+          javac -d "$output_dir" \
+            android/app/src/main/java/com/preddita/entregaslocker/PackageAnalysisContract.java \
+            scripts/PackageAnalysisContractTest.java
+          java -cp "$output_dir" PackageAnalysisContractTest
 
       - name: Audit production dependencies
         run: |

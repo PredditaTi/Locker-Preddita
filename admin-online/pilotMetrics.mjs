@@ -1,9 +1,13 @@
-export const PILOT_METRIC_SCHEMA_VERSION = 1;
+export const PILOT_METRIC_SCHEMA_VERSION = 2;
 export const MAX_PILOT_METRICS = 500;
+export const PILOT_METRIC_RETENTION_DAYS = 30;
 
 const JOURNEY_TYPES = new Set(['courier', 'pickup']);
 const JOURNEY_OUTCOMES = new Set(['completed', 'cancelled', 'failed', 'interrupted']);
 const PICKUP_MODES = new Set(['none', 'pin', 'qr']);
+const DELIVERY_MODES = new Set(['none', 'manual', 'smart']);
+const SMART_ANALYSIS_OUTCOMES = new Set(['not-run', 'P', 'G', 'uncertain', 'failed']);
+const SMART_DOOR_OUTCOMES = new Set(['not-requested', 'opened', 'unavailable', 'failed']);
 const REASON_CODES = new Set([
   'none',
   'user-cancelled',
@@ -28,9 +32,10 @@ function cleanDate(value, fallback = '') {
   return Number.isFinite(Date.parse(normalized)) ? normalized : fallback;
 }
 
-export function normalizePilotMetric(raw = {}, event = {}) {
+export function normalizePilotMetric(raw = {}, event = {}, options = {}) {
   const metric = raw && typeof raw === 'object' ? raw : {};
   const journeyType = cleanChoice(metric.journeyType, JOURNEY_TYPES, '');
+  const normalizedAt = new Date().toISOString();
   return {
     schemaVersion: PILOT_METRIC_SCHEMA_VERSION,
     eventId: String(event.id ?? metric.eventId ?? '').trim().slice(0, 160),
@@ -47,17 +52,40 @@ export function normalizePilotMetric(raw = {}, event = {}) {
     helpRequested: Boolean(metric.helpRequested),
     errorCount: Math.min(MAX_ERROR_COUNT, Math.max(0, Number.parseInt(metric.errorCount, 10) || 0)),
     reasonCode: cleanChoice(metric.reasonCode, REASON_CODES, 'none'),
-    occurredAt: cleanDate(event.occurredAt ?? metric.occurredAt, new Date().toISOString()),
-    receivedAt: cleanDate(metric.receivedAt, new Date().toISOString()),
+    deliveryMode: journeyType === 'courier'
+      ? cleanChoice(metric.deliveryMode, DELIVERY_MODES, 'none')
+      : 'none',
+    smartAnalysisOutcome: journeyType === 'courier'
+      ? cleanChoice(metric.smartAnalysisOutcome, SMART_ANALYSIS_OUTCOMES, 'not-run')
+      : 'not-run',
+    smartRecommendationConfirmed: journeyType === 'courier'
+      && Boolean(metric.smartRecommendationConfirmed),
+    smartDoorOutcome: journeyType === 'courier'
+      ? cleanChoice(metric.smartDoorOutcome, SMART_DOOR_OUTCOMES, 'not-requested')
+      : 'not-requested',
+    occurredAt: cleanDate(event.occurredAt ?? metric.occurredAt, normalizedAt),
+    receivedAt: options.preserveReceivedAt
+      ? cleanDate(metric.receivedAt, normalizedAt)
+      : cleanDate(event.receivedAt, normalizedAt),
   };
 }
 
-export function normalizePilotState(value = {}) {
+export function normalizePilotState(value = {}, options = {}) {
   const pilot = value && typeof value === 'object' ? value : {};
+  const nowMs = Number.isFinite(options.nowMs) ? options.nowMs : Date.now();
+  const retentionMs = PILOT_METRIC_RETENTION_DAYS * 24 * 60 * 60 * 1000;
   const metrics = Array.isArray(pilot.metrics)
     ? pilot.metrics
-      .map((metric) => normalizePilotMetric(metric, { id: metric?.eventId, occurredAt: metric?.occurredAt }))
+      .map((metric) => normalizePilotMetric(
+        metric,
+        { id: metric?.eventId, occurredAt: metric?.occurredAt },
+        { preserveReceivedAt: true },
+      ))
       .filter((metric) => metric.eventId && metric.journeyType && metric.outcome)
+      .filter((metric) => {
+        const ageMs = nowMs - Date.parse(metric.receivedAt || metric.occurredAt);
+        return ageMs >= -5 * 60 * 1000 && ageMs <= retentionMs;
+      })
       .slice(0, MAX_PILOT_METRICS)
     : [];
   return {
@@ -101,6 +129,7 @@ export function summarizePilotMetrics(pilot = {}) {
   const helpRequestCount = metrics.filter((metric) => metric.helpRequested).length;
   const courierMetrics = metrics.filter((metric) => metric.journeyType === 'courier');
   const pickupMetrics = metrics.filter((metric) => metric.journeyType === 'pickup');
+  const smartMetrics = courierMetrics.filter((metric) => metric.deliveryMode === 'smart');
   const fallbackCount = courierMetrics.filter((metric) => metric.usedSizeFallback).length;
   const durations = metrics.map((metric) => metric.durationMs);
 
@@ -122,6 +151,17 @@ export function summarizePilotMetrics(pilot = {}) {
     pickupCount: pickupMetrics.length,
     pinPickupCount: pickupMetrics.filter((metric) => metric.pickupMode === 'pin').length,
     qrPickupCount: pickupMetrics.filter((metric) => metric.pickupMode === 'qr').length,
+    manualCourierCount: courierMetrics.filter((metric) => metric.deliveryMode === 'manual').length,
+    smartCourierCount: smartMetrics.length,
+    smartReadyPCount: smartMetrics.filter((metric) => metric.smartAnalysisOutcome === 'P').length,
+    smartReadyGCount: smartMetrics.filter((metric) => metric.smartAnalysisOutcome === 'G').length,
+    smartUncertainCount: smartMetrics.filter((metric) => metric.smartAnalysisOutcome === 'uncertain').length,
+    smartFailedCount: smartMetrics.filter((metric) => metric.smartAnalysisOutcome === 'failed').length,
+    smartRecommendationConfirmedCount: smartMetrics.filter((metric) => metric.smartRecommendationConfirmed).length,
+    smartDoorOpenedCount: smartMetrics.filter((metric) => metric.smartDoorOutcome === 'opened').length,
+    smartDoorUnavailableCount: smartMetrics.filter((metric) => metric.smartDoorOutcome === 'unavailable').length,
+    smartDoorFailedCount: smartMetrics.filter((metric) => metric.smartDoorOutcome === 'failed').length,
+    retentionDays: PILOT_METRIC_RETENTION_DAYS,
     updatedAt: metrics[0]?.receivedAt || '',
   };
 }

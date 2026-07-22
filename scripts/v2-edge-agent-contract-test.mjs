@@ -147,12 +147,20 @@ async function testPilotJourneyContract() {
   agent.startPilotJourney('courier');
   agent.recordPilotJourneySignal('help');
   agent.recordPilotJourneySignal('size-fallback');
+  agent.recordPilotJourneySignal('delivery-mode', { deliveryMode: 'smart' });
+  agent.recordPilotJourneySignal('smart-analysis', { analysisOutcome: 'G' });
+  agent.recordPilotJourneySignal('smart-recommendation-confirmed');
+  agent.recordPilotJourneySignal('smart-door-outcome', { doorOutcome: 'opened' });
   currentTime = '2026-07-21T12:02:00.000Z';
   const queued = agent.completePilotJourney('completed');
   assert.equal(queued.type, 'pilot-metric');
   assert.equal(queued.payload.durationMs, 120000);
   assert.equal(queued.payload.helpRequested, true);
   assert.equal(queued.payload.usedSizeFallback, true);
+  assert.equal(queued.payload.deliveryMode, 'smart');
+  assert.equal(queued.payload.smartAnalysisOutcome, 'G');
+  assert.equal(queued.payload.smartRecommendationConfirmed, true);
+  assert.equal(queued.payload.smartDoorOutcome, 'opened');
   assert.equal(JSON.stringify(queued.payload).includes('apartment'), false);
 
   agent.startPilotJourney('pickup');

@@ -14,12 +14,18 @@ import {
 } from './diagnosticBridge.js';
 import edgeAgent from './edgeAgent.js';
 import { KioskIcon, KioskIcons } from './kioskIcons.jsx';
+import { getLocalPackageAnalyzerInfo } from './packageAnalyzer.js';
+import {
+  clearSmartDeliveryTelemetry,
+  getSmartDeliveryTelemetrySummary,
+} from './smartDeliveryTelemetry.js';
 
 const TABS = [
   { id: 'status', label: 'Status', icon: KioskIcons.activity },
   { id: 'doors', label: 'Portas', icon: KioskIcons.doorClosed },
   { id: 'connectivity', label: 'Conectividade', icon: KioskIcons.wifi },
   { id: 'camera', label: 'Camera', icon: KioskIcons.camera },
+  { id: 'smart', label: 'Inteligente', icon: KioskIcons.package },
   { id: 'display', label: 'Tela', icon: KioskIcons.monitor },
   { id: 'update', label: 'Update', icon: KioskIcons.refresh },
 ];
@@ -141,6 +147,8 @@ export default function DiagnosticsView({
   const [technicalStatus, setTechnicalStatus] = useState(() => getTechnicalStatus());
   const [deviceAuth, setDeviceAuth] = useState(() => edgeAgent.getNativeDeviceAuthStatus());
   const [operationalInfo, setOperationalInfo] = useState(() => edgeAgent.getOperationalInfo());
+  const [smartAnalyzerInfo, setSmartAnalyzerInfo] = useState(() => getLocalPackageAnalyzerInfo());
+  const [smartTelemetry, setSmartTelemetry] = useState(() => getSmartDeliveryTelemetrySummary());
   const [suites, setSuites] = useState([]);
   const [running, setRunning] = useState(false);
   const [startedAt, setStartedAt] = useState(null);
@@ -169,6 +177,8 @@ export default function DiagnosticsView({
     setTechnicalStatus(getTechnicalStatus());
     setDeviceAuth(edgeAgent.getNativeDeviceAuthStatus());
     setOperationalInfo(edgeAgent.getOperationalInfo());
+    setSmartAnalyzerInfo(getLocalPackageAnalyzerInfo());
+    setSmartTelemetry(getSmartDeliveryTelemetrySummary());
   }, []);
 
   const stopCamera = useCallback((shouldAudit = true, updateState = true) => {
@@ -379,6 +389,23 @@ export default function DiagnosticsView({
     });
   }
 
+  function handleClearSmartTelemetry() {
+    const confirmed = window.confirm(
+      'Apagar as metricas operacionais locais da Entrega Inteligente?',
+    );
+    if (!confirmed) return;
+    const cleared = clearSmartDeliveryTelemetry();
+    setSmartTelemetry(getSmartDeliveryTelemetrySummary());
+    setNotice(cleared ? 'Metricas locais apagadas.' : 'Nao foi possivel apagar as metricas locais.');
+    audit({
+      kind: 'diagnostic-smart-delivery',
+      message: cleared
+        ? 'Metricas locais da Entrega Inteligente apagadas.'
+        : 'Limpeza das metricas locais da Entrega Inteligente falhou.',
+      outcome: cleared ? 'cleared' : 'failed',
+    });
+  }
+
   return (
     <div ref={overlayRef} className="diagnostic-overlay" role="dialog" aria-modal="true" aria-label="Console tecnico">
       <header className="diagnostic-header">
@@ -547,6 +574,51 @@ export default function DiagnosticsView({
                 <DiagnosticStatusRow label="Permissao" value={technicalStatus.camera.permission} tone={technicalStatus.camera.permission === 'granted' ? 'success' : 'warn'} />
                 <DiagnosticStatusRow label="Preview" value={cameraState.active ? 'Ativo' : 'Parado'} detail={cameraState.message} tone={cameraState.active ? 'success' : ''} />
               </div>
+            </div>
+          </section>
+        ) : null}
+
+        {activeTab === 'smart' ? (
+          <section role="tabpanel" className="diagnostic-panel" aria-label="Entrega inteligente">
+            <header className="diagnostic-section-heading">
+              <div>
+                <h2>Entrega inteligente</h2>
+                <p>Modelo local e contadores operacionais sem imagens ou dados pessoais.</p>
+              </div>
+              <button type="button" className="diagnostic-danger-action" onClick={handleClearSmartTelemetry}>
+                <KioskIcon icon={KioskIcons.delete} />
+                Limpar metricas locais
+              </button>
+            </header>
+            <div className="diagnostic-overview-grid">
+              <DiagnosticStatusRow
+                label="Analisador local"
+                value={smartAnalyzerInfo.modelAvailable ? 'Modelo disponivel' : 'Modelo indisponivel'}
+                detail={smartAnalyzerInfo.reasonCode || smartAnalyzerInfo.bridgeVersion || 'Sem detalhe tecnico'}
+                tone={smartAnalyzerInfo.modelAvailable ? 'success' : 'warn'}
+              />
+              <DiagnosticStatusRow
+                label="Modelo"
+                value={smartAnalyzerInfo.modelVersion || '--'}
+                detail={smartAnalyzerInfo.modelSha256 ? `SHA-256 ${smartAnalyzerInfo.modelSha256.slice(0, 12)}` : 'Checksum indisponivel'}
+              />
+              <DiagnosticStatusRow
+                label="Retencao local"
+                value={`${smartTelemetry.retentionDays} dias`}
+                detail={`${smartTelemetry.eventCount} de 100 eventos armazenados`}
+              />
+              <DiagnosticStatusRow
+                label="Inferencia p95"
+                value={smartTelemetry.inferenceP95Ms ? `${smartTelemetry.inferenceP95Ms} ms` : '--'}
+                detail="Tempo arredondado em intervalos de 10 ms"
+              />
+            </div>
+            <div className="diagnostic-status-list">
+              <DiagnosticStatusRow label="Analises" value={`${smartTelemetry.analysisCount}`} detail={`${smartTelemetry.readyPCount} P · ${smartTelemetry.readyGCount} G`} />
+              <DiagnosticStatusRow label="Inconclusivas" value={`${smartTelemetry.uncertainCount + smartTelemetry.failedCount}`} detail={`${smartTelemetry.uncertainCount} incertas · ${smartTelemetry.failedCount} falhas`} tone={smartTelemetry.uncertainCount + smartTelemetry.failedCount ? 'warn' : 'success'} />
+              <DiagnosticStatusRow label="Recomendacoes confirmadas" value={`${smartTelemetry.recommendationConfirmedCount}`} detail={`${smartTelemetry.manualFallbackCount} retorno(s) ao modo manual`} />
+              <DiagnosticStatusRow label="Aberturas" value={`${smartTelemetry.openedCount}`} detail={`${smartTelemetry.unavailableCount} indisponivel(is) · ${smartTelemetry.allocationFailedCount} falha(s)`} tone={smartTelemetry.unavailableCount + smartTelemetry.allocationFailedCount ? 'warn' : 'success'} />
+              <DiagnosticStatusRow label="Privacidade" value="Dados sanitizados" detail="Fotos, unidade, PIN, QR, porta e textos livres nao sao armazenados." tone="success" />
             </div>
           </section>
         ) : null}

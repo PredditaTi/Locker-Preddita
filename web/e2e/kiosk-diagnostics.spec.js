@@ -87,11 +87,26 @@ test('PIN tecnico invalido mantem o console bloqueado', async ({ page }) => {
 
 test('console autenticado organiza diagnostico e limita ajustes', async ({ page }) => {
   const browserErrors = await bootKiosk(page, { diagnostics: true });
+  await page.evaluate(() => {
+    localStorage.setItem('preddita_smart_delivery_telemetry_v1', JSON.stringify({
+      schemaVersion: 1,
+      events: [{
+        action: 'analysis',
+        outcome: 'ready',
+        size: 'P',
+        reasonCode: 'none',
+        captureQualityBand: 'high',
+        inferenceMs: 120,
+        modelVersion: 'e2e-model',
+        occurredAt: new Date().toISOString(),
+      }],
+    }));
+  });
   await revealDiagnostics(page);
 
   const consoleDialog = page.getByRole('dialog', { name: 'Console tecnico' });
   await expect(consoleDialog.getByRole('heading', { name: 'Diagnostico de campo' })).toBeVisible();
-  await expect(consoleDialog.getByRole('tab')).toHaveCount(6);
+  await expect(consoleDialog.getByRole('tab')).toHaveCount(7);
   await expectConsoleInsideViewport(page);
 
   await consoleDialog.getByRole('tab', { name: 'Conectividade' }).click();
@@ -117,6 +132,17 @@ test('console autenticado organiza diagnostico e limita ajustes', async ({ page 
   await consoleDialog.getByRole('tab', { name: 'Camera' }).click();
   await consoleDialog.getByRole('button', { name: 'Iniciar preview' }).click();
   await expect(consoleDialog.getByText('Preview local ativo. Nenhuma imagem e salva.')).toBeVisible();
+
+  await consoleDialog.getByRole('tab', { name: 'Inteligente' }).click();
+  await expect(consoleDialog.getByRole('heading', { name: 'Entrega inteligente' })).toBeVisible();
+  await expect(consoleDialog.getByText('7 dias')).toBeVisible();
+  await expect(consoleDialog.getByText('1 P · 0 G')).toBeVisible();
+  page.once('dialog', (dialog) => dialog.accept());
+  await consoleDialog.getByRole('button', { name: /Limpar metricas locais/ }).click();
+  await expect(consoleDialog.getByText('Metricas locais apagadas.')).toBeVisible();
+  await expect.poll(() => page.evaluate(
+    () => localStorage.getItem('preddita_smart_delivery_telemetry_v1'),
+  )).toBeNull();
 
   await consoleDialog.getByRole('tab', { name: 'Tela' }).click();
   await expect.poll(() => page.evaluate(() => window.__predditaCameraTrack.stopped)).toBe(true);
@@ -144,6 +170,7 @@ test('console autenticado organiza diagnostico e limita ajustes', async ({ page 
     expect.objectContaining({ kind: 'diagnostic-access', meta: expect.objectContaining({ actor: 'technical-local', lockerId: expect.any(String), outcome: 'opened' }) }),
     expect.objectContaining({ kind: 'diagnostic-display', meta: expect.objectContaining({ actor: 'technical-local' }) }),
     expect.objectContaining({ kind: 'diagnostic-serial', meta: expect.objectContaining({ actor: 'technical-local' }) }),
+    expect.objectContaining({ kind: 'diagnostic-smart-delivery', meta: expect.objectContaining({ actor: 'technical-local', outcome: 'cleared' }) }),
   ]));
   expect(browserErrors).toEqual([]);
 });

@@ -43,6 +43,10 @@ import java.util.Map;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -96,6 +100,9 @@ public class MainActivity extends Activity {
     private DiagnosticCredentialStore diagnosticCredentialStore;
     private SharedPreferences technicalPreferences;
     private AppUpdateManager appUpdateManager;
+    private LocalPackageAnalyzer packageAnalyzer;
+    private final ExecutorService packageAnalysisExecutor = Executors.newSingleThreadExecutor();
+    private final AtomicBoolean packageAnalysisInFlight = new AtomicBoolean(false);
     private volatile String lastDeviceAuthError = "";
 
     private volatile boolean serialOpen = false;
@@ -130,6 +137,7 @@ public class MainActivity extends Activity {
         diagnosticCredentialStore = new DiagnosticCredentialStore(getApplicationContext());
         technicalPreferences = getSharedPreferences(TECHNICAL_PREFERENCES, MODE_PRIVATE);
         appUpdateManager = new AppUpdateManager(this, this::dispatchAppUpdateStatus);
+        packageAnalyzer = new LocalPackageAnalyzer(getApplicationContext());
         appUpdateManager.reportAppStarted(deviceCredentialStore.isProvisioned());
         serialCoordinator = createSerialCoordinator();
         applyPersistedTechnicalControls();
@@ -157,6 +165,7 @@ public class MainActivity extends Activity {
         webView.addJavascriptInterface(new DeviceAuthBridge(), "PredditaDeviceAuth");
         webView.addJavascriptInterface(new AppUpdateBridge(), "PredditaUpdater");
         webView.addJavascriptInterface(new TechnicalDiagnosticsBridge(), "PredditaDiagnostics");
+        webView.addJavascriptInterface(new PackageAnalysisBridge(), "PredditaPackageAnalyzer");
         WebView.setWebContentsDebuggingEnabled(isDebuggableBuild());
 
         webView.setWebChromeClient(new WebChromeClient() {
@@ -349,6 +358,7 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         if (appUpdateManager != null) appUpdateManager.shutdown();
         if (serialCoordinator != null) serialCoordinator.shutdown();
+        packageAnalysisExecutor.shutdownNow();
         stopSerialThread();
         closeSerialStreams();
         super.onDestroy();
@@ -360,6 +370,17 @@ public class MainActivity extends Activity {
             String encoded = org.json.JSONObject.quote(statusJson == null ? "{}" : statusJson);
             webView.evaluateJavascript(
                 "window.dispatchEvent(new CustomEvent('preddita-update-status',{detail:JSON.parse(" + encoded + ")}))",
+                null
+            );
+        });
+    }
+
+    private void dispatchPackageAnalysisResult(String resultJson) {
+        mainHandler.post(() -> {
+            if (webView == null) return;
+            String encoded = org.json.JSONObject.quote(resultJson == null ? "{}" : resultJson);
+            webView.evaluateJavascript(
+                "window.dispatchEvent(new CustomEvent('preddita-package-analysis',{detail:JSON.parse(" + encoded + ")}))",
                 null
             );
         });
@@ -1064,6 +1085,41 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void reportHealth(String healthJson) {
             appUpdateManager.reportRuntimeHealth(healthJson);
+        }
+    }
+
+    public class PackageAnalysisBridge {
+        @JavascriptInterface
+        public String getBridgeVersion() {
+            return LocalPackageAnalyzer.BRIDGE_VERSION;
+        }
+
+        @JavascriptInterface
+        public String getInfo() {
+            return packageAnalyzer == null
+                ? "{\"schemaVersion\":1,\"modelAvailable\":false,\"reasonCode\":\"analyzer-error\"}"
+                : packageAnalyzer.getInfoJson();
+        }
+
+        @JavascriptInterface
+        public boolean analyze(String requestJson) {
+            if (packageAnalyzer == null || !packageAnalysisInFlight.compareAndSet(false, true)) {
+                return false;
+            }
+
+            try {
+                packageAnalysisExecutor.execute(() -> {
+                    try {
+                        dispatchPackageAnalysisResult(packageAnalyzer.analyze(requestJson));
+                    } finally {
+                        packageAnalysisInFlight.set(false);
+                    }
+                });
+                return true;
+            } catch (RejectedExecutionException error) {
+                packageAnalysisInFlight.set(false);
+                return false;
+            }
         }
     }
 

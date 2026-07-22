@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "approved": false,
+  "modelVersion": "package-pg-v1-candidate",
+  "artifactPath": "artifacts/package-size-pg-v1.tflite",
+  "sha256": "",
+  "input": {
+    "width": null,
+    "height": null,
+    "channels": 3,
+    "colorSpace": "RGB",
+    "normalization": "DOCUMENT-AFTER-TRAINING"
+  },
+  "output": {
+    "field": "probabilityG",
+    "smallMax": null,
+    "largeMin": null
+  },
+  "datasetVersion": "",
+  "calibrationReportPath": "",
+  "androidDeviceInferenceP95Ms": null,
+  "approvedAt": "",
+  "approvedBy": ""
+}

@@ -74,14 +74,17 @@ Cada jornada envia somente:
 | Tipo | Entrega ou retirada |
 | Resultado | Concluida, cancelada, falhou ou foi interrompida |
 | Duracao | Tempo total, limitado a 30 minutos |
-| Modo | PIN, QR ou nao aplicavel |
+| Modo | Manual, inteligente, PIN, QR ou nao aplicavel |
+| Analise inteligente | `P`, `G`, incerta, falhou ou nao executada |
+| Confirmacao | Se a recomendacao inteligente foi confirmada |
+| Resultado da porta | Aberta, indisponivel, falhou ou nao solicitada |
 | Fallback | Se a entrega precisou de porta maior |
 | Ajuda | Se o botao de ajuda foi usado |
 | Erros | Contagem limitada, sem mensagem livre |
 | Motivo | Codigo fechado e nao identificavel |
 
 O servidor aceita apenas a allowlist acima e limita o conjunto a 500 amostras
-por locker. Campos extras sao descartados. Nao registrar nomes, unidade,
+e 30 dias por locker. Campos extras sao descartados. Nao registrar nomes, unidade,
 imagem, audio, PIN, QR, etiqueta, porta ou observacao livre na planilha do
 piloto.
 

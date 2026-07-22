@@ -4,6 +4,7 @@ import { formatRecipientApartment } from './lockerWorkflow.js';
 import { joinClasses } from './appUi.jsx';
 import { KioskIcon, KioskIcons } from './kioskIcons.jsx';
 import { COURIER_COPY, PICKUP_COPY, PUBLIC_HOME_COPY } from './publicKioskCopy.js';
+import { PACKAGE_ANALYSIS_STATUSES, canOpenDoorFromPackageAnalysis } from './smartDelivery.js';
 
 const NUMBER_PAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'backspace'];
 const KioskAudioContext = createContext(null);
@@ -480,6 +481,51 @@ export function PublicBackButton({ onClick }) {
   );
 }
 
+export function CourierModeStep({
+  tenantName,
+  smartAvailable = false,
+  onManual,
+  onSmart,
+  onBack,
+  onHelp,
+}) {
+  return (
+    <KioskFlowFrame
+      siteName={tenantName}
+      stepLabel="Entrega · Modalidade"
+      className="public-kiosk-screen public-kiosk-screen--delivery-mode kiosk-v4-flow--delivery-mode"
+      onHelp={onHelp}
+    >
+      <main className="kiosk-v4-flow-main kiosk-v4-flow-main--delivery-mode">
+        <header className="kiosk-v4-flow-heading">
+          <div>
+            <p>Entrega</p>
+            <h1>{COURIER_COPY.modeTitle}</h1>
+          </div>
+          <PublicBackButton onClick={onBack} />
+        </header>
+
+        <div className="kiosk-v4-delivery-mode-actions">
+          <KioskAction
+            icon={KioskIcons.courier}
+            title={COURIER_COPY.manualTitle}
+            meta={COURIER_COPY.manualText}
+            onClick={onManual}
+          />
+          <KioskAction
+            icon={KioskIcons.camera}
+            title={COURIER_COPY.smartTitle}
+            meta={COURIER_COPY.smartText}
+            tone="smart"
+            state={smartAvailable ? 'ready' : 'unavailable'}
+            onClick={onSmart}
+          />
+        </div>
+      </main>
+    </KioskFlowFrame>
+  );
+}
+
 export function CourierApartmentStep({
   tenantName,
   search,
@@ -541,8 +587,9 @@ export function CourierApartmentStep({
   );
 }
 
-export function CourierConfirmStep({ tenantName, recipient, isBusy, onBack, onConfirm, onHelp }) {
+export function CourierConfirmStep({ tenantName, recipient, mode = 'manual', isBusy, onBack, onConfirm, onHelp }) {
   useKioskAudioPrompt('courier-confirm');
+  const isSmart = mode === 'smart';
 
   return (
     <KioskFlowFrame
@@ -563,11 +610,232 @@ export function CourierConfirmStep({ tenantName, recipient, isBusy, onBack, onCo
           <span>Apartamento</span>
           <strong>{recipient ? formatRecipientApartment(recipient) : 'Nao selecionado'}</strong>
         </div>
-        <p className="kiosk-v4-confirm-help">{COURIER_COPY.confirmText}</p>
+        <p className="kiosk-v4-confirm-help">
+          {isSmart ? COURIER_COPY.smartConfirmText : COURIER_COPY.confirmText}
+        </p>
         <div className="public-action-bar kiosk-v4-flow-actions">
           <button type="button" className="public-secondary-button" onClick={onBack}>Corrigir</button>
           <button type="button" className="public-primary-button is-primary" onClick={onConfirm} disabled={isBusy || !recipient} aria-busy={isBusy ? 'true' : undefined}>
-            {isBusy ? 'Abrindo porta...' : 'Abrir porta'}
+            {isBusy ? 'Aguarde...' : (isSmart ? 'Continuar para camera' : 'Abrir porta')}
+          </button>
+        </div>
+      </main>
+    </KioskFlowFrame>
+  );
+}
+
+function getPackageAnalysisMessage(analysis) {
+  if (analysis.status === PACKAGE_ANALYSIS_STATUSES.ANALYZING) {
+    return 'A imagem esta sendo processada somente neste armario.';
+  }
+  if (analysis.status === PACKAGE_ANALYSIS_STATUSES.READY) {
+    return 'Recomendacao calculada. Revise o tamanho antes de abrir uma porta.';
+  }
+
+  const messages = {
+    'model-not-installed': 'O modelo P/G ainda nao esta instalado. Use a entrega manual.',
+    'model-checksum-mismatch': 'O modelo local nao passou pela verificacao. Use a entrega manual.',
+    'model-runtime-not-installed': 'O executor do modelo ainda nao esta disponivel. Use a entrega manual.',
+    'low-capture-quality': 'A qualidade nao foi suficiente. Refaca a foto ou use a entrega manual.',
+    'analyzer-unavailable': 'O analisador local nao esta disponivel neste dispositivo.',
+    'analyzer-timeout': 'A analise levou tempo demais. Refaca a foto ou use a entrega manual.',
+    'analyzer-busy': 'O analisador esta ocupado. Aguarde e refaca a foto.',
+    'invalid-image': 'A foto nao pode ser processada. Refaca a captura.',
+    'unsupported-schema': 'O analisador local precisa ser atualizado.',
+    'unsafe-analysis-result': 'O resultado nao atingiu a confianca minima para recomendar uma porta.',
+    'unverified-model-result': 'A identidade do modelo local nao foi confirmada. Use a entrega manual.',
+  };
+  return messages[analysis.reasonCode]
+    || 'Nao foi possivel determinar o tamanho com seguranca. Use a entrega manual.';
+}
+
+export function SmartPackageCaptureStep({
+  tenantName,
+  capture,
+  analysis = { status: PACKAGE_ANALYSIS_STATUSES.IDLE, suggestedSize: '', reasonCode: '' },
+  videoRef,
+  qualityCanvasRef,
+  bestCanvasRef,
+  onStart,
+  onStop,
+  onRetry,
+  onReview,
+  onUseManual,
+  onBack,
+  onHelp,
+}) {
+  const isRunning = capture.status === 'opening' || capture.status === 'guiding';
+  const isCaptured = capture.status === 'captured';
+  const isAnalyzing = isCaptured && analysis.status === PACKAGE_ANALYSIS_STATUSES.ANALYZING;
+  const isReady = isCaptured && analysis.status === PACKAGE_ANALYSIS_STATUSES.READY;
+  const isInconclusive = isCaptured && [
+    PACKAGE_ANALYSIS_STATUSES.UNCERTAIN,
+    PACKAGE_ANALYSIS_STATUSES.FAILED,
+  ].includes(analysis.status);
+  const statusTitle = capture.status === 'opening'
+    ? 'Abrindo camera'
+    : isAnalyzing
+    ? 'Analisando pacote'
+    : isReady
+    ? `Pacote identificado: tamanho ${analysis.suggestedSize}`
+    : isInconclusive
+    ? 'Analise inconclusiva'
+    : isCaptured
+    ? 'Foto pronta'
+    : capture.status === 'error'
+    ? 'Nao foi possivel capturar'
+    : isRunning
+    ? `Fique parado por ${capture.secondsLeft || 1}s`
+    : 'Camera pronta para iniciar';
+
+  return (
+    <KioskFlowFrame
+      siteName={tenantName}
+      stepLabel="Entrega inteligente · Captura"
+      className="public-kiosk-screen public-kiosk-screen--smart-capture kiosk-v4-flow--smart-capture"
+      onHelp={onHelp}
+    >
+      <main className="kiosk-v4-flow-main kiosk-v4-flow-main--smart-capture">
+        <header className="kiosk-v4-flow-heading">
+          <div>
+            <p>Entrega inteligente</p>
+            <h1>{COURIER_COPY.captureTitle}</h1>
+          </div>
+          <PublicBackButton onClick={onBack} />
+        </header>
+
+        <div className="kiosk-v4-smart-capture-body">
+          <section className="kiosk-v4-smart-preview" aria-label="Visualizacao da camera">
+            {isCaptured && capture.photoDataUrl ? (
+              <img src={capture.photoDataUrl} alt="Pacote fotografado" />
+            ) : (
+              <video ref={videoRef} autoPlay muted playsInline aria-label="Camera para enquadrar o pacote" />
+            )}
+            {!isRunning && !isCaptured ? (
+              <div className="kiosk-v4-smart-preview-placeholder" aria-hidden="true">
+                <KioskIcon icon={KioskIcons.camera} />
+              </div>
+            ) : null}
+            {isRunning ? (
+              <div className="kiosk-v4-smart-guide" aria-hidden="true">
+                <span>Pacote inteiro</span>
+              </div>
+            ) : null}
+            <canvas ref={qualityCanvasRef} className="kiosk-v4-smart-canvas" aria-hidden="true" />
+            <canvas ref={bestCanvasRef} className="kiosk-v4-smart-canvas" aria-hidden="true" />
+          </section>
+
+          <section className="kiosk-v4-smart-status" aria-live="polite">
+            <div
+              className={joinClasses(
+                'kiosk-v4-smart-status-icon',
+                isReady ? 'is-success' : '',
+                isInconclusive ? 'is-warning' : '',
+                isAnalyzing ? 'is-loading' : '',
+              )}
+              aria-hidden="true"
+            >
+              <KioskIcon
+                icon={isAnalyzing
+                  ? KioskIcons.loading
+                  : isReady
+                  ? KioskIcons.check
+                  : isInconclusive
+                  ? KioskIcons.warning
+                  : KioskIcons.package}
+              />
+            </div>
+            <div>
+              <h2>{statusTitle}</h2>
+              <p>
+                {capture.error
+                  || (isCaptured && analysis.status !== PACKAGE_ANALYSIS_STATUSES.IDLE
+                    ? getPackageAnalysisMessage(analysis)
+                    : capture.message || COURIER_COPY.captureText)}
+              </p>
+            </div>
+            {isRunning ? (
+              <progress max="100" value={capture.progress || 0} aria-label="Estabilidade da captura">
+                {capture.progress || 0}%
+              </progress>
+            ) : null}
+            <div className="kiosk-v4-smart-actions">
+              {isRunning ? (
+                <button type="button" className="public-secondary-button" onClick={onStop}>Cancelar captura</button>
+              ) : isAnalyzing ? (
+                <button type="button" className="public-secondary-button" disabled aria-busy="true">Analisando...</button>
+              ) : isReady ? (
+                <>
+                  <button type="button" className="public-primary-button is-primary" onClick={onReview}>Revisar recomendacao</button>
+                  <button type="button" className="public-secondary-button" onClick={onRetry}>Refazer foto</button>
+                </>
+              ) : isCaptured ? (
+                <button type="button" className="public-secondary-button" onClick={onRetry}>Refazer foto</button>
+              ) : (
+                <button type="button" className="public-primary-button is-primary" onClick={onStart}>Iniciar camera</button>
+              )}
+              {!isRunning && !isReady ? (
+                <button type="button" className="public-secondary-button" onClick={onUseManual}>Usar entrega manual</button>
+              ) : null}
+            </div>
+          </section>
+        </div>
+      </main>
+    </KioskFlowFrame>
+  );
+}
+
+export function SmartPackageReviewStep({
+  tenantName,
+  recipient,
+  analysis,
+  isBusy,
+  onConfirm,
+  onRetry,
+  onUseManual,
+  onHelp,
+}) {
+  useKioskAudioPrompt('courier-confirm');
+  const isValid = canOpenDoorFromPackageAnalysis(analysis);
+  const isLarge = analysis?.suggestedSize === 'G';
+  const doorLabel = isLarge ? 'Grande (G)' : 'Pequena (P)';
+  const actionLabel = isLarge ? 'Abrir porta grande' : 'Abrir porta pequena';
+
+  return (
+    <KioskFlowFrame
+      siteName={tenantName}
+      stepLabel="Entrega inteligente · Revisao"
+      className="public-kiosk-screen public-kiosk-screen--smart-review kiosk-v4-flow--confirm"
+      onHelp={onHelp}
+    >
+      <main className="kiosk-v4-flow-main kiosk-v4-flow-main--confirm">
+        <header className="kiosk-v4-flow-heading">
+          <div>
+            <p>Analise local concluida</p>
+            <h1>Revise a recomendacao</h1>
+          </div>
+          <PublicBackButton onClick={onRetry} />
+        </header>
+        <div className="public-confirm-card kiosk-v4-confirm-value">
+          <span>Porta recomendada</span>
+          <strong>{doorLabel}</strong>
+        </div>
+        <p className="kiosk-v4-confirm-help">
+          Destino: {recipient ? formatRecipientApartment(recipient) : 'nao selecionado'}.
+          {' '}Nenhuma porta foi reservada ainda. Confirme somente se o tamanho parece correto.
+        </p>
+        <div className="public-action-bar kiosk-v4-flow-actions">
+          <button type="button" className="public-secondary-button" onClick={onUseManual} disabled={isBusy}>
+            Usar entrega manual
+          </button>
+          <button
+            type="button"
+            className="public-primary-button is-primary"
+            onClick={onConfirm}
+            disabled={isBusy || !isValid || !recipient}
+            aria-busy={isBusy ? 'true' : undefined}
+          >
+            {isBusy ? 'Verificando porta...' : actionLabel}
           </button>
         </div>
       </main>

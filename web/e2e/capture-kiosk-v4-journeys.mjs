@@ -8,6 +8,7 @@ import {
   bootKiosk,
   closeTestDoor,
   readLockerState,
+  startManualDelivery,
 } from './support/kioskTestBridge.js';
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -66,7 +67,7 @@ async function capture(page, name) {
 }
 
 async function openSmallDepositDoor(page) {
-  await page.getByRole('button', { name: /Entregar encomenda/i }).click();
+  await startManualDelivery(page);
   await page.getByRole('textbox', { name: 'Apartamento', exact: true }).fill('203');
   await page.getByRole('button', { name: 'Apartamento 203', exact: true }).click();
   await page.getByRole('button', { name: 'Abrir porta', exact: true }).click();
@@ -110,6 +111,7 @@ try {
 
   await capture(page, '01-inicio');
   await page.getByRole('button', { name: /Entregar encomenda/i }).click();
+  await page.getByRole('button', { name: /Entrega Manual/i }).click();
   await capture(page, '02-apartamento');
   await page.getByRole('textbox', { name: 'Apartamento', exact: true }).fill('203');
   await page.getByRole('button', { name: 'Apartamento 203', exact: true }).click();

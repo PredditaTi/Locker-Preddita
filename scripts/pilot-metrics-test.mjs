@@ -8,7 +8,9 @@ import {
 } from '../web/src/pilotMetrics.js';
 import {
   MAX_PILOT_METRICS,
+  PILOT_METRIC_RETENTION_DAYS,
   normalizePilotMetric,
+  normalizePilotState,
   recordPilotMetric,
   summarizePilotMetrics,
 } from '../admin-online/pilotMetrics.mjs';
@@ -40,13 +42,17 @@ assert.equal(started.interruptedMetric, null);
 recordPilotJourneySignal({ storage, signal: 'help' });
 recordPilotJourneySignal({ storage, signal: 'size-fallback' });
 recordPilotJourneySignal({ storage, signal: 'error' });
+recordPilotJourneySignal({ storage, signal: 'delivery-mode', deliveryMode: 'smart' });
+recordPilotJourneySignal({ storage, signal: 'smart-analysis', analysisOutcome: 'P' });
+recordPilotJourneySignal({ storage, signal: 'smart-recommendation-confirmed' });
+recordPilotJourneySignal({ storage, signal: 'smart-door-outcome', doorOutcome: 'opened' });
 const completed = completePilotJourney({
   storage,
   outcome: 'completed',
   occurredAt: '2026-07-21T12:02:05.000Z',
 });
 assert.deepEqual(completed.payload, {
-  schemaVersion: 1,
+  schemaVersion: 2,
   journeyType: 'courier',
   outcome: 'completed',
   durationMs: 125000,
@@ -55,6 +61,10 @@ assert.deepEqual(completed.payload, {
   helpRequested: true,
   errorCount: 1,
   reasonCode: 'none',
+  deliveryMode: 'smart',
+  smartAnalysisOutcome: 'P',
+  smartRecommendationConfirmed: true,
+  smartDoorOutcome: 'opened',
 });
 assert.equal(storage.getItem(PILOT_JOURNEY_STORAGE_KEY), null);
 
@@ -75,6 +85,7 @@ const sanitized = normalizePilotMetric({
   qrPayload: 'preddita://secret',
   door: 7,
   message: 'texto livre',
+  receivedAt: '2100-01-01T00:00:00.000Z',
   pickupMode: 'pin',
 }, {
   id: completed.id,
@@ -85,6 +96,7 @@ assert.equal('pin' in sanitized, false);
 assert.equal('qrPayload' in sanitized, false);
 assert.equal('door' in sanitized, false);
 assert.equal('message' in sanitized, false);
+assert.notEqual(sanitized.receivedAt, '2100-01-01T00:00:00.000Z');
 assert.equal(sanitized.pickupMode, 'none');
 
 let pilot = recordPilotMetric({}, completed.payload, {
@@ -105,6 +117,12 @@ assert.equal(summary.fallbackCount, 1);
 assert.equal(summary.errorCount, 1);
 assert.equal(summary.medianDurationMs, 60000);
 assert.equal(summary.p95DurationMs, 125000);
+assert.equal(summary.smartCourierCount, 1);
+assert.equal(summary.smartReadyPCount, 1);
+assert.equal(summary.smartRecommendationConfirmedCount, 1);
+assert.equal(summary.smartDoorOpenedCount, 1);
+assert.equal(summary.smartDoorFailedCount, 0);
+assert.equal(summary.retentionDays, PILOT_METRIC_RETENTION_DAYS);
 assert.equal(
   pilot.metrics.find((metric) => metric.eventId === completed.id)?.receivedAt,
   '2026-07-21T12:02:06.000Z',
@@ -117,5 +135,29 @@ for (let index = 0; index < MAX_PILOT_METRICS + 10; index += 1) {
   });
 }
 assert.equal(pilot.metrics.length, MAX_PILOT_METRICS);
+
+const expiredAt = new Date(
+  Date.parse('2026-07-21T12:00:00.000Z')
+    - (PILOT_METRIC_RETENTION_DAYS + 1) * 24 * 60 * 60 * 1000,
+).toISOString();
+const recentAt = '2026-07-20T12:00:00.000Z';
+const retained = normalizePilotState({
+  metrics: [
+    {
+      ...pilot.metrics[0],
+      eventId: 'expired-metric',
+      receivedAt: expiredAt,
+      occurredAt: expiredAt,
+    },
+    {
+      ...pilot.metrics[0],
+      eventId: 'recent-metric',
+      receivedAt: recentAt,
+      occurredAt: recentAt,
+    },
+  ],
+}, { nowMs: Date.parse('2026-07-21T12:00:00.000Z') });
+assert.equal(retained.metrics.some((metric) => metric.eventId === 'expired-metric'), false);
+assert.equal(retained.metrics.some((metric) => metric.eventId === 'recent-metric'), true);
 
 console.log('Pilot metrics tests passed.');

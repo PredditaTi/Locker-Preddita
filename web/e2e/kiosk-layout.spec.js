@@ -2,6 +2,8 @@ import { expect, test } from '@playwright/test';
 import {
   bootKiosk,
   closeTestDoor,
+  installPackageAnalyzerBridge,
+  installStablePackageCamera,
 } from './support/kioskTestBridge.js';
 
 async function collectLayoutIssues(page, stage) {
@@ -132,6 +134,8 @@ async function recordLayout(page, findings, stage) {
 
 test('telas publicas permanecem legiveis e dentro do viewport', async ({ page }, testInfo) => {
   const browserErrors = await bootKiosk(page);
+  await installStablePackageCamera(page);
+  await installPackageAnalyzerBridge(page);
   const findings = [];
 
   await expect(page.getByRole('button', { name: /Entregar encomenda/i })).toBeVisible();
@@ -144,6 +148,9 @@ test('telas publicas permanecem legiveis e dentro do viewport', async ({ page },
   await page.keyboard.press('Escape');
 
   await page.getByRole('button', { name: /Entregar encomenda/i }).click();
+  await expect(page.getByRole('heading', { name: 'Como deseja entregar?' })).toBeVisible();
+  await recordLayout(page, findings, 'modalidade-entrega');
+  await page.getByRole('button', { name: /Entrega Inteligente/i }).click();
   await expect(page.getByRole('heading', { name: 'Qual e o apartamento?' })).toBeVisible();
   await recordLayout(page, findings, 'apartamento');
 
@@ -154,8 +161,31 @@ test('telas publicas permanecem legiveis e dentro do viewport', async ({ page },
   await expect(page.getByRole('textbox', { name: 'Apartamento', exact: true })).toHaveValue('203');
   await page.getByRole('button', { name: 'Apartamento 203', exact: true }).click();
   await expect(page.locator('.public-confirm-card strong')).toContainText('203');
+  await expect(page.getByRole('button', { name: 'Continuar para camera', exact: true })).toBeVisible();
+  await recordLayout(page, findings, 'confirmacao-inteligente');
+
+  await page.getByRole('button', { name: 'Continuar para camera', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Mostre o pacote', exact: true })).toBeVisible();
+  await recordLayout(page, findings, 'captura-inteligente');
+  await page.getByRole('button', { name: 'Iniciar camera', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Analise inconclusiva', exact: true })).toBeVisible({ timeout: 8000 });
+  await recordLayout(page, findings, 'resultado-inteligente');
+  await installPackageAnalyzerBridge(page, {
+    status: 'ready',
+    suggestedSize: 'P',
+    confidence: 0.97,
+    reasonCode: '',
+  });
+  await page.getByRole('button', { name: 'Refazer foto', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Revisar recomendacao', exact: true }))
+    .toBeVisible({ timeout: 8000 });
+  await recordLayout(page, findings, 'resultado-inteligente-pronto');
+  await page.getByRole('button', { name: 'Revisar recomendacao', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Revise a recomendacao', exact: true })).toBeVisible();
+  await recordLayout(page, findings, 'revisao-inteligente');
+  await page.getByRole('button', { name: 'Usar entrega manual', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Abrir porta', exact: true })).toBeVisible();
-  await recordLayout(page, findings, 'confirmacao');
+  await recordLayout(page, findings, 'confirmacao-manual');
 
   await page.getByRole('button', { name: 'Corrigir', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Qual e o apartamento?' })).toBeVisible();
@@ -175,8 +205,13 @@ test('telas publicas permanecem legiveis e dentro do viewport', async ({ page },
   await recordLayout(page, findings, 'sucesso');
 
   await page.getByRole('button', { name: 'Nova entrega', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Como deseja entregar?' })).toBeVisible();
+  await recordLayout(page, findings, 'nova-entrega-modalidade');
+  await page.getByRole('button', { name: /Entrega Manual/i }).click();
   await expect(page.getByRole('heading', { name: 'Qual e o apartamento?' })).toBeVisible();
   await recordLayout(page, findings, 'nova-entrega');
+  await page.getByRole('button', { name: 'Voltar', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Como deseja entregar?' })).toBeVisible();
   await page.getByRole('button', { name: 'Voltar', exact: true }).click();
 
   await page.getByRole('button', { name: /Retirar encomenda/i }).click();

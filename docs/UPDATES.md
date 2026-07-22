@@ -59,6 +59,262 @@ para a mais antiga:
 
 ## Registro
 
+### 2026-07-22 - Privacidade, metricas e diagnostico da Entrega Inteligente
+
+**Base:** desenvolvimento sobre `2.0.33-lab`, `versionCode 33`
+
+**O que mudou**
+
+- Foi criado um diario local sanitizado com limite de 100 eventos e sete dias.
+- A jornada de piloto passou ao schema `2`, com modalidade, resultado P/G ou
+  inconclusivo, confirmacao e resultado da porta.
+- O servidor aplica allowlist novamente, conserva 500 amostras por 30 dias e
+  exibe os agregados no painel `Piloto`.
+- O console tecnico ganhou a aba `Inteligente`, com estado do modelo, resumo,
+  p95 de inferencia e limpeza imediata do diario local.
+
+**Por que**
+
+- O piloto precisa medir cobertura, falhas e disponibilidade sem conservar a
+  foto nem identificar pessoa, apartamento, credencial ou porta.
+- Retencao explicita e limpeza operacional reduzem o volume e a duracao dos
+  dados tecnicos.
+
+**Impacto**
+
+- A Parte 7 esta concluida tecnicamente e pronta para alimentar o futuro modo
+  sombra.
+- O modelo real e o piloto fisico continuam bloqueados pelas Partes 5 e 8.
+
+**Arquivos**
+
+- `web/src/smartDeliveryTelemetry.js`
+- `web/src/App.jsx`
+- `web/src/DiagnosticsView.jsx`
+- `web/src/pilotMetrics.js`
+- `admin-online/pilotMetrics.mjs`
+- `admin-online/public/app.js`
+- `docs/PRIVACY-DATA-LIFECYCLE.md`
+
+**Validacao**
+
+- Testes puros cobrem allowlists, ausencia de PII, retencao e limites.
+- E2E cobre integracao do fluxo, resumo tecnico e limpeza auditada.
+- Build Vite e contratos do Edge Agent aprovados.
+- Playwright completo: 49 testes aprovados e 39 ignorados por escopo, sem
+  falhas; smoke HTTP do Admin Online aprovado.
+
+### 2026-07-22 - Revisao e alocacao segura da Entrega Inteligente
+
+**Base:** desenvolvimento sobre `2.0.33-lab`, `versionCode 33`
+
+**O que mudou**
+
+- Resultados `ready` agora exigem versao e SHA-256 iguais aos metadados da
+  bridge, confianca minima e captura com no maximo dois minutos.
+- Foi adicionada uma tela de revisao antes de qualquer reserva.
+- `P` e `G` usam somente o catalogo fisico exato, com leitura individual de
+  sensor fechado, reserva e ciclo comprovado de abertura/fechamento.
+- A foto e apagada antes da reserva e nao aparece na entrega armazenada.
+
+**Por que**
+
+- A recomendacao do modelo nao pode acionar hardware sem confirmacao humana,
+  identidade do artefato e as mesmas provas fisicas do modo manual.
+- Uma foto antiga ou uma troca silenciosa de tamanho poderia abrir um
+  compartimento inadequado.
+
+**Impacto**
+
+- A Parte 6 esta pronta para receber um modelo aprovado e foi validada com
+  bridge e hardware simulados.
+- O Android real permanece inconclusivo e sem acionamento inteligente porque
+  dataset, modelo e checksum da Parte 5 ainda nao existem.
+
+**Arquivos**
+
+- `web/src/smartDelivery.js`
+- `web/src/packageAnalyzer.js`
+- `web/src/App.jsx`
+- `web/src/publicKioskUi.jsx`
+- `web/src/kioskTheme.css`
+- `web/e2e/kiosk-flow.spec.js`
+- `web/e2e/kiosk-layout.spec.js`
+
+**Validacao**
+
+- Contratos JavaScript de analise e recomendacao aprovados.
+- E2E `P/G` comprovou zero reserva antes da revisao, porta do tamanho exato,
+  fechamento seguro e ausencia da foto no estado armazenado.
+- Falta de porta `P` manteve portas `G` fechadas, sem reserva ou comando.
+- Tela de revisao aprovada em `1024x600`, `1280x800`, `800x480` e `390x844`.
+- Playwright completo: 49 testes aprovados e 39 ignorados por escopo, sem
+  falhas.
+
+### 2026-07-22 - Pipeline de dataset e calibracao P/G
+
+**Base:** desenvolvimento sobre `2.0.33-lab`, `versionCode 33`
+
+**O que mudou**
+
+- Foram definidos o contrato do manifesto, o template de medidas das portas,
+  a politica de calibracao e o registro de release do futuro modelo.
+- A rotulagem agora pode ser derivada das medidas considerando rotacao, folga
+  e uma zona `uncertain` obrigatoria.
+- O split deterministico mantem todas as imagens do mesmo pacote no mesmo
+  grupo.
+- O calibrador escolhe limiares na validacao e apenas aprova o teste quando
+  todos os gates, incluindo zero falso `P`, forem atendidos.
+
+**Por que**
+
+- Dataset inexistente ou pequeno nao pode ser substituido por metricas
+  sinteticas nem por um modelo sem rastreabilidade.
+- Um pacote `G` enviado a uma porta `P` e o erro de maior risco desta etapa.
+
+**Impacto**
+
+- A coleta real pode comecar com formato e criterios verificaveis.
+- A Entrega Inteligente continua sem modelo e sem capacidade de abrir portas;
+  medidas, imagens autorizadas, treinamento e teste real ainda sao pendentes.
+
+**Arquivos**
+
+- `ml/package-size/`
+- `scripts/package-model-pipeline.mjs`
+- `scripts/package-dataset-calibration-test.mjs`
+- `docs/DATASET-CALIBRACAO-ENTREGA-INTELIGENTE.md`
+- `docs/PLANO-ENTREGA-INTELIGENTE-2026-07-22.md`
+
+**Validacao**
+
+- 37 verificacoes sinteticas de contrato aprovadas.
+- Caso `G -> P` comprovadamente reprova o relatorio no teste intocado.
+- Sintaxe dos modulos e CLI validada pelo Node.js.
+
+### 2026-07-22 - Bridge Android do analisador local
+
+**Base:** desenvolvimento sobre `2.0.33-lab`, `versionCode 33`
+
+**O que mudou**
+
+- Foi criada a bridge isolada `PredditaPackageAnalyzer`, com executor em
+  segundo plano e retorno por evento correlacionado.
+- JPEG, payload, dimensoes, pixels, schema, timeout, confianca e checksum
+  passaram a ter limites explicitos.
+- A captura chama a analise automaticamente e apresenta falha recuperavel.
+- Sem modelo calibrado, o retorno oficial e `uncertain/model-not-installed`.
+
+**Por que**
+
+- O modelo futuro precisa entrar por uma fronteira testada que nao tenha
+  capacidade de reservar ou acionar portas.
+- Ausencia, lentidao ou adulteracao do modelo devem falhar de forma fechada.
+
+**Impacto**
+
+- A integracao Android/WebView esta pronta para receber o modelo da Parte 5.
+- A jornada inteligente continua segura e orienta Entrega Manual enquanto o
+  modelo nao for aprovado.
+
+**Arquivos**
+
+- `android/app/src/main/java/com/preddita/entregaslocker/PackageAnalysisContract.java`
+- `android/app/src/main/java/com/preddita/entregaslocker/LocalPackageAnalyzer.java`
+- `web/src/packageAnalyzer.js`
+- `docs/CONTRATO-ANALISADOR-LOCAL.md`
+
+**Validacao**
+
+- Contratos Java e JavaScript aprovados.
+- Build Vite e E2E da captura/analisador aprovados.
+- Resultado analisado sem overflow nos quatro viewports e sem comando de porta.
+- Playwright completo: 46 testes aprovados e 30 ignorados por escopo, sem
+  falhas.
+- O build APK local ficou pendente porque esta maquina nao possui Android SDK;
+  o CI instala SDK 34 antes de executar o mesmo build.
+
+### 2026-07-22 - Captura guiada da Entrega Inteligente
+
+**Base:** desenvolvimento sobre `2.0.33-lab`, `versionCode 33`
+
+**O que mudou**
+
+- A modalidade inteligente foi habilitada ate a tela `Mostre o pacote`.
+- A camera mede iluminacao, contraste, nitidez e movimento localmente e captura
+  o melhor quadro depois de tres segundos continuos de estabilidade.
+- A tela permite cancelar, refazer ou retornar para a Entrega Manual.
+- A captura termina antes de classificacao, reserva ou abertura de porta.
+
+**Por que**
+
+- A aquisicao de uma imagem consistente precisa ser validada separadamente do
+  futuro modelo P/G e do controle fisico do locker.
+
+**Impacto**
+
+- O fluxo inteligente ja pode ser testado com camera sem risco de selecionar
+  ou acionar um compartimento.
+- A proxima parte pode integrar a bridge Android e o analisador offline sobre
+  um contrato de imagem estavel.
+
+**Arquivos**
+
+- `web/src/packageCaptureQuality.js`
+- `web/src/App.jsx`
+- `web/src/publicKioskUi.jsx`
+- `web/e2e/kiosk-flow.spec.js`
+- `docs/PLANO-ENTREGA-INTELIGENTE-2026-07-22.md`
+
+**Validacao**
+
+- Teste puro de qualidade de captura e build Vite aprovados.
+- Captura E2E aprovada com camera simulada, stream encerrado e zero comandos de
+  abertura.
+- Matriz de layout aprovada nos quatro viewports do projeto.
+- Playwright completo: 46 testes aprovados e 30 ignorados por escopo, sem
+  falhas.
+
+### 2026-07-22 - Fundacao da Entrega Inteligente
+
+**Base:** desenvolvimento sobre `2.0.33-lab`, `versionCode 33`
+
+**O que mudou**
+
+- O fluxo `Entregar encomenda` ganhou uma etapa de modalidade com `Entrega
+  Manual` e `Entrega Inteligente`.
+- Na primeira entrega, a rota manual preservou o comportamento existente e a
+  inteligente permaneceu visivel e bloqueada enquanto a captura era preparada.
+- Foi criado um contrato puro para modo, status, tamanho `P/G`, confianca,
+  qualidade, versao do modelo e tempo de inferencia.
+- O plano de oito partes da nova funcionalidade foi registrado.
+
+**Por que**
+
+- A experiencia manual precisa continuar disponivel durante desenvolvimento,
+  calibracao e falhas da camera.
+- Nenhuma opcao incompleta pode reservar ou abrir uma porta.
+
+**Impacto**
+
+- Entregadores passam por uma escolha explicita de modalidade.
+- A proxima parte pode implementar captura guiada sem misturar estado ou regra
+  de abertura com a jornada manual.
+
+**Arquivos**
+
+- `docs/PLANO-ENTREGA-INTELIGENTE-2026-07-22.md`
+- `docs/KIOSK-V4-JORNADAS-PUBLICAS.md`
+- `docs/API-CONTRACTS-E2E.md`
+- `docs/README.md`
+
+**Validacao**
+
+- Contrato inteligente, fluxo de negocio e audio aprovados.
+- Build Vite aprovado.
+- Playwright: 45 testes aprovados e 27 ignorados por escopo em quatro
+  viewports, sem falha.
+
 ### 2026-07-22 - Compatibilidade com configuracao serial sem ACK
 
 **Base:** candidata de campo `2.0.33-lab`, `versionCode 33`

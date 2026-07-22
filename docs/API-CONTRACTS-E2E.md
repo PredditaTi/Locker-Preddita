@@ -42,21 +42,35 @@ O ambiente web usa Vite 8 e requer Node.js 20.19 ou superior.
 
 A jornada coberta confirma:
 
-1. entregador busca e confirma o apartamento;
-2. porta livre e fechada e selecionada e aberta;
-3. deposito so conclui depois da leitura de fechamento;
-4. PIN e entrega ficam persistidos;
-5. morador informa o PIN e abre a mesma porta;
-6. retirada so conclui depois de nova leitura de fechamento;
-7. estado `collected` sobrevive ao reload do kiosk;
-8. PIN, token, QR e codigo externo nao reaparecem depois do reload;
-9. fallback para porta grande espera a prova de fechamento da pequena;
-10. cancelamento solicitado com porta aberta preserva a reserva ate fechar;
-11. retirada por QR passa pelo decodificador real com camera simulada.
+1. entregador pode escolher `Entrega Manual` ou `Entrega Inteligente`;
+2. entregador busca e confirma o apartamento;
+3. porta livre e fechada e selecionada e aberta;
+4. deposito so conclui depois da leitura de fechamento;
+5. PIN e entrega ficam persistidos;
+6. morador informa o PIN e abre a mesma porta;
+7. retirada so conclui depois de nova leitura de fechamento;
+8. estado `collected` sobrevive ao reload do kiosk;
+9. PIN, token, QR e codigo externo nao reaparecem depois do reload;
+10. fallback para porta grande espera a prova de fechamento da pequena;
+11. cancelamento solicitado com porta aberta preserva a reserva ate fechar;
+12. retirada por QR passa pelo decodificador real com camera simulada;
+13. a captura inteligente exige quadro estavel, fotografa automaticamente e
+    encerra o stream;
+14. a captura inteligente nao altera entregas, nao reserva compartimento e nao
+    envia comando de abertura quando o resultado e inconclusivo;
+15. um resultado simulado `ready` so avanca quando versao e checksum coincidem
+    com a bridge;
+16. recomendacoes `P/G` exigem revisao antes da reserva e usam somente portas
+    do tamanho exato;
+17. a foto inteligente e apagada antes da reserva e permanece ausente depois
+    da confirmacao do deposito;
+18. ausencia de porta `P` nao promove a recomendacao para uma porta `G`.
 
 A protecao de regressao tambem inclui:
 
 - `kiosk-layout.spec.js`: geometria, foco, nomes acessiveis e erros do console;
+- `package-capture-quality-test.mjs`: iluminacao, contraste, nitidez e movimento
+  com frames sinteticos deterministas;
 - `kiosk-interactions.spec.js`: teclado, retorno, cancelamento seguro, timeout e
   fallback para porta grande;
 - `kiosk-v4-home.spec.js`: marca, ajuda, alvo de toque e contraste WCAG AA;
@@ -66,6 +80,20 @@ A protecao de regressao tambem inclui:
   alvo minimo e ausencia de scroll;
 - projetos `1024x600`, `1280x800`, `800x480` e `390x844`;
 - falha controlada que prova a deteccao de um botao fora da tela.
+
+## Contrato do analisador local
+
+O WebView usa `window.PredditaPackageAnalyzer`, separado de `window.Android`,
+para enviar somente JPEG, data da captura e qualidade. A chamada e aceita de
+forma sincrona, executada em uma fila Android de uma posicao ativa e concluida
+pelo evento `preddita-package-analysis` com o mesmo `requestId`.
+
+O adaptador recusa schema desconhecido, resposta sem correlacao, tamanho fora
+de `P/G`, confianca abaixo de `0,90`, modelo divergente e recomendacao com mais
+de dois minutos. Bridge ausente, fila ocupada, timeout, modelo ausente ou
+checksum divergente terminam de forma inconclusiva e nao chamam qualquer API
+de porta. O contrato completo esta em
+`docs/CONTRATO-ANALISADOR-LOCAL.md`.
 
 O baseline visual, as metricas e o rollback correspondente estao em
 `docs/KIOSK-V3-BASELINE.md`.
@@ -138,7 +166,7 @@ campo fora de:
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "journeyType": "courier",
   "outcome": "completed",
   "durationMs": 125000,
@@ -146,14 +174,19 @@ campo fora de:
   "usedSizeFallback": true,
   "helpRequested": false,
   "errorCount": 0,
-  "reasonCode": "none"
+  "reasonCode": "none",
+  "deliveryMode": "smart",
+  "smartAnalysisOutcome": "P",
+  "smartRecommendationConfirmed": true,
+  "smartDoorOutcome": "opened"
 }
 ```
 
-`journeyType`, `outcome`, `pickupMode` e `reasonCode` usam enums fechados;
-duracao e erros sao limitados. O smoke envia propositalmente apartamento e PIN
-extras e confirma que esses campos nao aparecem no estado administrativo. Os
-testes `pilot-metrics-test.mjs` e `pilot-preflight-test.mjs` cobrem restart,
+Os campos enumerados usam allowlists fechadas; duracao e erros sao limitados.
+O servidor conserva no maximo 500 amostras por locker e remove amostras com
+mais de 30 dias. O smoke envia propositalmente apartamento e PIN extras e
+confirma que esses campos nao aparecem no estado administrativo. Os testes
+`pilot-metrics-test.mjs` e `pilot-preflight-test.mjs` cobrem restart, retencao,
 limites, agregacao e gates do piloto.
 
 ## Limites

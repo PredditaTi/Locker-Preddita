@@ -59,11 +59,14 @@ import {
   CourierApartmentStep,
   CourierConfirmStep,
   CourierDoorStep,
+  CourierModeStep,
   CourierSuccessStep,
   KioskAudioProvider,
   KioskNoticeDialog,
   PublicHome,
   ResidentPickupStep,
+  SmartPackageCaptureStep,
+  SmartPackageReviewStep,
 } from './publicKioskUi.jsx';
 import {
   buildDeliveryCollectedEventId,
@@ -71,6 +74,24 @@ import {
 } from './deviceEventQueue.js';
 import DiagnosticsView from './DiagnosticsView.jsx';
 import useDiagnosticGate from './useDiagnosticGate.js';
+import {
+  DELIVERY_MODES,
+  PACKAGE_ANALYSIS_STATUSES,
+  createEmptyPackageAnalysis,
+  createSmartDoorRecommendation,
+  normalizeDeliveryMode,
+  normalizePackageAnalysis,
+} from './smartDelivery.js';
+import { analyzePackagePhoto } from './packageAnalyzer.js';
+import { recordSmartDeliveryTelemetry } from './smartDeliveryTelemetry.js';
+import {
+  PACKAGE_CAPTURE_REQUIRED_STABLE_MS,
+  PACKAGE_CAPTURE_SAMPLE_HEIGHT,
+  PACKAGE_CAPTURE_SAMPLE_INTERVAL_MS,
+  PACKAGE_CAPTURE_SAMPLE_WIDTH,
+  analyzePackageCaptureFrame,
+  getPackageCaptureGuidance,
+} from './packageCaptureQuality.js';
 
 const LOCKER_PROFILE = 'manual2025';
 const COMMANDS = createCommandSet(LOCKER_PROFILE);
@@ -102,6 +123,21 @@ const PICKUP_METHODS = [
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function createIdleLabelCapture() {
+  return {
+    active: false,
+    status: 'idle',
+    photoDataUrl: '',
+    capturedAt: '',
+    error: '',
+    message: 'A camera fara a foto automaticamente quando o pacote estiver parado.',
+    reasonCode: '',
+    progress: 0,
+    secondsLeft: Math.ceil(PACKAGE_CAPTURE_REQUIRED_STABLE_MS / 1000),
+    quality: null,
+  };
 }
 
 function getDeliveryNotificationText(delivery) {
@@ -328,20 +364,16 @@ export default function App() {
   const [pickupMode, setPickupMode] = useState('pin');
   const [pickupValue, setPickupValue] = useState('');
   const [qrScannerState, setQrScannerState] = useState({ active: false, status: 'idle', error: '' });
-  const [labelCapture, setLabelCapture] = useState({
-    active: false,
-    status: 'idle',
-    photoDataUrl: '',
-    capturedAt: '',
-    error: '',
-  });
+  const [labelCapture, setLabelCapture] = useState(createIdleLabelCapture);
+  const [packageAnalysis, setPackageAnalysis] = useState(createEmptyPackageAnalysis);
   const [activeDepositId, setActiveDepositId] = useState('');
   const [activePickupId, setActivePickupId] = useState('');
   const [generatedDelivery, setGeneratedDelivery] = useState(null);
   const [courierSuccessDelivery, setCourierSuccessDelivery] = useState(null);
   const [pickupSuccessDelivery, setPickupSuccessDelivery] = useState(null);
   const [qrImage, setQrImage] = useState('');
-  const [courierStep, setCourierStep] = useState('recipient');
+  const [courierMode, setCourierMode] = useState('');
+  const [courierStep, setCourierStep] = useState('mode');
   const [courierDepositStage, setCourierDepositStage] = useState('small');
   const [smallCloseSecondsLeft, setSmallCloseSecondsLeft] = useState(0);
   const [doorPage, setDoorPage] = useState(0);
@@ -375,7 +407,14 @@ export default function App() {
   const qrScanLockedRef = useRef(false);
   const labelVideoRef = useRef(null);
   const labelCanvasRef = useRef(null);
+  const labelQualityCanvasRef = useRef(null);
   const labelStreamRef = useRef(null);
+  const labelCaptureTimerRef = useRef(0);
+  const labelCaptureRunRef = useRef(0);
+  const labelPreviousLuminanceRef = useRef(null);
+  const labelStableSinceRef = useRef(0);
+  const labelBestQualityRef = useRef(-1);
+  const packageAnalysisRunRef = useRef(0);
   const remoteResidentsRevisionRef = useRef(initialState.remoteResidentsRevision || '');
   const packedAlignmentRef = useRef('auto');
   const remoteCycleRunnerRef = useRef(null);
@@ -687,13 +726,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (activeDepositId) {
-      resetLabelCapture();
-      return;
+    if (view !== 'courier' || courierStep !== 'smartCapture') {
+      stopLabelCamera({ updateState: false });
     }
-
-    stopLabelCamera({ updateState: false });
-  }, [activeDepositId]);
+  }, [courierStep, view]);
 
   useEffect(() => () => {
     stopLabelCamera({ updateState: false });
@@ -1407,6 +1443,12 @@ export default function App() {
   function stopLabelCamera(options = {}) {
     const { updateState = true } = options;
 
+    labelCaptureRunRef.current += 1;
+    if (labelCaptureTimerRef.current) {
+      window.clearInterval(labelCaptureTimerRef.current);
+      labelCaptureTimerRef.current = 0;
+    }
+
     if (labelStreamRef.current) {
       labelStreamRef.current.getTracks().forEach((track) => track.stop());
       labelStreamRef.current = null;
@@ -1422,19 +1464,176 @@ export default function App() {
         active: false,
         status: current.photoDataUrl ? 'captured' : 'idle',
         error: '',
+        progress: current.photoDataUrl ? 100 : 0,
       }));
     }
   }
 
   function resetLabelCapture() {
     stopLabelCamera({ updateState: false });
+    packageAnalysisRunRef.current += 1;
+    labelPreviousLuminanceRef.current = null;
+    labelStableSinceRef.current = 0;
+    labelBestQualityRef.current = -1;
+    setLabelCapture(createIdleLabelCapture());
+    setPackageAnalysis(createEmptyPackageAnalysis());
+  }
+
+  function copyCurrentLabelFrame(video) {
+    const canvas = labelCanvasRef.current;
+    if (!video || !canvas) return false;
+
+    const sourceWidth = video.videoWidth || 1280;
+    const sourceHeight = video.videoHeight || 720;
+    const scale = Math.min(1, LABEL_PHOTO_MAX_WIDTH / sourceWidth);
+    canvas.width = Math.max(1, Math.round(sourceWidth * scale));
+    canvas.height = Math.max(1, Math.round(sourceHeight * scale));
+    const context = canvas.getContext('2d');
+    if (!context) return false;
+
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    return true;
+  }
+
+  async function runPackageAnalysis(photoDataUrl, capturedAt, captureQuality) {
+    const analysisRunId = packageAnalysisRunRef.current + 1;
+    packageAnalysisRunRef.current = analysisRunId;
+    setPackageAnalysis(normalizePackageAnalysis({
+      status: PACKAGE_ANALYSIS_STATUSES.ANALYZING,
+      captureQuality,
+    }));
+
+    const analysis = await analyzePackagePhoto({
+      photoDataUrl,
+      capturedAt,
+      captureQuality,
+    });
+    if (analysisRunId !== packageAnalysisRunRef.current) return;
+    setPackageAnalysis(analysis);
+    const analysisOutcome = analysis.status === PACKAGE_ANALYSIS_STATUSES.READY
+      ? analysis.suggestedSize
+      : analysis.status === PACKAGE_ANALYSIS_STATUSES.UNCERTAIN
+        ? 'uncertain'
+        : 'failed';
+    edgeAgent.recordPilotJourneySignal('smart-analysis', { analysisOutcome });
+    recordSmartDeliveryTelemetry({
+      action: 'analysis',
+      outcome: analysis.status,
+      size: analysis.status === PACKAGE_ANALYSIS_STATUSES.READY ? analysis.suggestedSize : '',
+      reasonCode: analysis.reasonCode,
+      captureQuality: analysis.captureQuality,
+      inferenceMs: analysis.inferenceMs,
+      modelVersion: analysis.modelVersion,
+    });
+  }
+
+  function finalizeLabelCapture(runId) {
+    if (runId !== labelCaptureRunRef.current) return;
+
+    const video = labelVideoRef.current;
+    const canvas = labelCanvasRef.current;
+    if ((!canvas?.width || !canvas?.height) && !copyCurrentLabelFrame(video)) {
+      throw new Error('Nao foi possivel preparar a foto do pacote.');
+    }
+
+    const capturedAt = new Date().toISOString();
+    const photoDataUrl = canvas.toDataURL('image/jpeg', LABEL_PHOTO_JPEG_QUALITY);
+    const captureQuality = Math.max(0, labelBestQualityRef.current);
+    stopLabelCamera({ updateState: false });
     setLabelCapture({
       active: false,
-      status: 'idle',
-      photoDataUrl: '',
-      capturedAt: '',
+      status: 'captured',
+      photoDataUrl,
+      capturedAt,
       error: '',
+      message: 'Captura concluida. Iniciando analise local.',
+      reasonCode: '',
+      progress: 100,
+      secondsLeft: 0,
+      quality: { score: captureQuality },
     });
+    void runPackageAnalysis(photoDataUrl, capturedAt, captureQuality);
+  }
+
+  function sampleLabelCaptureFrame(runId) {
+    if (runId !== labelCaptureRunRef.current) return;
+
+    const video = labelVideoRef.current;
+    const qualityCanvas = labelQualityCanvasRef.current;
+    const context = qualityCanvas?.getContext('2d', { willReadFrequently: true });
+    if (!video || !qualityCanvas || !context) return;
+
+    try {
+      qualityCanvas.width = PACKAGE_CAPTURE_SAMPLE_WIDTH;
+      qualityCanvas.height = PACKAGE_CAPTURE_SAMPLE_HEIGHT;
+      context.drawImage(video, 0, 0, qualityCanvas.width, qualityCanvas.height);
+      const frame = context.getImageData(0, 0, qualityCanvas.width, qualityCanvas.height);
+      const analysis = analyzePackageCaptureFrame(frame, labelPreviousLuminanceRef.current);
+      labelPreviousLuminanceRef.current = analysis.luminance;
+
+      const quality = {
+        brightness: analysis.brightness,
+        contrast: analysis.contrast,
+        sharpness: analysis.sharpness,
+        motion: analysis.motion,
+        score: analysis.qualityScore,
+      };
+
+      if (!analysis.acceptable) {
+        labelStableSinceRef.current = 0;
+        labelBestQualityRef.current = -1;
+        setLabelCapture((current) => ({
+          ...current,
+          active: true,
+          status: 'guiding',
+          error: '',
+          message: getPackageCaptureGuidance(analysis.reasonCode),
+          reasonCode: analysis.reasonCode,
+          progress: 0,
+          secondsLeft: Math.ceil(PACKAGE_CAPTURE_REQUIRED_STABLE_MS / 1000),
+          quality,
+        }));
+        return;
+      }
+
+      const now = Date.now();
+      if (!labelStableSinceRef.current) labelStableSinceRef.current = now;
+      const stableElapsed = now - labelStableSinceRef.current;
+
+      if (analysis.qualityScore >= labelBestQualityRef.current) {
+        if (!copyCurrentLabelFrame(video)) {
+          throw new Error('Nao foi possivel processar o quadro da camera.');
+        }
+        labelBestQualityRef.current = analysis.qualityScore;
+      }
+
+      const progress = Math.min(100, Math.round((stableElapsed / PACKAGE_CAPTURE_REQUIRED_STABLE_MS) * 100));
+      const secondsLeft = Math.max(0, Math.ceil((PACKAGE_CAPTURE_REQUIRED_STABLE_MS - stableElapsed) / 1000));
+      setLabelCapture((current) => ({
+        ...current,
+        active: true,
+        status: 'guiding',
+        error: '',
+        message: getPackageCaptureGuidance(''),
+        reasonCode: '',
+        progress,
+        secondsLeft,
+        quality,
+      }));
+
+      if (stableElapsed >= PACKAGE_CAPTURE_REQUIRED_STABLE_MS) {
+        finalizeLabelCapture(runId);
+      }
+    } catch (_error) {
+      stopLabelCamera({ updateState: false });
+      setLabelCapture((current) => ({
+        ...current,
+        active: false,
+        status: 'error',
+        error: 'Nao foi possivel analisar a imagem. Tente novamente ou use a entrega manual.',
+        progress: 0,
+      }));
+    }
   }
 
   async function startLabelCamera() {
@@ -1443,19 +1642,26 @@ export default function App() {
       setLabelCapture((current) => ({
         ...current,
         active: false,
-        status: 'idle',
-        error: 'Camera indisponivel neste navegador. Continue sem foto se necessario.',
+        status: 'error',
+        error: 'Camera indisponivel neste navegador. Use a entrega manual.',
       }));
-      setBanner({
-        tone: 'warn',
-        title: 'Camera indisponivel',
-        text: 'Nao foi possivel acessar a camera para fotografar a etiqueta. A entrega ainda pode ser registrada.',
-      });
       return;
     }
 
     stopLabelCamera({ updateState: false });
-    setLabelCapture({ active: true, status: 'opening', photoDataUrl: '', capturedAt: '', error: '' });
+    packageAnalysisRunRef.current += 1;
+    setPackageAnalysis(createEmptyPackageAnalysis());
+    labelPreviousLuminanceRef.current = null;
+    labelStableSinceRef.current = 0;
+    labelBestQualityRef.current = -1;
+    const runId = labelCaptureRunRef.current + 1;
+    labelCaptureRunRef.current = runId;
+    setLabelCapture({
+      ...createIdleLabelCapture(),
+      active: true,
+      status: 'opening',
+      message: 'Permita o acesso e aguarde a camera iniciar.',
+    });
 
     try {
       const stream = await mediaDevices.getUserMedia({
@@ -1466,6 +1672,11 @@ export default function App() {
           height: { ideal: 720 },
         },
       });
+
+      if (runId !== labelCaptureRunRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
 
       labelStreamRef.current = stream;
       await new Promise((resolve) => window.requestAnimationFrame(resolve));
@@ -1478,64 +1689,29 @@ export default function App() {
       video.setAttribute('playsinline', 'true');
       video.muted = true;
       await video.play();
-      setLabelCapture({ active: true, status: 'ready', photoDataUrl: '', capturedAt: '', error: '' });
+      if (runId !== labelCaptureRunRef.current) return;
+
+      setLabelCapture((current) => ({
+        ...current,
+        active: true,
+        status: 'guiding',
+        message: 'Centralize o pacote e mantenha a etiqueta visivel.',
+      }));
+      sampleLabelCaptureFrame(runId);
+      labelCaptureTimerRef.current = window.setInterval(
+        () => sampleLabelCaptureFrame(runId),
+        PACKAGE_CAPTURE_SAMPLE_INTERVAL_MS,
+      );
     } catch (_error) {
+      if (runId !== labelCaptureRunRef.current) return;
       stopLabelCamera({ updateState: false });
       setLabelCapture((current) => ({
         ...current,
         active: false,
-        status: 'idle',
-        error: 'Nao foi possivel abrir a camera. Confira a permissao e tente novamente.',
+        status: 'error',
+        error: 'Nao foi possivel abrir a camera. Confira a permissao ou use a entrega manual.',
       }));
-      setBanner({
-        tone: 'warn',
-        title: 'Camera nao abriu',
-        text: 'Confira a permissao da camera. Se precisar, continue a entrega sem foto.',
-      });
     }
-  }
-
-  function captureLabelPhoto() {
-    const video = labelVideoRef.current;
-    const canvas = labelCanvasRef.current;
-    if (!video || !canvas) {
-      setLabelCapture((current) => ({
-        ...current,
-        error: 'Preview da camera nao esta pronto para captura.',
-      }));
-      return;
-    }
-
-    const sourceWidth = video.videoWidth || 1280;
-    const sourceHeight = video.videoHeight || 720;
-    const scale = Math.min(1, LABEL_PHOTO_MAX_WIDTH / sourceWidth);
-    canvas.width = Math.max(1, Math.round(sourceWidth * scale));
-    canvas.height = Math.max(1, Math.round(sourceHeight * scale));
-    const context = canvas.getContext('2d');
-    if (!context) {
-      setLabelCapture((current) => ({
-        ...current,
-        error: 'Este navegador nao conseguiu processar a foto da etiqueta.',
-      }));
-      return;
-    }
-
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const capturedAt = new Date().toISOString();
-    const photoDataUrl = canvas.toDataURL('image/jpeg', LABEL_PHOTO_JPEG_QUALITY);
-    stopLabelCamera({ updateState: false });
-    setLabelCapture({
-      active: false,
-      status: 'captured',
-      photoDataUrl,
-      capturedAt,
-      error: '',
-    });
-    setBanner({
-      tone: 'success',
-      title: 'Etiqueta fotografada',
-      text: 'Comprovante salvo localmente. Agora guarde a encomenda e toque em Item guardado.',
-    });
   }
 
   function buildLabelEvidencePayload(delivery = activeDeposit) {
@@ -1775,7 +1951,8 @@ export default function App() {
   function resetCourierFlow() {
     smallCloseCancelRef.current = true;
     courierCancelRequestedRef.current = false;
-    setCourierStep('recipient');
+    setCourierMode('');
+    setCourierStep('mode');
     setCourierDepositStage('small');
     setSmallCloseSecondsLeft(0);
     setSelectedRecipientId('');
@@ -1809,6 +1986,29 @@ export default function App() {
     edgeAgent.recordPilotJourneySignal('help');
   }
 
+  function handleSelectCourierMode(mode) {
+    const normalizedMode = normalizeDeliveryMode(mode);
+    if (![DELIVERY_MODES.MANUAL, DELIVERY_MODES.SMART].includes(normalizedMode)) return;
+
+    edgeAgent.recordPilotJourneySignal('delivery-mode', { deliveryMode: normalizedMode });
+    setCourierMode(normalizedMode);
+    setCourierStep('recipient');
+  }
+
+  function handleLeaveCourierFlow() {
+    edgeAgent.completePilotJourney('cancelled', { reasonCode: 'user-cancelled' });
+    void flushPendingDeviceEvents();
+    resetCourierFlow();
+    setView('home');
+  }
+
+  function handleBackToCourierMode() {
+    setSelectedRecipientId('');
+    setRecipientSearch('');
+    setCourierMode('');
+    setCourierStep('mode');
+  }
+
   async function handleSelectRecipient(recipientId) {
     setSelectedRecipientId(recipientId);
     if (view === 'courier') {
@@ -1817,7 +2017,9 @@ export default function App() {
       setBanner({
         tone: 'success',
         title: 'Confirme o apartamento',
-        text: 'Revise a unidade antes de abrir a porta pequena.',
+        text: courierMode === DELIVERY_MODES.SMART
+          ? 'Revise a unidade antes de iniciar a captura do pacote.'
+          : 'Revise a unidade antes de abrir a porta pequena.',
       });
     }
   }
@@ -1827,7 +2029,211 @@ export default function App() {
       setBanner({ tone: 'danger', title: 'Apartamento obrigatorio', text: 'Selecione um apartamento para continuar.' });
       return;
     }
+    if (courierMode === DELIVERY_MODES.SMART) {
+      resetLabelCapture();
+      setBanner(PUBLIC_READY_BANNER);
+      setCourierStep('smartCapture');
+      return;
+    }
+    if (courierMode !== DELIVERY_MODES.MANUAL) return;
     await openCourierSmallDoor(selectedRecipient.id);
+  }
+
+  function handleBackFromSmartCapture() {
+    resetLabelCapture();
+    setCourierStep('confirm');
+  }
+
+  function handleReviewSmartRecommendation() {
+    const recommendation = createSmartDoorRecommendation(packageAnalysis);
+    if (!recommendation || courierMode !== DELIVERY_MODES.SMART || !selectedRecipient) {
+      if (packageAnalysis.status === PACKAGE_ANALYSIS_STATUSES.READY) {
+        recordSmartDeliveryTelemetry({
+          action: 'recommendation',
+          outcome: 'expired',
+          size: packageAnalysis.suggestedSize,
+          reasonCode: 'recommendation-expired',
+          modelVersion: packageAnalysis.modelVersion,
+        });
+      }
+      setBanner({
+        tone: 'warn',
+        title: 'Analise nao confirmada',
+        text: 'Refaca a foto ou use a entrega manual. Nenhuma porta foi reservada.',
+      });
+      return;
+    }
+    setBanner(PUBLIC_READY_BANNER);
+    setCourierStep('smartReview');
+  }
+
+  function handleRetrySmartCapture() {
+    resetLabelCapture();
+    setBanner(PUBLIC_READY_BANNER);
+    setCourierStep('smartCapture');
+  }
+
+  async function openCourierSmartDoor() {
+    if (isBusy || courierOpenInFlightRef.current) return;
+
+    const recommendation = createSmartDoorRecommendation(packageAnalysis);
+    if (
+      !recommendation
+        || courierMode !== DELIVERY_MODES.SMART
+        || courierStep !== 'smartReview'
+        || !selectedRecipient
+    ) {
+      if (packageAnalysis.status === PACKAGE_ANALYSIS_STATUSES.READY) {
+        recordSmartDeliveryTelemetry({
+          action: 'recommendation',
+          outcome: 'expired',
+          size: packageAnalysis.suggestedSize,
+          reasonCode: 'recommendation-expired',
+          modelVersion: packageAnalysis.modelVersion,
+        });
+      }
+      setBanner({
+        tone: 'warn',
+        title: 'Recomendacao expirada',
+        text: 'Refaca a analise. Nenhuma porta foi reservada ou aberta.',
+      });
+      return;
+    }
+
+    courierOpenInFlightRef.current = true;
+    setIsBusy(true);
+    setGeneratedDelivery(null);
+    setCourierSuccessDelivery(null);
+    setBanner(PUBLIC_READY_BANNER);
+    let captureCleared = false;
+    edgeAgent.recordPilotJourneySignal('smart-recommendation-confirmed');
+    recordSmartDeliveryTelemetry({
+      action: 'recommendation',
+      outcome: 'confirmed',
+      size: recommendation.packageSize,
+      modelVersion: recommendation.modelVersion,
+    });
+
+    try {
+      const requestedCatalog = recommendation.packageSize === 'G'
+        ? largeDoorCatalog
+        : smallDoorCatalog;
+      const currentState = lockerStateRef.current;
+      const safeDoor = await findPhysicallySafeAvailableDoor(
+        currentState,
+        recommendation.packageSize,
+        requestedCatalog,
+      );
+      if (!safeDoor || safeDoor.size !== recommendation.packageSize) {
+        throw new Error(
+          recommendation.packageSize === 'G'
+            ? 'Nenhuma porta grande livre confirmou fechamento pelo sensor.'
+            : 'Nenhuma porta pequena livre confirmou fechamento pelo sensor.'
+        );
+      }
+
+      resetLabelCapture();
+      captureCleared = true;
+      const reserved = await reserveDelivery(currentState, {
+        recipientId: selectedRecipient.id,
+        courierName: deliveryForm.courierName,
+        orderCode: deliveryForm.orderCode,
+        packageSize: recommendation.packageSize,
+        externalCode: deliveryForm.externalCode,
+        notes: deliveryForm.notes,
+        doorCatalog: [safeDoor],
+      });
+      const nextState = recordAuditEvent(
+        reserved.state,
+        'smart-delivery-recommendation-confirmed',
+        `Recomendacao ${recommendation.packageSize} confirmada antes da abertura da porta ${reserved.delivery.door}.`,
+        {
+          deliveryId: reserved.delivery.id,
+          door: reserved.delivery.door,
+          packageSize: recommendation.packageSize,
+          confidence: recommendation.confidence,
+          modelVersion: recommendation.modelVersion,
+          modelSha256Prefix: recommendation.modelSha256.slice(0, 12),
+          inferenceMs: recommendation.inferenceMs,
+        },
+      );
+
+      commitState(nextState);
+      setActiveDepositId(reserved.delivery.id);
+      setCourierStep('dropoff');
+      setCourierDepositStage(recommendation.packageSize === 'G' ? 'large' : 'small');
+
+      const opened = await actuateDoor(
+        reserved.delivery.door,
+        `${recommendation.packageSize === 'G' ? 'Porta grande' : 'Porta pequena'} liberada para o ${getDeliveryUnitLabel(reserved.delivery)}.`,
+        'dropoff',
+      );
+
+      if (!opened.ok) {
+        edgeAgent.recordPilotJourneySignal('smart-door-outcome', { doorOutcome: 'failed' });
+        recordSmartDeliveryTelemetry({
+          action: 'allocation',
+          outcome: 'failed',
+          size: recommendation.packageSize,
+          reasonCode: 'door-actuation-failed',
+          modelVersion: recommendation.modelVersion,
+        });
+        commitState((current) => cancelDelivery(
+          current,
+          reserved.delivery.id,
+          'Falha tecnica ao abrir a porta recomendada pela analise local.',
+        ));
+        setActiveDepositId('');
+        setCourierStep('confirm');
+        return;
+      }
+
+      commitState((current) => markDepositDoorOpened(current, reserved.delivery.id, opened.cycle));
+      edgeAgent.recordPilotJourneySignal('smart-door-outcome', { doorOutcome: 'opened' });
+      recordSmartDeliveryTelemetry({
+        action: 'allocation',
+        outcome: 'opened',
+        size: recommendation.packageSize,
+        modelVersion: recommendation.modelVersion,
+      });
+    } catch (error) {
+      edgeAgent.recordPilotJourneySignal('smart-door-outcome', { doorOutcome: 'unavailable' });
+      recordSmartDeliveryTelemetry({
+        action: 'allocation',
+        outcome: 'unavailable',
+        size: recommendation.packageSize,
+        reasonCode: 'door-unavailable',
+        modelVersion: recommendation.modelVersion,
+      });
+      if (captureCleared) setCourierStep('confirm');
+      setBanner({
+        tone: 'warn',
+        title: 'Porta recomendada indisponivel',
+        text: error?.message || 'Nenhuma porta compativel confirmou condicao segura para abertura.',
+      });
+    } finally {
+      courierOpenInFlightRef.current = false;
+      setIsBusy(false);
+    }
+  }
+
+  function handleUseManualDelivery() {
+    if (courierMode === DELIVERY_MODES.SMART) {
+      recordSmartDeliveryTelemetry({
+        action: 'recommendation',
+        outcome: 'manual-fallback',
+        reasonCode: 'user-selected-manual',
+        modelVersion: packageAnalysis.modelVersion,
+      });
+    }
+    resetLabelCapture();
+    setCourierMode(DELIVERY_MODES.MANUAL);
+    setCourierStep('confirm');
+    setBanner({
+      tone: 'success',
+      title: 'Entrega manual selecionada',
+      text: 'Confirme o apartamento para abrir uma porta pequena.',
+    });
   }
 
   function handleBackToApartmentList() {
@@ -2338,6 +2744,15 @@ export default function App() {
                     onHome={finishCourierSuccessNow}
                     onHelp={handlePilotHelp}
                   />
+                ) : courierStep === 'mode' ? (
+                  <CourierModeStep
+                    tenantName={lockerState.tenant.siteName}
+                    smartAvailable
+                    onManual={() => handleSelectCourierMode(DELIVERY_MODES.MANUAL)}
+                    onSmart={() => handleSelectCourierMode(DELIVERY_MODES.SMART)}
+                    onBack={handleLeaveCourierFlow}
+                    onHelp={handlePilotHelp}
+                  />
                 ) : activeDeposit ? (
                   <CourierDoorStep
                     tenantName={lockerState.tenant.siteName}
@@ -2350,10 +2765,38 @@ export default function App() {
                     onCancel={handleCancelWaitingForLargeDoor}
                     onHelp={handlePilotHelp}
                   />
+                ) : courierStep === 'smartCapture' && selectedRecipient ? (
+                  <SmartPackageCaptureStep
+                    tenantName={lockerState.tenant.siteName}
+                    capture={labelCapture}
+                    analysis={packageAnalysis}
+                    videoRef={labelVideoRef}
+                    qualityCanvasRef={labelQualityCanvasRef}
+                    bestCanvasRef={labelCanvasRef}
+                    onStart={startLabelCamera}
+                    onStop={resetLabelCapture}
+                    onRetry={startLabelCamera}
+                    onReview={handleReviewSmartRecommendation}
+                    onUseManual={handleUseManualDelivery}
+                    onBack={handleBackFromSmartCapture}
+                    onHelp={handlePilotHelp}
+                  />
+                ) : courierStep === 'smartReview' && selectedRecipient ? (
+                  <SmartPackageReviewStep
+                    tenantName={lockerState.tenant.siteName}
+                    recipient={selectedRecipient}
+                    analysis={packageAnalysis}
+                    isBusy={isBusy}
+                    onConfirm={openCourierSmartDoor}
+                    onRetry={handleRetrySmartCapture}
+                    onUseManual={handleUseManualDelivery}
+                    onHelp={handlePilotHelp}
+                  />
                 ) : courierStep === 'confirm' && selectedRecipient ? (
                   <CourierConfirmStep
                     tenantName={lockerState.tenant.siteName}
                     recipient={selectedRecipient}
+                    mode={courierMode}
                     isBusy={isBusy}
                     onBack={handleBackToApartmentList}
                     onConfirm={handleConfirmCourierRecipient}
@@ -2369,12 +2812,7 @@ export default function App() {
                     onBackspace={handleApartmentBackspace}
                     onClear={() => setRecipientSearch('')}
                     onSelectRecipient={handleSelectRecipient}
-                    onBack={() => {
-                      edgeAgent.completePilotJourney('cancelled', { reasonCode: 'user-cancelled' });
-                      void flushPendingDeviceEvents();
-                      resetCourierFlow();
-                      setView('home');
-                    }}
+                    onBack={handleBackToCourierMode}
                     onHelp={handlePilotHelp}
                   />
                 )}

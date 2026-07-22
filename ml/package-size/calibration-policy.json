@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "scoreField": "probabilityG",
+  "decision": {
+    "minimumConfidence": 0.9,
+    "thresholdStep": 0.01
+  },
+  "gates": {
+    "maxFalseSmallRate": 0,
+    "minSmallPrecision": 0.98,
+    "minLargeRecall": 0.95,
+    "minCoverage": 0.65,
+    "maxUncertainRate": 0.35,
+    "maxBorderlineDecisiveRate": 0.1,
+    "minPackagesPerLabel": 50,
+    "minBorderlinePackages": 20
+  }
+}

@@ -97,6 +97,9 @@ flowchart LR
 | [Comparativo de mercado](MARKET-COMPARISON.md) | Referencias competitivas | Nova pesquisa for realizada |
 | [Analise do app recuperado](ANALISE-COMPARATIVA-VEXPRESS-PENDRIVE.md) | Arquitetura, riscos e ideias do material local de referencia | Nova evidencia estatica for confirmada ou uma ideia entrar no backlog |
 | [Plano de melhorias e Kiosk V4](PLANO-IMPLEMENTACAO-MELHORIAS-REDESIGN-2026-07-20.md) | Oito partes para redesign, audio, diagnostico, serial, update e piloto | Uma parte iniciar, mudar de escopo ou ser concluida |
+| [Plano da Entrega Inteligente](PLANO-ENTREGA-INTELIGENTE-2026-07-22.md) | Modalidades manual/inteligente, captura, analise local P/G, seguranca e rollout | Uma parte da Entrega Inteligente iniciar, mudar ou ser concluida |
+| [Contrato do analisador local](CONTRATO-ANALISADOR-LOCAL.md) | Bridge Android, payloads, falhas seguras, privacidade e testes | Schema, bridge, modelo ou limite do analisador mudar |
+| [Dataset e calibracao da Entrega Inteligente](DATASET-CALIBRACAO-ENTREGA-INTELIGENTE.md) | Medidas, rotulagem, privacidade, split, metricas e gates do modelo P/G | Coleta, politica de calibracao ou modelo aprovado mudar |
 | [Baseline visual e funcional V3](KIOSK-V3-BASELINE.md) | Screenshots, metricas, matriz Playwright e rollback anteriores ao Kiosk V4 | A referencia visual mudar intencionalmente |
 | [Fundacao visual do Kiosk V4](KIOSK-V4-FUNDACAO-VISUAL.md) | Tokens, home responsiva, prototipos, licencas e gate visual da Parte 3 | A linguagem visual ou uma referencia V4 mudar |
 | [Jornadas publicas do Kiosk V4](KIOSK-V4-JORNADAS-PUBLICAS.md) | Fluxos reais, contratos fisicos, screenshots, metricas e testes da Parte 3 | Uma jornada publica, regra de porta ou referencia visual mudar |
@@ -135,6 +138,7 @@ fonte oficial.
 | Hardware Android | classes Java em `android/app/src/main/java/` |
 | Matriz executada pelo CI | `.github/workflows/ci.yml` |
 | Politica de privacidade | `admin-online/privacyLifecycle.mjs` e documento de privacidade |
+| Dataset e calibracao P/G | `ml/package-size/` e documento de dataset da Entrega Inteligente |
 
 Quando uma tabela desta central divergir do codigo, o codigo e a fonte de
 verdade operacional e a documentacao deve ser corrigida na mesma alteracao.

@@ -32,6 +32,12 @@ admin-online/data/
 *.tgz
 *.rar
 
+# Local package-analysis data and generated model artifacts
+ml/package-size/dataset/images/
+ml/package-size/dataset/raw/
+ml/package-size/artifacts/*
+!ml/package-size/artifacts/.gitkeep
+
 # Recovered source and protected evidence
 extraido-documents-rar/
 recovery/

@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "specVersion": "MEASURE-AND-REPLACE",
+  "measuredAt": "",
+  "measurementMethod": "internal-usable-space-and-door-opening",
+  "minimumClearanceMm": 20,
+  "doors": {
+    "P": {
+      "opening": {
+        "widthMm": null,
+        "heightMm": null
+      },
+      "compartment": {
+        "widthMm": null,
+        "heightMm": null,
+        "depthMm": null
+      }
+    },
+    "G": {
+      "opening": {
+        "widthMm": null,
+        "heightMm": null
+      },
+      "compartment": {
+        "widthMm": null,
+        "heightMm": null,
+        "depthMm": null
+      }
+    }
+  }
+}

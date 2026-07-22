@@ -27,9 +27,13 @@ test('audio inicia desligado, toca uma vez por etapa e interrompe a anterior', a
   await dialog.getByRole('button', { name: 'Concluir' }).click();
   await page.getByRole('button', { name: /Entregar encomenda/i }).click();
   plays = await audioEvents(page, 'play');
+  expect(plays).toHaveLength(1);
+  expect(await audioEvents(page, 'pause')).toHaveLength(1);
+
+  await page.getByRole('button', { name: /Entrega Manual/i }).click();
+  plays = await audioEvents(page, 'play');
   expect(plays).toHaveLength(2);
   expect(plays[1].source).toContain('/courier-choice-');
-  expect(await audioEvents(page, 'pause')).toHaveLength(1);
 
   const apartmentInput = page.getByRole('textbox', { name: 'Apartamento' });
   await apartmentInput.fill('1');

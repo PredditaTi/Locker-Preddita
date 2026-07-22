@@ -17,7 +17,9 @@ avaliacao juridica do controlador.
 - Auditoria e logs recebem sanitizacao recursiva antes da persistencia.
 - O CSV de entregas nao exporta credenciais de retirada.
 - Metricas do piloto nao possuem unidade, pessoa, porta, credencial, imagem,
-  audio ou texto livre e sao limitadas a 500 amostras por locker.
+  audio ou texto livre e sao limitadas a 500 amostras por locker e 30 dias.
+- O diario local da Entrega Inteligente guarda somente resultados tecnicos
+  sanitizados, limitado a 100 eventos e sete dias.
 
 ## Politica padrao
 
@@ -33,7 +35,8 @@ avaliacao juridica do controlador.
 | IDs de eventos processados | Apagar | 365 dias |
 | Backup JSON local | Apagar | 7 dias |
 | Logs tecnicos | Apagar | 30 dias |
-| Metricas sanitizadas do piloto | Substituir pelas mais recentes | 500 amostras |
+| Metricas locais da Entrega Inteligente | Apagar | 7 dias ou 100 eventos |
+| Metricas sanitizadas do piloto | Apagar/substituir | 30 dias ou 500 amostras |
 
 Os prazos sao defaults tecnicos conservadores, nao prazos impostos pela LGPD.
 Antes da producao, o controlador deve confirmar finalidade, base legal,
@@ -76,10 +79,11 @@ roda no startup, antes de cada persistencia e periodicamente; a tela permite uma
 execucao manual adicional. As mesmas regras sao aplicadas aos modos JSON e
 Postgres.
 
-O limite de amostras do piloto e um controle de minimizacao, nao uma definicao
-juridica de prazo. Antes de observar usuarios reais, o controlador deve aprovar
-finalidade, aviso e periodo do piloto. Filmagem e gravacao de audio ficam
-desativadas por padrao e exigem avaliacao separada.
+Os limites de prazo e amostras do piloto sao controles tecnicos de minimizacao,
+nao uma definicao juridica. O console tecnico permite apagar imediatamente o
+diario local da Entrega Inteligente. Antes de observar usuarios reais, o
+controlador deve aprovar finalidade, aviso e periodo do piloto. Filmagem e
+gravacao de audio ficam desativadas por padrao e exigem avaliacao separada.
 
 ## Referencias oficiais
 

@@ -1,9 +1,12 @@
 export const PILOT_JOURNEY_STORAGE_KEY = 'preddita_active_pilot_journey_v1';
-export const PILOT_METRIC_SCHEMA_VERSION = 1;
+export const PILOT_METRIC_SCHEMA_VERSION = 2;
 
 const JOURNEY_TYPES = new Set(['courier', 'pickup']);
 const JOURNEY_OUTCOMES = new Set(['completed', 'cancelled', 'failed', 'interrupted']);
 const PICKUP_MODES = new Set(['none', 'pin', 'qr']);
+const DELIVERY_MODES = new Set(['none', 'manual', 'smart']);
+const SMART_ANALYSIS_OUTCOMES = new Set(['not-run', 'P', 'G', 'uncertain', 'failed']);
+const SMART_DOOR_OUTCOMES = new Set(['not-requested', 'opened', 'unavailable', 'failed']);
 const REASON_CODES = new Set([
   'none',
   'user-cancelled',
@@ -49,6 +52,14 @@ function normalizeJourney(value) {
     journeyType,
     startedAt,
     pickupMode: cleanChoice(value.pickupMode, PICKUP_MODES, 'none'),
+    deliveryMode: cleanChoice(value.deliveryMode, DELIVERY_MODES, 'none'),
+    smartAnalysisOutcome: cleanChoice(
+      value.smartAnalysisOutcome,
+      SMART_ANALYSIS_OUTCOMES,
+      'not-run',
+    ),
+    smartRecommendationConfirmed: Boolean(value.smartRecommendationConfirmed),
+    smartDoorOutcome: cleanChoice(value.smartDoorOutcome, SMART_DOOR_OUTCOMES, 'not-requested'),
     usedSizeFallback: Boolean(value.usedSizeFallback),
     helpRequested: Boolean(value.helpRequested),
     errorCount: Math.min(MAX_ERROR_COUNT, Math.max(0, Number.parseInt(value.errorCount, 10) || 0)),
@@ -96,6 +107,17 @@ function buildMetric(journey, outcome, options = {}) {
       helpRequested: Boolean(journey.helpRequested),
       errorCount: journey.errorCount,
       reasonCode: cleanChoice(options.reasonCode, REASON_CODES, 'none'),
+      deliveryMode: journey.journeyType === 'courier'
+        ? cleanChoice(journey.deliveryMode, DELIVERY_MODES, 'none')
+        : 'none',
+      smartAnalysisOutcome: journey.journeyType === 'courier'
+        ? cleanChoice(journey.smartAnalysisOutcome, SMART_ANALYSIS_OUTCOMES, 'not-run')
+        : 'not-run',
+      smartRecommendationConfirmed: journey.journeyType === 'courier'
+        && Boolean(journey.smartRecommendationConfirmed),
+      smartDoorOutcome: journey.journeyType === 'courier'
+        ? cleanChoice(journey.smartDoorOutcome, SMART_DOOR_OUTCOMES, 'not-requested')
+        : 'not-requested',
     },
   };
 }
@@ -118,6 +140,10 @@ export function startPilotJourney(options = {}) {
     journeyType,
     startedAt,
     pickupMode: 'none',
+    deliveryMode: 'none',
+    smartAnalysisOutcome: 'not-run',
+    smartRecommendationConfirmed: false,
+    smartDoorOutcome: 'not-requested',
     usedSizeFallback: false,
     helpRequested: false,
     errorCount: 0,
@@ -137,6 +163,17 @@ export function recordPilotJourneySignal(options = {}) {
     pickupMode: signal === 'pickup-mode'
       ? cleanChoice(options.pickupMode, PICKUP_MODES, journey.pickupMode)
       : journey.pickupMode,
+    deliveryMode: signal === 'delivery-mode'
+      ? cleanChoice(options.deliveryMode, DELIVERY_MODES, journey.deliveryMode)
+      : journey.deliveryMode,
+    smartAnalysisOutcome: signal === 'smart-analysis'
+      ? cleanChoice(options.analysisOutcome, SMART_ANALYSIS_OUTCOMES, journey.smartAnalysisOutcome)
+      : journey.smartAnalysisOutcome,
+    smartRecommendationConfirmed: journey.smartRecommendationConfirmed
+      || signal === 'smart-recommendation-confirmed',
+    smartDoorOutcome: signal === 'smart-door-outcome'
+      ? cleanChoice(options.doorOutcome, SMART_DOOR_OUTCOMES, journey.smartDoorOutcome)
+      : journey.smartDoorOutcome,
     usedSizeFallback: journey.usedSizeFallback || signal === 'size-fallback',
     helpRequested: journey.helpRequested || signal === 'help',
     errorCount: signal === 'error'

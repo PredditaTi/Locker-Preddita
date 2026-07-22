@@ -15,6 +15,24 @@ movimento reduzido.
 **Status:** implementacao tecnica concluida em 20/07/2026. Validacao no locker
 fisico continua obrigatoria antes do piloto.
 
+## Evolucao da modalidade de entrega
+
+Em 22/07/2026, o desenvolvimento da Entrega Inteligente adicionou uma etapa
+antes do apartamento. `Entrega Manual` preserva esta jornada; `Entrega
+Inteligente` agora avanca ate uma captura automatica guiada por iluminacao,
+contraste, nitidez e estabilidade. Depois da foto, a bridge local inicia a
+analise e exibe o resultado sanitizado. Um resultado decisivo abre uma revisao
+separada e so depois da confirmacao procura uma porta fechada do tamanho exato.
+Enquanto o modelo P/G nao esta instalado, o resultado real e inconclusivo e
+oferece o modo manual; caminhos decisivos existem apenas na bridge simulada de
+teste. O analisador e a abertura permanecem protegidos pelo gate descrito no
+[plano da funcionalidade](PLANO-ENTREGA-INTELIGENTE-2026-07-22.md).
+
+A jornada inteligente registra somente resultados tecnicos sanitizados. O
+diario local e limitado a 100 eventos e sete dias; a metrica agregada enviada
+ao piloto nao inclui foto, apartamento, credencial, etiqueta, porta ou texto
+livre.
+
 ## O que entrou no fluxo real
 
 - apartamento, confirmacao, porta, espera e sucesso usam o shell full-screen;
@@ -34,8 +52,12 @@ fisico continua obrigatoria antes do piloto.
 
 | Jornada | Estado | Acao publica |
 | --- | --- | --- |
+| Entrega | Modalidade | Escolher Entrega Manual ou Entrega Inteligente |
 | Entrega | Apartamento | Informar e escolher um destino |
-| Entrega | Confirmacao | Corrigir ou abrir a porta pequena |
+| Entrega manual | Confirmacao | Corrigir ou abrir a porta pequena |
+| Entrega inteligente | Confirmacao | Corrigir ou continuar para a camera |
+| Entrega inteligente | Captura e analise | Iniciar, cancelar, refazer ou voltar ao modo manual |
+| Entrega inteligente | Revisao | Confirmar porta `P/G`, refazer ou usar o modo manual |
 | Entrega | Porta pequena | Guardar ou pedir porta maior |
 | Entrega | Fechamento | Fechar a porta anterior ou solicitar cancelamento |
 | Entrega | Porta grande | Guardar e confirmar |
@@ -59,6 +81,10 @@ A navegacao ocorre por estado React. O fluxo publico nao usa
    porta pequena fechada.
 6. Falha, timeout ou resposta incerta mantem a operacao recuperavel e nao e
    convertido em sucesso visual.
+7. A recomendacao nao reserva porta, expira em dois minutos e precisa de
+   confirmacao explicita.
+8. A alocacao inteligente usa somente o tamanho exato e repete a leitura
+   individual de porta fechada.
 
 Os testes usam frames RS-485 com BCC pela fixture
 `web/e2e/support/kioskTestBridge.js`. Isso prova o contrato da UI com o bridge,
@@ -69,6 +95,8 @@ mas nao substitui polaridade, chicote, trava e sensor reais.
 - o PIN permanece mascarado durante a digitacao;
 - a camera so inicia por acao explicita e para ao trocar de modo ou sair;
 - imagens da camera de QR nao sao persistidas nem enviadas;
+- a foto inteligente permanece em memoria nesta etapa e e apagada ao voltar,
+  cancelar, refazer, escolher a entrega manual ou antes de criar uma reserva;
 - PIN, token, QR e codigo externo sao apagados na conclusao e no cancelamento;
 - o E2E recarrega o kiosk e confirma que as credenciais nao reaparecem;
 - a tela publica mostra somente o apartamento necessario ao deposito e nao
@@ -100,6 +128,8 @@ mas nao substitui polaridade, chicote, trava e sensor reais.
 | --- | --- |
 | Entrega pequena e retirada por PIN no mesmo canal | `web/e2e/kiosk-flow.spec.js` |
 | Retirada por QR passando pelo decodificador real | `web/e2e/kiosk-flow.spec.js` |
+| Captura inteligente automatica sem reserva nem comando de porta | `web/e2e/kiosk-flow.spec.js` |
+| Qualidade de captura com frames sinteticos | `scripts/package-capture-quality-test.mjs` |
 | Fallback pequena para grande | `web/e2e/kiosk-interactions.spec.js` |
 | Cancelamento somente depois de fechar | `web/e2e/kiosk-interactions.spec.js` |
 | Timeout sem apagar reserva ativa | `web/e2e/kiosk-interactions.spec.js` |
