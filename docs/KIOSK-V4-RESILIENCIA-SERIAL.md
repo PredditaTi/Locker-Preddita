@@ -90,6 +90,13 @@ nao interpreta os bytes de estado empacotado como canal.
 | Atuacao | `0x7A`, `0x7C`, `0x7F`, `0x8A`, `0x9A`, `0x9B`, `0x9D` | 1 | resultado desconhecido e bloqueio de reconciliacao |
 | Configuracao | `0x7E`, `0x81`, `0x8D` | 1 | erro sem repeticao automatica |
 
+Alguns controladores KS1062 antigos aplicam `0x7E`, mas nao devolvem ACK. Para
+esse comando especifico, um `SERIAL_RESPONSE_TIMEOUT` depois de uma escrita sem
+erro e aceito como modo `write-only`; falha de I/O, parada do coordenador ou
+qualquer outro erro continuam bloqueantes. Essa compatibilidade nunca se aplica
+a comandos de abertura. O fluxo ainda exige leitura fechada antes do `0x8A`,
+uma unica atuacao e transicao fisica para aberta antes de prosseguir.
+
 A escrita que lancou uma excecao tambem e tratada como possivelmente parcial.
 Para uma atuacao, o app nao tenta adivinhar se nenhum byte, alguns bytes ou o
 frame completo chegaram a placa.

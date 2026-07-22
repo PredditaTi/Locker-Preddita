@@ -21,6 +21,17 @@ globalThis.window = {
           });
           return;
         }
+        if (command === 0x7e) {
+          window.onRS485CommandResult({
+            executionId,
+            operation: 'configuration',
+            ok: false,
+            error: 'SERIAL_RESPONSE_TIMEOUT',
+            attempts: 1,
+            executionOutcomeUnknown: false,
+          });
+          return;
+        }
         const payload = [command, board, channel, 0x11];
         const checksum = payload.reduce((value, byte) => value ^ byte, 0);
         window.onRS485CommandResult({
@@ -64,6 +75,29 @@ assert.equal(actuationResult.ok, false);
 assert.equal(actuationResult.error, 'ACTUATION_OUTCOME_UNKNOWN');
 assert.equal(actuationResult.executionOutcomeUnknown, true);
 assert.notEqual(submissions[0].executionId, submissions[1].executionId);
+
+const writeOnlyConfiguration = await serial.sendFrame(serial.frame(0x7e, 1, 4, 0x03));
+assert.equal(writeOnlyConfiguration.ok, true);
+assert.equal(writeOnlyConfiguration.acknowledged, false);
+assert.equal(writeOnlyConfiguration.responseMode, 'write-only');
+assert.equal(writeOnlyConfiguration.executionOutcomeUnknown, false);
+
+window.Android.sendRS485Command = (executionId) => {
+  setTimeout(() => {
+    window.onRS485CommandResult({
+      executionId,
+      operation: 'configuration',
+      ok: false,
+      error: 'SERIAL_IO_FAILURE',
+      attempts: 1,
+      executionOutcomeUnknown: false,
+    });
+  }, 0);
+  return true;
+};
+const failedConfiguration = await serial.sendFrame(serial.frame(0x7e, 1, 4, 0x03));
+assert.equal(failedConfiguration.ok, false);
+assert.equal(failedConfiguration.responseMode, 'failed');
 
 const hardware = serial.default.getHardwareInfo();
 assert.equal(hardware.bridgeVersion, 'PREDDITA-BRIDGE-1.8.0');

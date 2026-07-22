@@ -59,6 +59,51 @@ para a mais antiga:
 
 ## Registro
 
+### 2026-07-22 - Compatibilidade com configuracao serial sem ACK
+
+**Base:** candidata de campo `2.0.33-lab`, `versionCode 33`
+
+**O que mudou**
+
+- O primeiro teste fisico da porta 1 foi interrompido antes da abertura porque
+  o controlador nao respondeu ao comando `0x7E` de tempo de acionamento.
+- O transporte agora reconhece exclusivamente `0x7E` seguido de
+  `SERIAL_RESPONSE_TIMEOUT`, sem falha de I/O ou resultado desconhecido, como
+  configuracao `write-only` de controladores antigos.
+- A excecao nao se aplica a comandos de abertura: leitura fechada, atuacao
+  unica, transicao para aberta e prova de fechamento continuam obrigatorias.
+
+**Por que**
+
+- O KS1062 piloto responde a leituras e sensores, mas seu firmware nao devolve
+  ACK para a configuracao de timeout nem para a consulta de versao.
+- Bloquear antes da abertura e seguro, mas impediria o comissionamento de uma
+  placa que aplica configuracoes sem resposta, comportamento tambem previsto
+  pelo exemplo de escrita simples do protocolo recuperado.
+
+**Impacto**
+
+- A configuracao sem ACK pode prosseguir para a abertura fisicamente
+  comprovada, sem repetir comandos e sem enfraquecer falhas de UART.
+- Nenhuma porta foi aberta no teste que revelou a incompatibilidade.
+- Release assinada, instalacao e novo teste da porta 1 permanecem como gates.
+
+**Arquivos**
+
+- `web/src/serial.js`
+- `scripts/serial-native-bridge-test.mjs`
+- `docs/KIOSK-V4-RESILIENCIA-SERIAL.md`
+- arquivos de versao `2.0.33-lab`
+- `docs/UPDATES.md`
+
+**Validacao**
+
+- Contrato da bridge nativa cobre o timeout aceito e uma falha de I/O ainda
+  bloqueante.
+- Testes de protocolo, comissionamento, seguranca de porta, jornada e Edge
+  Agent passaram.
+- Build Vite concluido; nova atuacao aguardando APK assinado no KS1062.
+
 ### 2026-07-22 - Backend HTTPS e candidata 2.0.32-lab provisionados
 
 **Base:** release `v2.0.32-lab`, `versionCode 32`, commit
