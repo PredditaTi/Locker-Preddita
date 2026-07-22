@@ -1,10 +1,10 @@
 # Piloto controlado do Kiosk V4
 
 Este documento encerra a preparacao de laboratorio da Parte 8 e define como a
-equipe deve validar a release candidata `2.0.31-lab` em um KS1062 real. Ele nao
+equipe deve validar a release candidata `2.0.32-lab` em um KS1062 real. Ele nao
 substitui comissionamento, instalacao controlada nem consentimento do local.
 
-## Estado em 21 de julho de 2026
+## Estado em 22 de julho de 2026
 
 ### Preparacao de software concluida
 
@@ -14,21 +14,21 @@ substitui comissionamento, instalacao controlada nem consentimento do local.
 - [x] Preflight bloqueante para sinal, serial, comissionamento, HMAC, versao,
   update, rollout e mapa de portas.
 - [x] Verificacao ADB somente leitura, sem acionar portas.
-- [x] Release candidata `2.0.31-lab`, `versionCode 31`, schema `13` preparada.
+- [x] Release candidata `2.0.32-lab`, `versionCode 32`, schema `13` preparada.
 
 ### Evidencia de release concluida
 
 - [x] APK assinado gerado, publicado e checksum conferido.
 
 A prerelease imutavel
-[`v2.0.31-lab`](https://github.com/PredditaTi/Locker-Preddita/releases/tag/v2.0.31-lab)
+[`v2.0.32-lab`](https://github.com/PredditaTi/Locker-Preddita/releases/tag/v2.0.32-lab)
 foi gerada pelo
-[`Release APK` #29860294336](https://github.com/PredditaTi/Locker-Preddita/actions/runs/29860294336)
-em 21 de julho de 2026, a partir do commit
-`cb2fc2b16ced77f3f63136e3686ce8e050f48926`.
+[`Release APK` #29890993018](https://github.com/PredditaTi/Locker-Preddita/actions/runs/29890993018)
+em 22 de julho de 2026, a partir do commit
+`ed67288a59805babbc0bb3ff58b90a16bf3d44e2`.
 
-- APK: `PREDDITA-Locker-2.0.31-lab-release.apk`, 3.389.495 bytes.
-- SHA-256: `fd79beaa803d5d031c72e5c576b2a1c52cad7f6df35e761793931aae1576b25c`.
+- APK: `PREDDITA-Locker-2.0.32-lab-release.apk`, 3.389.527 bytes.
+- SHA-256: `3189eb983021277af8f9f0170aee04ce5d0f70058b7e574cbbfd75d08cc4e39c`.
 - Assinatura: APK Signature Scheme v2, um signatario, validada por `apksigner`.
 - Certificado SHA-256:
   `5E:D9:93:C1:04:91:D5:FF:58:0D:85:D3:BC:C4:5F:53:CE:21:3F:19:9A:F3:44:D3:79:56:A7:AA:F1:9D:59:2D`.
@@ -37,16 +37,20 @@ em 21 de julho de 2026, a partir do commit
 
 ### Evidencia de instalacao concluida
 
-- [x] APK `2.0.31-lab`, `versionCode 31`, instalado em um KS1062 piloto.
+- [x] APK `2.0.32-lab`, `versionCode 32`, instalado em um KS1062 piloto.
 - [x] Backup do APK antigo e do estado criado e conferido antes da troca de
   assinatura.
 - [x] Tres destinatarios, 38 entregas e 18 entradas de auditoria migrados da
   origem `file://` para `https://appassets.androidplatform.net`.
 - [x] Home V4, processo, camera e serial `/dev/ttyS5` conferidos.
 - [x] `pilot-check` concluido sem acionar portas.
+- [x] Backend HTTPS com Postgres, schema `13` e modo HMAC publicado.
+- [x] Credencial HMAC importada no Android Keystore e sincronizacao confirmada.
+- [x] Health nativo confirmou app, WebView, credencial e serial saudaveis.
 
-O backend HTTPS e o HMAC no Android Keystore ainda nao estao provisionados. A
-instalacao local nao conclui health check, rollout nem a matriz fisica.
+O preflight do servidor aprovou nove dos dez gates. O unico bloqueio atual e o
+comissionamento fisico `pending`; por isso a matriz abaixo e o rollout para
+outros equipamentos continuam proibidos.
 
 ### Evidencia em equipamento ainda obrigatoria
 
@@ -87,7 +91,7 @@ No servidor que possui o estado do locker:
 export PREDDITA_DEVICE_AUTH_MODE=hmac
 node scripts/pilot-preflight.mjs \
   --state admin-online/data/state.json \
-  --expected-version 2.0.31-lab
+  --expected-version 2.0.32-lab
 ```
 
 O comando termina com codigo `2` quando existe bloqueio. No computador ligado
@@ -110,7 +114,7 @@ instalacao e da janela de teste continua obrigatoria.
 ## Sequencia do piloto
 
 1. Publicar o APK pelo workflow `Release APK`, canal `lab`, e conferir
-   certificado e SHA-256 do artefato. Concluido na release `v2.0.31-lab`.
+   certificado e SHA-256 do artefato. Concluido na release `v2.0.32-lab`.
 2. Instalar em um unico locker comissionado. Nao habilitar rollout superior a
    10% nem canal `production`.
 3. Confirmar HMAC, sinal recente, serial aberta, mapa de portas e health check.

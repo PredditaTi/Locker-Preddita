@@ -6,7 +6,7 @@ automaticamente quando a pasta `docs/` e aberta.
 Use esta central para localizar a fonte correta antes de alterar codigo,
 instalar um locker, operar o Admin Online ou publicar uma nova versao.
 
-> Ultima consolidacao: 21 de julho de 2026. Consulte
+> Ultima consolidacao: 22 de julho de 2026. Consulte
 > [Atualizacoes da documentacao](UPDATES.md) para acompanhar o que mudou.
 
 ## Estado atual
@@ -14,15 +14,15 @@ instalar um locker, operar o Admin Online ou publicar uma nova versao.
 | Item | Valor |
 | --- | --- |
 | Produto | PREDDITA Entregas Locker |
-| Versao do produto | `2.0.31-lab` |
-| Android `versionCode` | `31` |
+| Versao do produto | `2.0.32-lab` |
+| Android `versionCode` | `32` |
 | API `schemaVersion` | `13` |
 | Pacote Android | `com.preddita.entregaslocker` |
 | Hardware validado | KS1062-N-ZY, RK3562, Android 11/13 |
 | Serial prioritaria | `/dev/ttyS5` |
 | Frontend | React 18, Vite 8, Node.js 20.19+ |
-| Backend | Node.js, armazenamento JSON para laboratorio ou Postgres 16 |
-| Status | APK `2.0.31-lab` instalado no KS1062 com estado migrado; aguardando backend HTTPS, HMAC, bancada e piloto controlado |
+| Backend | Node.js em HTTPS no Railway, Postgres 16; JSON somente para laboratorio |
+| Status | APK `2.0.32-lab` instalado, HMAC no Keystore e backend sincronizado; preflight 9/10, aguardando comissionamento fisico e matriz controlada |
 
 O estado acima descreve a base funcional. Mudancas apenas documentais feitas
 depois da tag permanecem registradas em [UPDATES.md](UPDATES.md).
@@ -35,7 +35,7 @@ flowchart LR
   Kiosk --> Edge["Edge Agent"]
   Edge --> Android["Bridge Android"]
   Android --> Serial["RS-485 / CM06"]
-  Edge <-->|"API HMAC e fallback HTTP"| Admin["Admin Online"]
+  Edge <-->|"API HTTPS assinada por HMAC"| Admin["Admin Online"]
   Admin --> Postgres["Postgres"]
   Admin --> SMTP["Notificacoes SMTP"]
   Admin --> IoT["AWS IoT Core"]
@@ -214,8 +214,8 @@ propria.
 
 ## Proximos marcos
 
-1. Piloto controlado com um locker comissionado.
-2. Testes de falha de energia, rede, restart e restauracao.
-3. Validacao operacional de SMTP, MQTT, logs e update remoto.
+1. Comissionamento fisico supervisionado e matriz do piloto no KS1062.
+2. Testes controlados de falha de energia, rede, restart e restauracao.
+3. Validacao operacional de SMTP, MQTT e update remoto.
 4. Aprovacao dos prazos e processos de privacidade.
 5. Decisao de promocao do canal `lab` para piloto/producao.

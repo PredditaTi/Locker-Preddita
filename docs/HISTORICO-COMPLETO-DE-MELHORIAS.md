@@ -3,7 +3,7 @@
 ## Escopo deste documento
 
 Este relatorio consolida as alteracoes relevantes feitas no PREDDITA Locker
-desde a recuperacao do codigo ate a candidata atual `2.0.31-lab`. O objetivo e
+desde a recuperacao do codigo ate a candidata atual `2.0.32-lab`. O objetivo e
 permitir que outra pessoa entenda:
 
 - o que foi alterado;
@@ -17,14 +17,14 @@ O documento cobre comportamento, arquitetura, seguranca, dados, operacao,
 testes e entrega. Alteracoes mecanicas de arquivos gerados, lockfiles e bundles
 compilados sao citadas pelo efeito que produzem, sem listar cada linha gerada.
 
-**Estado de referencia:** candidata `2.0.31-lab`, `versionCode 31`,
+**Estado de referencia:** candidata `2.0.32-lab`, `versionCode 32`,
 `schemaVersion 13`, branch `codex/kiosk-v4-pilot-readiness`. O release
 `v2.0.25-lab`, publicado em 16 de julho de 2026, permanece como rollback
 funcional.
 
 ## Resumo executivo
 
-| Area | Situacao recuperada | Situacao na candidata `2.0.31-lab` | Motivo principal |
+| Area | Situacao recuperada | Situacao na candidata `2.0.32-lab` | Motivo principal |
 | --- | --- | --- | --- |
 | Codigo-fonte | Misturado com artefatos e dados da maquina anterior | Repositorio limpo, reproduzivel e versionado | Permitir continuidade e auditoria |
 | Operacao offline | Fila monolitica vulneravel a perda ou corrupcao | Diario duravel por evento e recuperacao idempotente | Nao perder entregas sem internet |
@@ -640,14 +640,20 @@ processo de acesso e eliminacao do titular.
   Admin, preflight bloqueante e verificacao ADB que nao aciona portas.
 - Tempo, resultado, PIN/QR, fallback, ajuda e erros podem ser comparados sem
   persistir apartamento, credencial, porta, imagem, audio ou texto livre.
-- A candidata passou a `2.0.31-lab`, `versionCode 31` e schema `13`; o APK
-  assinado foi publicado na prerelease imutavel `v2.0.31-lab`, com assinatura
-  v2 e checksum conferidos. KS1062 e observacao autorizada continuam como gates
-  externos.
+- A Parte 8 foi consolidada inicialmente em `2.0.31-lab`, `versionCode 31` e
+  schema `13`; o APK assinado foi publicado com assinatura v2 e checksum
+  conferidos.
 - O APK foi instalado em um KS1062 piloto depois de backup integral e troca da
   assinatura debug pela chave lab. O estado local foi migrado para a origem
   WebView segura e o `pilot-check` confirmou versao, processo e serial sem
-  acionar portas. Backend HTTPS, HMAC e matriz fisica continuam pendentes.
+  acionar portas.
+- Em 22 de julho, o Admin Online foi publicado em HTTPS no Railway com
+  Postgres 16 e HMAC obrigatorio. O locker recebeu a chave no Android Keystore
+  e sincronizou com o backend sem expor a credencial ao frontend.
+- A candidata `2.0.32-lab`, `versionCode 32`, corrigiu a persistencia dos sinais
+  de health para instalacoes diretas. CI, release assinada, instalacao e
+  `pilot-check` passaram; o preflight ficou em 9/10, pendente somente do
+  comissionamento e da matriz fisica supervisionada.
 
 ## Evolucao de dados e compatibilidade
 

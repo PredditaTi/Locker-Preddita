@@ -110,13 +110,13 @@ PREDDITA Locker.
 
 | Item | Valor |
 | --- | --- |
-| Produto | `2.0.31-lab` |
-| Android `versionCode` | `31` |
+| Produto | `2.0.32-lab` |
+| Android `versionCode` | `32` |
 | API `schemaVersion` | `13` |
 | Contrato do Edge Agent | `4` |
-| Release | `v2.0.31-lab` |
-| APK | `PREDDITA-Locker-2.0.31-lab-release.apk` |
-| SHA-256 | `fd79beaa803d5d031c72e5c576b2a1c52cad7f6df35e761793931aae1576b25c` |
+| Release | `v2.0.32-lab` |
+| APK | `PREDDITA-Locker-2.0.32-lab-release.apk` |
+| SHA-256 | `3189eb983021277af8f9f0170aee04ce5d0f70058b7e574cbbfd75d08cc4e39c` |
 | Canal | Laboratorio; nao promovido para producao |
 
 A assinatura APK v2 e o certificado lab foram validados pelo workflow e por
@@ -158,6 +158,11 @@ download independente do artefato.
   de auditoria no novo LevelDB.
 - A home do Kiosk V4 foi conferida no painel; processo, camera, serial e app em
   primeiro plano foram confirmados. O `pilot-check` terminou com sucesso.
+- Em 22 de julho, o backend HTTPS foi publicado com Postgres 16 e HMAC; o
+  dispositivo foi provisionado no Keystore e atualizado para `2.0.32-lab`
+  preservando dados e assinatura.
+- O health nativo confirmou app, WebView, credencial e serial saudaveis. O
+  preflight do servidor aprovou 9/10 gates e bloqueou somente o comissionamento.
 
 Nenhuma porta foi acionada durante diagnostico, backup, migracao ou validacao.
 
@@ -179,7 +184,7 @@ Nenhuma porta foi acionada durante diagnostico, backup, migracao ou validacao.
 1. Confirmar novamente backup, checksum e ausencia de comando remoto pendente.
 2. Parar o app antigo e preservar o LevelDB antes da troca de assinatura.
 3. Desinstalar somente depois que o servidor HTTPS estiver saudavel.
-4. Instalar o APK imutavel `v2.0.31-lab` e restaurar apenas o estado local
+4. Instalar o APK imutavel `v2.0.32-lab` e restaurar apenas o estado local
    necessario, com proprietario e contexto corretos do novo UID.
 5. Provisionar URL HTTPS, `lockerId`, chave HMAC e PIN tecnico diretamente no
    Android; a chave deve ficar nao exportavel no Keystore.
@@ -190,9 +195,9 @@ Nenhuma porta foi acionada durante diagnostico, backup, migracao ou validacao.
 
 Os passos 1, 2, 4 e 6 do armario foram concluidos em 21 de julho de 2026. A
 condicao do passo 3 foi excepcionalmente dispensada pelo responsavel presente
-para disponibilizar o novo modo local. O passo 5 permanece bloqueado ate
-existir backend HTTPS valido; portanto sincronizacao remota, update health e
-rollout ainda nao estao aprovados.
+para disponibilizar o novo modo local. Em 22 de julho, a pendencia de HTTPS foi
+regularizada e o passo 5 foi concluido com Postgres e provisionamento HMAC. A
+matriz fisica continua bloqueada ate existir acompanhamento presencial.
 
 ## Rollback
 
@@ -208,20 +213,21 @@ atuacao para descobrir o estado.
 
 ## Gates da implantacao
 
-| Gate | Estado em 21/07/2026 |
+| Gate | Estado em 22/07/2026 |
 | --- | --- |
 | CI completo da candidata | Concluido |
 | APK assinado e checksum | Concluido |
 | Descoberta e diagnostico ADB | Concluido |
 | Backup consistente do app antigo | Concluido |
 | Snapshot remoto sanitizado | Concluido |
-| Acesso administrativo ao host HTTPS | Bloqueado por autenticacao externa |
-| Backend `2.0.31-lab`, schema `13` | Pendente |
-| Instalacao do APK no KS1062 | Concluido em modo local |
+| Acesso administrativo ao host HTTPS | Concluido no projeto Railway do piloto |
+| Backend `2.0.32-lab`, schema `13` | Concluido com Postgres 16 |
+| Instalacao do APK no KS1062 | Concluido em `2.0.32-lab` |
 | Migracao e leitura do estado local | Concluido |
 | `pilot-check` ADB sem atuacao | Concluido |
-| Provisionamento HMAC no Keystore | Pendente do backend HTTPS |
-| Preflight do servidor e matriz fisica | Pendente |
+| Provisionamento HMAC no Keystore | Concluido |
+| Preflight do servidor | 9/10; bloqueio fisico identificado |
+| Comissionamento e matriz fisica | Pendente de acompanhamento presencial |
 
 Este quadro deve ser atualizado apos cada acao. Um gate pendente nao pode ser
 marcado como concluido apenas porque o codigo ou o build passou em laboratorio.

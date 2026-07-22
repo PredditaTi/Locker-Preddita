@@ -59,6 +59,64 @@ para a mais antiga:
 
 ## Registro
 
+### 2026-07-22 - Backend HTTPS e candidata 2.0.32-lab provisionados
+
+**Base:** release `v2.0.32-lab`, `versionCode 32`, commit
+`ed67288a59805babbc0bb3ff58b90a16bf3d44e2`
+
+**O que mudou**
+
+- O Admin Online foi publicado em HTTPS no Railway com Postgres 16,
+  `schemaVersion 13` e autenticacao HMAC obrigatoria para o dispositivo.
+- O KS1062 recebeu a URL HTTPS, o identificador do locker, a chave HMAC no
+  Android Keystore e o PIN tecnico local, sem gravar credenciais no Git.
+- O Android passou a persistir os sinais de inicio, WebView e serial mesmo em
+  uma instalacao direta, permitindo que o preflight reconheca uma credencial
+  ja provisionada sem depender de um rollout em andamento.
+- A release assinada `v2.0.32-lab` foi publicada, conferida e instalada sobre a
+  `2.0.31-lab`, preservando o estado local.
+
+**Por que**
+
+- O piloto precisava de um backend HTTPS persistente e de autenticacao nativa
+  antes de validar sincronizacao, saude e rollout.
+- O health check descartava sinais quando o APK era instalado diretamente por
+  ADB, deixando o preflight bloqueado apesar do provisionamento correto.
+
+**Impacto**
+
+- Backend, Postgres, HMAC, sincronizacao e health check estao operacionais.
+- O preflight do servidor passou em nove dos dez gates. O unico bloqueio e o
+  comissionamento fisico, que exige responsavel presente e atuacao controlada.
+- Nenhuma porta foi acionada durante publicacao, provisionamento, atualizacao
+  ou verificacoes desta etapa.
+
+**Arquivos**
+
+- `android/app/src/main/java/com/preddita/entregaslocker/AppUpdateManager.java`
+- `docs/KIOSK-V4-PILOTO-CONTROLADO.md`
+- `docs/PLANO-IMPLEMENTACAO-MELHORIAS-REDESIGN-2026-07-20.md`
+- `docs/RELATORIO-CONSOLIDADO-IMPLEMENTACAO-DEPLOY-2026-07-21.md`
+- `docs/HISTORICO-COMPLETO-DE-MELHORIAS.md`
+- `docs/CI-RELEASE.md`
+- `docs/DEVELOPER-RUNBOOK.md`
+- `docs/README.md`
+- `docs/UPDATES.md`
+
+**Validacao**
+
+- CI completo, smoke Postgres, contratos Android, build web, Playwright e APK
+  debug passaram no workflow `CI`.
+- APK release validado por SHA-256, assinatura v2 e mesmo certificado lab da
+  candidata anterior.
+- `pilot-check` confirmou `2.0.32-lab`, processo ativo e serial presente.
+- O updater reportou inicio do app, WebView, credencial e serial saudaveis; o
+  estado local permaneceu com as contagens anteriores.
+
+**Referencia:** [release `v2.0.32-lab`](https://github.com/PredditaTi/Locker-Preddita/releases/tag/v2.0.32-lab),
+[CI #29890756415](https://github.com/PredditaTi/Locker-Preddita/actions/runs/29890756415)
+e [PR #26](https://github.com/PredditaTi/Locker-Preddita/pull/26).
+
 ### 2026-07-21 - APK 2.0.31-lab instalado no KS1062
 
 **Base:** release `v2.0.31-lab`, `versionCode 31`, commit de produto
