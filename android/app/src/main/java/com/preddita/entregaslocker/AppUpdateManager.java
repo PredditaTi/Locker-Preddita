@@ -200,30 +200,27 @@ public final class AppUpdateManager {
 
     public void reportAppStarted(boolean credentialAvailable) {
         reconcileInstalledVersion();
-        if (!isHealthTracked()) return;
         preferences.edit()
             .putBoolean("healthAppStarted", true)
             .putBoolean("healthCredentialAvailable", credentialAvailable)
             .apply();
-        evaluateHealth(true);
+        if (isHealthTracked()) evaluateHealth(true);
     }
 
     public void reportWebViewReady() {
         reconcileInstalledVersion();
-        if (!isHealthTracked()) return;
         preferences.edit().putBoolean("healthWebViewReady", true).apply();
-        evaluateHealth(true);
+        if (isHealthTracked()) evaluateHealth(true);
     }
 
     public void reportSerialHealth(boolean classified, boolean healthy, String errorCode) {
         reconcileInstalledVersion();
-        if (!isHealthTracked()) return;
         preferences.edit()
             .putBoolean("healthSerialClassified", classified)
             .putBoolean("healthSerialHealthy", classified && healthy)
             .putString("healthSerialErrorCode", safeErrorCode(errorCode))
             .apply();
-        evaluateHealth(true);
+        if (isHealthTracked()) evaluateHealth(true);
     }
 
     public void reportRuntimeHealth(String healthJson) {
