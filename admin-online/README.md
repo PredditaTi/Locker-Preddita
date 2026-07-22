@@ -2,7 +2,7 @@
 
 Painel web do sindico para acompanhar o locker, cadastrar moradores e enviar comandos remotos para abertura de portas.
 
-Esta pasta contem a base `2.0.25-lab`. Use Postgres, HTTPS, HMAC, MFA e os
+Esta pasta contem a base `2.0.33-lab`. Use Postgres, HTTPS, HMAC, MFA e os
 demais requisitos documentados antes de promover uma instalacao para producao.
 
 Para entender o desenho completo entre armario, Admin Online, eventos offline e

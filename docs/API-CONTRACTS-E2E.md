@@ -130,6 +130,32 @@ politica e pausada e que `/api/device/snapshot` nao devolve novamente a mesma
 release. Os contratos Java cobrem startup e timeout; os contratos JavaScript
 cobrem backup sem dados pessoais e o handoff do Edge Agent.
 
+## Contrato de metricas do piloto
+
+`POST /api/device/events` aceita `type: "pilot-metric"` pelo mesmo envelope HMAC
+e idempotente usado na sincronizacao offline. O servidor descarta qualquer
+campo fora de:
+
+```json
+{
+  "schemaVersion": 1,
+  "journeyType": "courier",
+  "outcome": "completed",
+  "durationMs": 125000,
+  "pickupMode": "none",
+  "usedSizeFallback": true,
+  "helpRequested": false,
+  "errorCount": 0,
+  "reasonCode": "none"
+}
+```
+
+`journeyType`, `outcome`, `pickupMode` e `reasonCode` usam enums fechados;
+duracao e erros sao limitados. O smoke envia propositalmente apartamento e PIN
+extras e confirma que esses campos nao aparecem no estado administrativo. Os
+testes `pilot-metrics-test.mjs` e `pilot-preflight-test.mjs` cobrem restart,
+limites, agregacao e gates do piloto.
+
 ## Limites
 
 O E2E valida UI, persistencia e contrato da ponte serial, mas nao substitui o

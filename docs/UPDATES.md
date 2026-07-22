@@ -59,6 +59,303 @@ para a mais antiga:
 
 ## Registro
 
+### 2026-07-22 - Compatibilidade com configuracao serial sem ACK
+
+**Base:** candidata de campo `2.0.33-lab`, `versionCode 33`
+
+**O que mudou**
+
+- O primeiro teste fisico da porta 1 foi interrompido antes da abertura porque
+  o controlador nao respondeu ao comando `0x7E` de tempo de acionamento.
+- O transporte agora reconhece exclusivamente `0x7E` seguido de
+  `SERIAL_RESPONSE_TIMEOUT`, sem falha de I/O ou resultado desconhecido, como
+  configuracao `write-only` de controladores antigos.
+- A excecao nao se aplica a comandos de abertura: leitura fechada, atuacao
+  unica, transicao para aberta e prova de fechamento continuam obrigatorias.
+
+**Por que**
+
+- O KS1062 piloto responde a leituras e sensores, mas seu firmware nao devolve
+  ACK para a configuracao de timeout nem para a consulta de versao.
+- Bloquear antes da abertura e seguro, mas impediria o comissionamento de uma
+  placa que aplica configuracoes sem resposta, comportamento tambem previsto
+  pelo exemplo de escrita simples do protocolo recuperado.
+
+**Impacto**
+
+- A configuracao sem ACK pode prosseguir para a abertura fisicamente
+  comprovada, sem repetir comandos e sem enfraquecer falhas de UART.
+- Nenhuma porta foi aberta no teste que revelou a incompatibilidade.
+- A release assinada foi instalada; dez portas passaram por prova
+  fechada-aberta-fechada e o preflight passou de 9/10 para 10/10.
+- A matriz de jornadas e falhas controladas permanece como proxima etapa.
+
+**Arquivos**
+
+- `web/src/serial.js`
+- `scripts/serial-native-bridge-test.mjs`
+- `docs/KIOSK-V4-RESILIENCIA-SERIAL.md`
+- arquivos de versao `2.0.33-lab`
+- `docs/UPDATES.md`
+
+**Validacao**
+
+- Contrato da bridge nativa cobre o timeout aceito e uma falha de I/O ainda
+  bloqueante.
+- Testes de protocolo, comissionamento, seguranca de porta, jornada e Edge
+  Agent passaram.
+- CI completo e release assinada passaram; APK e checksum foram conferidos.
+- `pilot-check` confirmou `2.0.33-lab`, processo e serial; o mapa sincronizado
+  confirmou board 1, dez canais, polaridade `zeroOpen` e comissionamento
+  `complete`.
+- Preflight do servidor concluiu 10/10 gates. Todos os acionamentos ocorreram
+  uma unica vez por canal, com responsavel presente.
+
+**Referencia:** [release `v2.0.33-lab`](https://github.com/PredditaTi/Locker-Preddita/releases/tag/v2.0.33-lab),
+[CI #29892154122](https://github.com/PredditaTi/Locker-Preddita/actions/runs/29892154122),
+[Release APK #29892345469](https://github.com/PredditaTi/Locker-Preddita/actions/runs/29892345469)
+e [PR #26](https://github.com/PredditaTi/Locker-Preddita/pull/26).
+
+### 2026-07-22 - Backend HTTPS e candidata 2.0.32-lab provisionados
+
+**Base:** release `v2.0.32-lab`, `versionCode 32`, commit
+`ed67288a59805babbc0bb3ff58b90a16bf3d44e2`
+
+**O que mudou**
+
+- O Admin Online foi publicado em HTTPS no Railway com Postgres 16,
+  `schemaVersion 13` e autenticacao HMAC obrigatoria para o dispositivo.
+- O KS1062 recebeu a URL HTTPS, o identificador do locker, a chave HMAC no
+  Android Keystore e o PIN tecnico local, sem gravar credenciais no Git.
+- O Android passou a persistir os sinais de inicio, WebView e serial mesmo em
+  uma instalacao direta, permitindo que o preflight reconheca uma credencial
+  ja provisionada sem depender de um rollout em andamento.
+- A release assinada `v2.0.32-lab` foi publicada, conferida e instalada sobre a
+  `2.0.31-lab`, preservando o estado local.
+
+**Por que**
+
+- O piloto precisava de um backend HTTPS persistente e de autenticacao nativa
+  antes de validar sincronizacao, saude e rollout.
+- O health check descartava sinais quando o APK era instalado diretamente por
+  ADB, deixando o preflight bloqueado apesar do provisionamento correto.
+
+**Impacto**
+
+- Backend, Postgres, HMAC, sincronizacao e health check estao operacionais.
+- O preflight do servidor passou em nove dos dez gates. O unico bloqueio e o
+  comissionamento fisico, que exige responsavel presente e atuacao controlada.
+- Nenhuma porta foi acionada durante publicacao, provisionamento, atualizacao
+  ou verificacoes desta etapa.
+
+**Arquivos**
+
+- `android/app/src/main/java/com/preddita/entregaslocker/AppUpdateManager.java`
+- `docs/KIOSK-V4-PILOTO-CONTROLADO.md`
+- `docs/PLANO-IMPLEMENTACAO-MELHORIAS-REDESIGN-2026-07-20.md`
+- `docs/RELATORIO-CONSOLIDADO-IMPLEMENTACAO-DEPLOY-2026-07-21.md`
+- `docs/HISTORICO-COMPLETO-DE-MELHORIAS.md`
+- `docs/CI-RELEASE.md`
+- `docs/DEVELOPER-RUNBOOK.md`
+- `docs/README.md`
+- `docs/UPDATES.md`
+
+**Validacao**
+
+- CI completo, smoke Postgres, contratos Android, build web, Playwright e APK
+  debug passaram no workflow `CI`.
+- APK release validado por SHA-256, assinatura v2 e mesmo certificado lab da
+  candidata anterior.
+- `pilot-check` confirmou `2.0.32-lab`, processo ativo e serial presente.
+- O updater reportou inicio do app, WebView, credencial e serial saudaveis; o
+  estado local permaneceu com as contagens anteriores.
+
+**Referencia:** [release `v2.0.32-lab`](https://github.com/PredditaTi/Locker-Preddita/releases/tag/v2.0.32-lab),
+[CI #29890756415](https://github.com/PredditaTi/Locker-Preddita/actions/runs/29890756415)
+e [PR #26](https://github.com/PredditaTi/Locker-Preddita/pull/26).
+
+### 2026-07-21 - APK 2.0.31-lab instalado no KS1062
+
+**Base:** release `v2.0.31-lab`, `versionCode 31`, commit de produto
+`cb2fc2b16ced77f3f63136e3686ce8e050f48926`
+
+**O que mudou**
+
+- A instalacao antiga `2.0.8-lab`, assinada com chave debug, foi preservada em
+  backup e substituida pelo APK lab assinado.
+- O estado local foi migrado da origem WebView antiga para a origem segura do
+  novo app, sem carregar URL HTTP ou chave de dispositivo no frontend.
+- A home do Kiosk V4 foi aberta e os gates locais de versao, processo, camera,
+  serial e persistencia foram verificados.
+
+**Por que**
+
+- Assinaturas diferentes impediam atualizacao direta e uma reinstalacao vazia
+  perderia o contexto operacional do equipamento.
+
+**Impacto**
+
+- O armario agora executa `2.0.31-lab` e preserva tres destinatarios, 38
+  entregas e 18 entradas de auditoria.
+- O modo local esta disponivel, mas sincronizacao remota, health check e rollout
+  permanecem bloqueados ate o backend HTTPS e o HMAC serem provisionados.
+
+**Arquivos**
+
+- `docs/RELATORIO-CONSOLIDADO-IMPLEMENTACAO-DEPLOY-2026-07-21.md`
+- `docs/KIOSK-V4-PILOTO-CONTROLADO.md`
+- `docs/PLANO-IMPLEMENTACAO-MELHORIAS-REDESIGN-2026-07-20.md`
+- `docs/HISTORICO-COMPLETO-DE-MELHORIAS.md`
+- `docs/README.md`
+- `docs/UPDATES.md`
+
+**Validacao**
+
+- APK e checksum conferidos antes da instalacao.
+- LevelDB relido depois da migracao com as contagens esperadas.
+- `pilot-check` confirmou `2.0.31-lab`, processo ativo e serial presente.
+- Home V4 conferida visualmente; nenhuma porta foi acionada.
+
+**Referencia:** [release `v2.0.31-lab`](https://github.com/PredditaTi/Locker-Preddita/releases/tag/v2.0.31-lab)
+e [PR #26](https://github.com/PredditaTi/Locker-Preddita/pull/26).
+
+### 2026-07-21 - Relatorio consolidado e deploy controlado iniciados
+
+**Base:** produto `2.0.31-lab`, release `v2.0.31-lab`, branch
+`codex/kiosk-v4-pilot-readiness`
+
+**O que mudou**
+
+- Foi criado um relatorio unico para recuperacao, seguranca, dados, backend,
+  Kiosk V4, release, diagnostico, deploy e rollback.
+- O servidor legado e o KS1062 foram identificados por verificacoes somente
+  leitura, sem registrar IP, serial, chaves ou dados pessoais no Git.
+- O app antigo, seu estado local e o snapshot remoto foram preservados fora do
+  repositorio antes da troca de assinatura.
+
+**Por que**
+
+- A implantacao exige uma evidencia auditavel e um caminho de retorno antes de
+  substituir o backend ou remover o pacote antigo do equipamento.
+
+**Impacto**
+
+- A equipe possui uma visao consolidada do que foi alterado e do motivo.
+- O deploy fica bloqueado de forma explicita enquanto o host HTTPS nao estiver
+  autenticado e saudavel; nenhuma porta foi acionada.
+
+**Arquivos**
+
+- `docs/RELATORIO-CONSOLIDADO-IMPLEMENTACAO-DEPLOY-2026-07-21.md`
+- `docs/README.md`
+- `docs/UPDATES.md`
+
+**Validacao**
+
+- Release, certificado e checksum ja verificados pelo workflow de release.
+- Servidor legado confirmou `2.0.8-lab`, schema `6`.
+- KS1062 confirmou Android 13, app `2.0.8-lab`, processo ativo e `/dev/ttyS5`.
+- Backups foram criados com o app parado e acesso local restrito.
+
+**Referencia:** [PR #26](https://github.com/PredditaTi/Locker-Preddita/pull/26).
+
+### 2026-07-21 - APK assinado 2.0.31-lab publicado
+
+**Base:** tag `v2.0.31-lab`, commit
+`cb2fc2b16ced77f3f63136e3686ce8e050f48926`
+
+**O que mudou**
+
+- O workflow `Release APK` gerou e publicou a prerelease imutavel
+  `v2.0.31-lab` com o APK e seu arquivo `.sha256`.
+- A assinatura APK v2, o signatario lab e o checksum do artefato baixado foram
+  conferidos antes de atualizar o gate do piloto.
+- O runbook, o plano e a central documental passaram a distinguir release
+  assinada concluida de instalacao e validacao fisica ainda pendentes.
+
+**Por que**
+
+- A candidata precisava possuir artefato reproduzivel e verificavel antes de
+  ser instalada no primeiro KS1062 do piloto.
+
+**Impacto**
+
+- A equipe pode instalar exatamente o artefato registrado, sem tratar um build
+  local ou uma release renomeada como equivalente.
+- A release permanece no canal `lab`; comissionamento, bancada, matriz de
+  jornadas e observacao autorizada ainda bloqueiam qualquer promocao.
+
+**Arquivos**
+
+- `docs/KIOSK-V4-PILOTO-CONTROLADO.md`
+- `docs/CI-RELEASE.md`
+- `docs/README.md`
+- `docs/PLANO-IMPLEMENTACAO-MELHORIAS-REDESIGN-2026-07-20.md`
+- `docs/HISTORICO-COMPLETO-DE-MELHORIAS.md`
+- `docs/UPDATES.md`
+
+**Validacao**
+
+- Workflow `Release APK` #29860294336 concluido com sucesso.
+- `apksigner` confirmou assinatura v2 e o certificado lab esperado.
+- O APK foi baixado da GitHub Release e `shasum -a 256 -c` retornou `OK` para
+  `fd79beaa803d5d031c72e5c576b2a1c52cad7f6df35e761793931aae1576b25c`.
+
+**Referencia:** [release `v2.0.31-lab`](https://github.com/PredditaTi/Locker-Preddita/releases/tag/v2.0.31-lab)
+e [PR #26](https://github.com/PredditaTi/Locker-Preddita/pull/26).
+
+### 2026-07-21 - Parte 8 preparada para piloto fisico controlado
+
+**Base:** produto `2.0.31-lab`, `versionCode 31`, `schemaVersion 13`, branch
+`codex/kiosk-v4-pilot-readiness`
+
+**O que mudou**
+
+- O kiosk passou a medir jornadas sem enviar apartamento, pessoa, PIN, QR,
+  porta ou texto livre; o contrato do Edge Agent passou da versao 3 para 4.
+- O servidor normaliza uma allowlist, limita 500 amostras por locker e agrega
+  conclusao, duracao, ajuda, fallback, erros e modos PIN/QR.
+- O Admin ganhou a pagina Piloto, com preflight e amostras sanitizadas.
+- Foram criados preflight bloqueante, verificacao ADB somente leitura, testes
+  automatizados e runbook de ensaio, parada, recuperacao e consentimento.
+- A release candidata foi consolidada em `2.0.31-lab`; referencias a
+  `v2.0.25-lab` permanecem como historico e rollback funcional.
+
+**Por que**
+
+- A Parte 8 precisava transformar observacao de campo em evidencia comparavel
+  sem ampliar a coleta de dados pessoais.
+- Um piloto nao pode comecar com serial, comissionamento, HMAC, versao, update
+  ou rollout em estado inadequado.
+
+**Impacto**
+
+- A equipe consegue medir as jornadas e interromper o piloto por criterio
+  objetivo.
+- O preflight retorna erro quando existe bloqueio e nao aciona nenhuma porta.
+- APK assinado, bancada KS1062 e observacao autorizada continuam pendentes; a
+  release nao foi promovida a producao.
+
+**Arquivos**
+
+- `docs/KIOSK-V4-PILOTO-CONTROLADO.md`
+- `docs/PLANO-IMPLEMENTACAO-MELHORIAS-REDESIGN-2026-07-20.md`
+- `docs/ARCHITECTURE.md`
+- `docs/API-CONTRACTS-E2E.md`
+- `docs/PRIVACY-DATA-LIFECYCLE.md`
+- `docs/DEVELOPER-RUNBOOK.md`
+- `docs/HISTORICO-COMPLETO-DE-MELHORIAS.md`
+
+**Validacao**
+
+- Testes de metricas, preflight, Edge Agent, smoke, build web e verificacoes
+  de documentacao executados; o CI completo, incluindo `assembleDebug`, passou
+  em 3min41s.
+- Painel Piloto conferido em viewport desktop e movel.
+- Testes fisicos permanecem explicitamente pendentes no runbook.
+
+**Referencia:** [PR #26](https://github.com/PredditaTi/Locker-Preddita/pull/26).
+
 ### 2026-07-21 - Parte 7 do Kiosk V4 concluida em laboratorio
 
 **Base:** produto `2.0.25-lab`, `versionCode 25`, `schemaVersion 12`, branch

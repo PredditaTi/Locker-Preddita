@@ -41,6 +41,13 @@ import {
   saveAppUpdateConfigurationBackup,
   validateAppUpdateConfigurationBackup,
 } from './appUpdateHealth.js';
+import {
+  completePilotJourney,
+  getActivePilotJourney,
+  recordPilotJourneySignal,
+  recoverInterruptedPilotJourney,
+  startPilotJourney,
+} from './pilotMetrics.js';
 
 export {
   SENSOR_POLARITY_OPTIONS,
@@ -53,7 +60,7 @@ export {
   validateFrame,
 };
 
-export const EDGE_AGENT_CONTRACT_VERSION = 3;
+export const EDGE_AGENT_CONTRACT_VERSION = 4;
 
 const REMOTE_COMPLETIONS_STORAGE_KEY = 'preddita_pending_remote_completions_v1';
 const MAX_PENDING_REMOTE_COMPLETIONS = 20;
@@ -335,7 +342,52 @@ export class EdgeAgentRuntime {
       lastRemoteLatencyMs: this.lastRemoteLatencyMs,
       lastRemoteOutcome: this.lastRemoteOutcome,
       serialCoordinator,
+      activePilotJourney: getActivePilotJourney(this.storage)?.journeyType || '',
     };
+  }
+
+  startPilotJourney(journeyType) {
+    const result = startPilotJourney({
+      storage: this.storage,
+      journeyType,
+      startedAt: this.now(),
+    });
+    if (result.interruptedMetric) this.queuePilotMetric(result.interruptedMetric);
+    return result.journey;
+  }
+
+  recordPilotJourneySignal(signal, options = {}) {
+    return recordPilotJourneySignal({
+      storage: this.storage,
+      signal,
+      ...options,
+    });
+  }
+
+  completePilotJourney(outcome, options = {}) {
+    const metric = completePilotJourney({
+      storage: this.storage,
+      outcome,
+      occurredAt: this.now(),
+      ...options,
+    });
+    return this.queuePilotMetric(metric);
+  }
+
+  recoverInterruptedPilotJourney() {
+    const metric = recoverInterruptedPilotJourney({
+      storage: this.storage,
+      occurredAt: this.now(),
+    });
+    return this.queuePilotMetric(metric);
+  }
+
+  queuePilotMetric(metric) {
+    if (!metric) return null;
+    return this.queueEvent('pilot-metric', metric.payload, {
+      id: metric.id,
+      occurredAt: metric.occurredAt,
+    });
   }
 
   queueEvent(type, payload = {}, options = {}) {

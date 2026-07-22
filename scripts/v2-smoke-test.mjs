@@ -13,7 +13,7 @@ const SINDICO_PASSWORD = 'v2-sindico-password';
 const OPERATOR_PASSWORD = 'v2-operator-password';
 const SUPER_ADMIN_PASSWORD = 'v2-super-admin-password';
 const DEVICE_KEY = 'v2-device-test-key';
-const EXPECTED_ADMIN_VERSION = '2.0.25-lab';
+const EXPECTED_ADMIN_VERSION = '2.0.33-lab';
 const PORT = 9897;
 const DATA_DIR = mkdtempSync(join(tmpdir(), 'preddita-v2-smoke-'));
 const ADMIN_USERS = JSON.stringify([
@@ -907,12 +907,31 @@ try {
             source: 'smoke-offline-replay',
           },
         },
+        {
+          id: 'event-smoke-pilot-metric',
+          type: 'pilot-metric',
+          occurredAt: new Date().toISOString(),
+          payload: {
+            schemaVersion: 1,
+            journeyType: 'pickup',
+            outcome: 'completed',
+            durationMs: 47000,
+            pickupMode: 'pin',
+            usedSizeFallback: false,
+            helpRequested: true,
+            errorCount: 1,
+            reasonCode: 'none',
+            apartment: '901',
+            pin: '654321',
+          },
+        },
       ],
     }),
   });
   if (
     !eventSync.acceptedIds.includes('event-smoke-offline-stored') ||
     !eventSync.acceptedIds.includes('event-smoke-offline-collected') ||
+    !eventSync.acceptedIds.includes('event-smoke-pilot-metric') ||
     !eventSync.notifications.some((item) => item.deliveryId === offlineDelivery.id)
   ) {
     throw new Error('Sincronizacao offline deveria aceitar eventos e devolver status de notificacao.');
@@ -1106,6 +1125,17 @@ try {
   const state = await requestOk('/api/admin/state', { headers: adminHeaders });
   if (!state.state.runtime || state.state.runtime.appVersion !== EXPECTED_ADMIN_VERSION) {
     throw new Error('Resumo runtime v2 nao foi exposto no estado admin.');
+  }
+  const pilotMetric = state.state.pilot?.metrics?.find((metric) => metric.eventId === 'event-smoke-pilot-metric');
+  if (
+    state.state.runtime.pilotSummary?.sampleCount !== 1
+    || state.state.runtime.pilotSummary?.helpRequestCount !== 1
+    || pilotMetric?.journeyType !== 'pickup'
+    || pilotMetric?.pickupMode !== 'pin'
+    || 'apartment' in (pilotMetric || {})
+    || 'pin' in (pilotMetric || {})
+  ) {
+    throw new Error('Metricas do piloto deveriam ser agregadas e remover dados identificaveis no servidor.');
   }
   if ((state.state.runtime.overdueDeliveryCount ?? 0) < 1 || (state.state.runtime.reminder48hCount ?? 0) < 1) {
     throw new Error('Runtime deveria destacar entregas aguardando retirada ha mais de 48h.');

@@ -463,6 +463,13 @@ let responseId = 0;
 let nativeExecutionSequence = 0;
 let sendQueue = Promise.resolve();
 
+function acceptsWriteOnlyConfiguration(result, requestBytes) {
+  return requestBytes?.[0] === 0x7e
+    && result?.ok === false
+    && result?.error === 'SERIAL_RESPONSE_TIMEOUT'
+    && result?.executionOutcomeUnknown !== true;
+}
+
 function createSerialExecutionId() {
   nativeExecutionSequence += 1;
   return `rs485-${Date.now().toString(36)}-${nativeExecutionSequence.toString(36)}`;
@@ -634,6 +641,17 @@ function sendFrameNow(bytes, timeoutMs = 900) {
 
     if (usesNativeCoordinator) {
       nativeCommandCallbacks.set(executionId, (result) => {
+        if (acceptsWriteOnlyConfiguration(result, bytes)) {
+          clearTimeout(timer);
+          resolve({
+            ...result,
+            ok: true,
+            error: '',
+            acknowledged: false,
+            responseMode: 'write-only',
+          });
+          return;
+        }
         if (result.ok) {
           const parsed = parseResponse(result.hex);
           if (!responseMatchesRequest(parsed, bytes)) {
@@ -647,7 +665,11 @@ function sendFrameNow(bytes, timeoutMs = 900) {
           }
         }
         clearTimeout(timer);
-        resolve(result);
+        resolve({
+          ...result,
+          acknowledged: Boolean(result.ok && result.hex),
+          responseMode: result.ok ? 'acknowledged' : 'failed',
+        });
       });
       bridge.sendRS485Command(executionId, hexString);
       return;

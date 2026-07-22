@@ -1,6 +1,6 @@
 {
   "name": "preddita-admin-online",
-  "version": "2.0.25-lab",
+  "version": "2.0.33-lab",
   "private": true,
   "type": "module",
   "engines": {
@@ -10,7 +10,9 @@
     "start": "node server.mjs",
     "smoke": "node ../scripts/v2-smoke-test.mjs",
     "test:recovery": "node ../scripts/v2-state-recovery-test.mjs",
-    "test:remote-journal": "node ../scripts/v2-remote-command-journal-test.mjs"
+    "test:remote-journal": "node ../scripts/v2-remote-command-journal-test.mjs",
+    "test:pilot-metrics": "node ../scripts/pilot-metrics-test.mjs",
+    "test:pilot-preflight": "node ../scripts/pilot-preflight-test.mjs"
   },
   "dependencies": {
     "@aws-crypto/sha256-js": "^5.2.0",

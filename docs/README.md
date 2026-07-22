@@ -6,7 +6,7 @@ automaticamente quando a pasta `docs/` e aberta.
 Use esta central para localizar a fonte correta antes de alterar codigo,
 instalar um locker, operar o Admin Online ou publicar uma nova versao.
 
-> Ultima consolidacao: 21 de julho de 2026. Consulte
+> Ultima consolidacao: 22 de julho de 2026. Consulte
 > [Atualizacoes da documentacao](UPDATES.md) para acompanhar o que mudou.
 
 ## Estado atual
@@ -14,15 +14,15 @@ instalar um locker, operar o Admin Online ou publicar uma nova versao.
 | Item | Valor |
 | --- | --- |
 | Produto | PREDDITA Entregas Locker |
-| Versao do produto | `2.0.25-lab` |
-| Android `versionCode` | `25` |
-| API `schemaVersion` | `12` |
+| Versao do produto | `2.0.33-lab` |
+| Android `versionCode` | `33` |
+| API `schemaVersion` | `13` |
 | Pacote Android | `com.preddita.entregaslocker` |
 | Hardware validado | KS1062-N-ZY, RK3562, Android 11/13 |
 | Serial prioritaria | `/dev/ttyS5` |
 | Frontend | React 18, Vite 8, Node.js 20.19+ |
-| Backend | Node.js, armazenamento JSON para laboratorio ou Postgres 16 |
-| Status | Kiosk V4 com jornadas, audio, console, serial resiliente e health check de update integrados em laboratorio, aguardando bancada e piloto controlado |
+| Backend | Node.js em HTTPS no Railway, Postgres 16; JSON somente para laboratorio |
+| Status | APK `2.0.33-lab` instalado, HMAC no Keystore, 10 portas comissionadas e preflight 10/10; matriz de jornadas e falhas controladas ainda pendente |
 
 O estado acima descreve a base funcional. Mudancas apenas documentais feitas
 depois da tag permanecem registradas em [UPDATES.md](UPDATES.md).
@@ -35,7 +35,7 @@ flowchart LR
   Kiosk --> Edge["Edge Agent"]
   Edge --> Android["Bridge Android"]
   Android --> Serial["RS-485 / CM06"]
-  Edge <-->|"API HMAC e fallback HTTP"| Admin["Admin Online"]
+  Edge <-->|"API HTTPS assinada por HMAC"| Admin["Admin Online"]
   Admin --> Postgres["Postgres"]
   Admin --> SMTP["Notificacoes SMTP"]
   Admin --> IoT["AWS IoT Core"]
@@ -104,6 +104,8 @@ flowchart LR
 | [Console tecnico do Kiosk V4](KIOSK-V4-CONSOLE-TECNICO.md) | Acesso, allowlist Android, abas, auditoria, testes e evidencias da Parte 5 | Credencial, bridge, diagnostico ou procedimento de campo mudar |
 | [Resiliencia serial do Kiosk V4](KIOSK-V4-RESILIENCIA-SERIAL.md) | Fila nativa, correlacao, retry seguro, recuperacao, metricas e gate da Parte 6 | Protocolo, driver, politica de retry ou evidencia de bancada mudar |
 | [Saude de update do Kiosk V4](KIOSK-V4-SAUDE-UPDATE.md) | Primeiro boot, backup tecnico, pausa automatica, recuperacao e gate da Parte 7 | Estado, prazo, rollout, recuperacao ou evidencia fisica mudar |
+| [Piloto controlado do Kiosk V4](KIOSK-V4-PILOTO-CONTROLADO.md) | Metricas sanitizadas, preflight, matriz fisica, parada, recuperacao e decisoes da Parte 8 | Evidencia de campo, taxa, gate ou decisao de escopo mudar |
+| [Relatorio consolidado de implementacao e deploy](RELATORIO-CONSOLIDADO-IMPLEMENTACAO-DEPLOY-2026-07-21.md) | Recuperacao, melhorias, release, diagnostico do servidor e armario, implantacao e rollback | Um gate de deploy, evidencia de campo ou alvo operacional mudar |
 | [Redesign publico](PASSO-A-PASSO-REDESIGN-PUBLICO.md) | Orientacoes da interface do kiosk | Experiencia publica mudar |
 | [Plano original do redesign](superpowers/plans/2026-07-09-public-kiosk-redesign.md) | Plano historico que orientou a implementacao publica | Nao usar como runbook atual; preservar como decisao historica |
 | [Notas do KS1062](../NOTES-KS1062.md) | Pesquisa do hardware e protocolo da placa | Nova evidencia de campo ou manual for validada |
@@ -212,8 +214,8 @@ propria.
 
 ## Proximos marcos
 
-1. Piloto controlado com um locker comissionado.
-2. Testes de falha de energia, rede, restart e restauracao.
-3. Validacao operacional de SMTP, MQTT, logs e update remoto.
+1. Matriz de jornadas do piloto no KS1062 com usuarios de teste.
+2. Testes controlados de falha de energia, rede, restart e restauracao.
+3. Validacao operacional de SMTP, MQTT e update remoto.
 4. Aprovacao dos prazos e processos de privacidade.
 5. Decisao de promocao do canal `lab` para piloto/producao.

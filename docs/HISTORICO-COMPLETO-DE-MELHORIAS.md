@@ -3,7 +3,7 @@
 ## Escopo deste documento
 
 Este relatorio consolida as alteracoes relevantes feitas no PREDDITA Locker
-desde a recuperacao do codigo ate a versao atual `2.0.25-lab`. O objetivo e
+desde a recuperacao do codigo ate a candidata atual `2.0.33-lab`. O objetivo e
 permitir que outra pessoa entenda:
 
 - o que foi alterado;
@@ -17,12 +17,14 @@ O documento cobre comportamento, arquitetura, seguranca, dados, operacao,
 testes e entrega. Alteracoes mecanicas de arquivos gerados, lockfiles e bundles
 compilados sao citadas pelo efeito que produzem, sem listar cada linha gerada.
 
-**Estado de referencia:** `2.0.25-lab`, `versionCode 25`, `schemaVersion 12`,
-commit `014709d`, publicado em 16 de julho de 2026.
+**Estado de referencia:** candidata `2.0.33-lab`, `versionCode 33`,
+`schemaVersion 13`, branch `codex/kiosk-v4-pilot-readiness`. O release
+`v2.0.25-lab`, publicado em 16 de julho de 2026, permanece como rollback
+funcional.
 
 ## Resumo executivo
 
-| Area | Situacao recuperada | Situacao em `2.0.25-lab` | Motivo principal |
+| Area | Situacao recuperada | Situacao na candidata `2.0.33-lab` | Motivo principal |
 | --- | --- | --- | --- |
 | Codigo-fonte | Misturado com artefatos e dados da maquina anterior | Repositorio limpo, reproduzivel e versionado | Permitir continuidade e auditoria |
 | Operacao offline | Fila monolitica vulneravel a perda ou corrupcao | Diario duravel por evento e recuperacao idempotente | Nao perder entregas sem internet |
@@ -575,7 +577,7 @@ processo de acesso e eliminacao do titular.
   contrato de API e E2E.
 - `scripts/v2-verify.ps1` agrega a matriz principal de verificacao.
 - `.github/workflows/ci.yml` protege PRs e a branch principal.
-- `.github/workflows/release-android.yml` gera o release Android assinado.
+- `.github/workflows/release-apk.yml` gera o release Android assinado.
 - `docs/` registra arquitetura, runbook, autenticacao, CI/release, contratos,
   privacidade e este historico.
 
@@ -634,7 +636,31 @@ processo de acesso e eliminacao do titular.
   locker e pausa automaticamente a release pelo limite configurado.
 - Recuperacao permanece criptograficamente fechada: versao superior assinada,
   ADB ou MDM controlado, sem downgrade ou shell remoto.
-- Esta consolidacao nao altera contrato de API, schema ou versao do produto.
+- A Parte 8 adicionou metricas de jornada com allowlist sem PII, agregacao no
+  Admin, preflight bloqueante e verificacao ADB que nao aciona portas.
+- Tempo, resultado, PIN/QR, fallback, ajuda e erros podem ser comparados sem
+  persistir apartamento, credencial, porta, imagem, audio ou texto livre.
+- A Parte 8 foi consolidada inicialmente em `2.0.31-lab`, `versionCode 31` e
+  schema `13`; o APK assinado foi publicado com assinatura v2 e checksum
+  conferidos.
+- O APK foi instalado em um KS1062 piloto depois de backup integral e troca da
+  assinatura debug pela chave lab. O estado local foi migrado para a origem
+  WebView segura e o `pilot-check` confirmou versao, processo e serial sem
+  acionar portas.
+- Em 22 de julho, o Admin Online foi publicado em HTTPS no Railway com
+  Postgres 16 e HMAC obrigatorio. O locker recebeu a chave no Android Keystore
+  e sincronizou com o backend sem expor a credencial ao frontend.
+- A candidata `2.0.32-lab`, `versionCode 32`, corrigiu a persistencia dos sinais
+  de health para instalacoes diretas. CI, release assinada, instalacao e
+  `pilot-check` passaram; o preflight ficou em 9/10, pendente somente do
+  comissionamento e da matriz fisica supervisionada.
+- O primeiro acionamento supervisionado identificou que a placa antiga nao
+  responde ao `0x7E`, embora aplique comandos de configuracao. A
+  `2.0.33-lab`, `versionCode 33`, aceita somente esse timeout como escrita sem
+  ACK; falha de I/O e qualquer comando de abertura continuam bloqueantes.
+- Dez portas passaram por prova fechada-aberta-fechada, o mapa sincronizou no
+  Postgres e o preflight terminou em 10/10. Jornadas e falhas controladas ainda
+  dependem da proxima janela do piloto.
 
 ## Evolucao de dados e compatibilidade
 
@@ -646,6 +672,7 @@ processo de acesso e eliminacao do titular.
 | Logs estruturados | 10 | Store e API de logs operacionais |
 | Politica de atualizacao | 11 | Estado de rollout e telemetria do APK |
 | Ciclo de privacidade | 12 | Politica, resumo, expurgo e controles do titular |
+| Metricas do piloto | 13 | Amostras sanitizadas e agregados operacionais por locker |
 
 Regras de compatibilidade importantes:
 
@@ -691,7 +718,8 @@ O projeto passou a verificar, em camadas:
 8. Jornada Playwright do bundle Android.
 9. Regressao visual das jornadas V4 em quatro viewports e captura de 13 estados.
 10. Politica e integridade do audio, com comportamento real em quatro viewports.
-11. Build web, build Android, auditoria de dependencias e release assinado no CI.
+11. Metricas do piloto, preflight bloqueante e Admin responsivo sem overflow.
+12. Build web, build Android, auditoria de dependencias e release assinado no CI.
 
 O release `v2.0.25-lab` teve APK e checksum publicados, e o checksum baixado foi
 comparado com o artefato da release.
@@ -797,6 +825,7 @@ comparado com o artefato da release.
 - [Audio acessivel do Kiosk V4](KIOSK-V4-AUDIO-ACESSIVEL.md)
 - [Console tecnico do Kiosk V4](KIOSK-V4-CONSOLE-TECNICO.md)
 - [Resiliencia serial do Kiosk V4](KIOSK-V4-RESILIENCIA-SERIAL.md)
+- [Piloto controlado do Kiosk V4](KIOSK-V4-PILOTO-CONTROLADO.md)
 - [Privacidade e ciclo de vida](PRIVACY-DATA-LIFECYCLE.md)
 - [Revisao e plano executado](REVISAO-PLANO-MELHORIA-2026-07-08.md)
 - [Direcao tecnica v2](V2-ROADMAP.md)

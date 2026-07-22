@@ -511,9 +511,20 @@ queda de energia e recuperacao no KS1062 permanecem na Parte 8.
 **Objetivo:** validar as partes obrigatorias no equipamento e decidir recursos
 que aumentam escopo, dados pessoais ou superficie de ataque.
 
+**Status em 22/07/2026:** preparacao de software concluida na release candidata
+`2.0.33-lab`, `versionCode 33`, schema `13`. Metricas sem PII, agregacao no
+Admin, preflight bloqueante, verificacao ADB somente leitura e runbook do
+piloto estao implementados. O APK assinado foi publicado na prerelease
+`v2.0.33-lab`, seu checksum foi conferido e ele foi instalado em um KS1062 com
+o estado local preservado. Backend HTTPS, Postgres e HMAC no Keystore estao
+operacionais. Os dez canais passaram por prova fechada-aberta-fechada, o
+comissionamento foi salvo e o preflight aprovou 10/10 gates. A matriz de
+jornadas, falhas controladas e observacao abaixo continua pendente. Consulte
+[KIOSK-V4-PILOTO-CONTROLADO.md](KIOSK-V4-PILOTO-CONTROLADO.md).
+
 ### Piloto obrigatorio
 
-- [ ] Instalar em um locker comissionado usando rollout pequeno.
+- [x] Instalar em um locker comissionado usando rollout pequeno.
 - [ ] Executar entrega, fallback de tamanho, retirada PIN e QR.
 - [ ] Testar audio ligado, mudo e reinicio durante uma jornada.
 - [ ] Testar falta de internet, reconexao, queda de energia e restart do app.
@@ -632,6 +643,6 @@ As partes 1 a 7 estarao concluidas quando:
 
 ## Proxima acao recomendada
 
-Comecar pela **Parte 1**. Ela reduz o risco de todo o restante e produz a
-referencia visual necessaria para implementar a home V4 na Parte 2 sem perder
-os contratos funcionais ja conquistados.
+Executar a matriz de jornadas, falhas controladas e observacao da **Parte 8** no
+KS1062 comissionado. Nenhum recurso condicional ou ampliacao de rollout deve
+entrar antes dessa evidencia.

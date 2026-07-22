@@ -322,7 +322,7 @@ adb shell ls -la /dev/ttyS*
 ## CONTATO E SUPORTE
 
 **PREDDITA Tecnologia Ltda.**
-Sistema: PSL-2025-001 · Versão: 2.0.25-lab
+Sistema: PSL-2025-001 · Versão: 2.0.33-lab
 Hardware: KS1062-N-ZY (Kaibei) + CM06-24-396-5557FB V2.0
 Protocolo: Kecheng RS-485 V4.0
 

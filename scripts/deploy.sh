@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ╔══════════════════════════════════════════════════════════════════════════╗
 # ║  PREDDITA Smart Locker — Script de Deploy                               ║
-# ║  Uso: ./deploy.sh [build|install|all|adb-wifi|test-serial]              ║
+# ║  Uso: ./deploy.sh [build|install|all|adb-wifi|test-serial|pilot-check]  ║
 # ╚══════════════════════════════════════════════════════════════════════════╝
 
 set -e
@@ -167,6 +167,28 @@ logs() {
   adb logcat -v time PredditaLocker:D AndroidRuntime:E *:S
 }
 
+# Verificacoes somente leitura antes do piloto. Nenhuma porta e acionada.
+pilot_device_check() {
+  command -v adb >/dev/null 2>&1 || err "adb nao encontrado"
+  local expected_version installed_version
+  expected_version="$(sed -n 's/.*versionName "\([^"]*\)".*/\1/p' android/app/build.gradle | head -1)"
+
+  log "Validando dispositivo conectado sem acionar portas..."
+  [ "$(adb get-state 2>/dev/null)" = "device" ] || err "Nenhum dispositivo ADB pronto"
+  adb shell pm path "$PACKAGE" >/dev/null 2>&1 || err "App PREDDITA nao instalado"
+  installed_version="$(adb shell dumpsys package "$PACKAGE" | sed -n 's/.*versionName=\([^[:space:]]*\).*/\1/p' | head -1 | tr -d '\r')"
+  [ "$installed_version" = "$expected_version" ] || err "Versao instalada $installed_version difere da candidata $expected_version"
+  adb shell pidof "$PACKAGE" >/dev/null 2>&1 || err "App PREDDITA nao esta em execucao"
+  adb shell "test -e '$SERIAL_PORT'" >/dev/null 2>&1 || err "Serial $SERIAL_PORT nao existe no Android"
+
+  ok "Dispositivo pronto: versao $installed_version, processo ativo e serial presente."
+}
+
+pilot_preflight() {
+  command -v node >/dev/null 2>&1 || err "node nao encontrado"
+  node scripts/pilot-preflight.mjs "${@:2}"
+}
+
 # ── Dispatcher ───────────────────────────────────────────────────────────
 case "${1:-all}" in
   adb-wifi)     adb_wifi ;;
@@ -177,6 +199,8 @@ case "${1:-all}" in
   test-serial)  test_serial ;;
   diagnose)     diagnose ;;
   logs)         logs ;;
+  pilot-check)  pilot_device_check ;;
+  pilot-preflight) pilot_preflight "$@" ;;
   build)
     build_web
     build_apk
@@ -198,6 +222,6 @@ case "${1:-all}" in
     log "Próximo passo: ./deploy.sh test-serial"
     ;;
   *)
-    echo "Uso: $0 [adb-wifi|build-web|build-apk|install|kiosk|test-serial|diagnose|logs|build|all]"
+    echo "Uso: $0 [adb-wifi|build-web|build-apk|install|kiosk|test-serial|diagnose|logs|pilot-check|pilot-preflight|build|all]"
     ;;
 esac

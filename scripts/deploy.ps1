@@ -1,10 +1,11 @@
 param(
   [Parameter(Position = 0)]
-  [ValidateSet('adb-wifi', 'build-web', 'build-apk', 'build-release', 'package-web', 'install', 'install-release', 'kiosk', 'diagnose', 'logs', 'all')]
+  [ValidateSet('adb-wifi', 'build-web', 'build-apk', 'build-release', 'package-web', 'install', 'install-release', 'kiosk', 'diagnose', 'logs', 'pilot-check', 'pilot-preflight', 'all')]
   [string]$Action = 'all',
 
   [string]$DeviceIp = $env:DEVICE_IP,
-  [int]$AdbPort = 5555
+  [int]$AdbPort = 5555,
+  [string]$PilotStateFile = $env:PREDDITA_PILOT_STATE_FILE
 )
 
 $ErrorActionPreference = 'Stop'
@@ -315,6 +316,41 @@ function Show-Logs {
   Invoke-Adb logcat -v time PredditaLocker:D AndroidRuntime:E *:S
 }
 
+function Test-PilotDevice {
+  Assert-Command adb "Instale o Android Platform Tools antes de continuar."
+  $buildGradle = Get-Content -LiteralPath (Join-Path $AndroidDir 'app\build.gradle') -Raw
+  $expectedVersion = [regex]::Match($buildGradle, 'versionName\s+"([^"]+)"').Groups[1].Value
+
+  Write-Info 'Validando dispositivo sem acionar portas...'
+  $deviceState = (& adb get-state 2>$null | Out-String).Trim()
+  if ($deviceState -ne 'device') { throw 'Nenhum dispositivo ADB pronto.' }
+
+  $packagePath = (& adb shell pm path $Package 2>$null | Out-String).Trim()
+  if (-not $packagePath) { throw 'App PREDDITA nao instalado.' }
+  $packageInfo = & adb shell dumpsys package $Package | Out-String
+  $installedVersion = [regex]::Match($packageInfo, 'versionName=([^\s]+)').Groups[1].Value
+  if ($installedVersion -ne $expectedVersion) {
+    throw "Versao instalada $installedVersion difere da candidata $expectedVersion."
+  }
+  $processId = (& adb shell pidof $Package 2>$null | Out-String).Trim()
+  if (-not $processId) { throw 'App PREDDITA nao esta em execucao.' }
+  & adb shell "test -e /dev/ttyS5" | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw 'Serial /dev/ttyS5 nao existe no Android.' }
+
+  Write-Ok "Dispositivo pronto: versao $installedVersion, processo ativo e serial presente."
+}
+
+function Invoke-PilotPreflight {
+  Assert-Command node "Instale Node.js 20+."
+  $preflightScript = Join-Path $ScriptDir 'pilot-preflight.mjs'
+  $arguments = @($preflightScript)
+  if ($PilotStateFile) {
+    $arguments += @('--state', $PilotStateFile)
+  }
+  & node @arguments
+  if ($LASTEXITCODE -ne 0) { throw 'Preflight do piloto encontrou bloqueios.' }
+}
+
 switch ($Action) {
   'adb-wifi' { Connect-AdbWifi }
   'build-web' { Build-Web }
@@ -326,6 +362,8 @@ switch ($Action) {
   'kiosk' { Setup-Kiosk }
   'diagnose' { Diagnose-Device }
   'logs' { Show-Logs }
+  'pilot-check' { Test-PilotDevice }
+  'pilot-preflight' { Invoke-PilotPreflight }
   'all' {
     Connect-AdbWifi
     Build-Web

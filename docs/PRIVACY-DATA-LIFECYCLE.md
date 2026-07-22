@@ -16,6 +16,8 @@ avaliacao juridica do controlador.
   do registro operacional.
 - Auditoria e logs recebem sanitizacao recursiva antes da persistencia.
 - O CSV de entregas nao exporta credenciais de retirada.
+- Metricas do piloto nao possuem unidade, pessoa, porta, credencial, imagem,
+  audio ou texto livre e sao limitadas a 500 amostras por locker.
 
 ## Politica padrao
 
@@ -31,6 +33,7 @@ avaliacao juridica do controlador.
 | IDs de eventos processados | Apagar | 365 dias |
 | Backup JSON local | Apagar | 7 dias |
 | Logs tecnicos | Apagar | 30 dias |
+| Metricas sanitizadas do piloto | Substituir pelas mais recentes | 500 amostras |
 
 Os prazos sao defaults tecnicos conservadores, nao prazos impostos pela LGPD.
 Antes da producao, o controlador deve confirmar finalidade, base legal,
@@ -72,6 +75,11 @@ O servidor alerta quando controlador ou contato nao foram definidos. O ciclo
 roda no startup, antes de cada persistencia e periodicamente; a tela permite uma
 execucao manual adicional. As mesmas regras sao aplicadas aos modos JSON e
 Postgres.
+
+O limite de amostras do piloto e um controle de minimizacao, nao uma definicao
+juridica de prazo. Antes de observar usuarios reais, o controlador deve aprovar
+finalidade, aviso e periodo do piloto. Filmagem e gravacao de audio ficam
+desativadas por padrao e exigem avaliacao separada.
 
 ## Referencias oficiais
 
